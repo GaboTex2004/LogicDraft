@@ -1,0 +1,95 @@
+# =========================
+# Environment variables
+# =========================
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# =========================
+# Python / FastAPI
+# =========================
+.venv/
+venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# =========================
+# Node / React / Vite
+# =========================
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+
+# =========================
+# Java / Spring / Maven
+# =========================
+target/
+**/target/
+*.class
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+*.iml
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Temporary files
+# =========================
+*.tmp
+*.temp
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments
+ai-service/.venv/
+ai-service/.env
+Frontend/.env
+backend/.env
+
+# Node / Vite
+node_modules/
+dist/
+
+# Java / Maven
+target/
+
+# IDE
+.vscode/
+
+# Allow examples
+!.env.example
+!**/.env.example
+
+code.html
+# Temporary design files
+code.html

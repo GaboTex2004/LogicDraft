@@ -1,0 +1,82 @@
+### CREAR PROYECTO
+### REGISTRAR GABRIEL
+POST http://localhost:8081/api/auth/register
+Content-Type: application/json
+
+{
+  "nombre": "Gabriel",
+  "email": "gabriel2@test.com",
+  "password": "Password123"
+}
+### LOGIN GABRIEL
+
+POST http://localhost:8081/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "gabriel2@test.com",
+  "password": "Password123"
+}
+
+### REGISTRAR CARLOS
+POST http://localhost:8081/api/auth/register
+Content-Type: application/json
+
+{
+  "nombre": "Carlos",
+  "email": "carlos@test.com",
+  "password": "Password123"
+}
+
+### LOGIN CARLOS
+
+POST http://localhost:8081/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "carlos@test.com",
+  "password": "Password123"
+}
+
+### CREAR PROYECTO GABRIEL
+POST http://localhost:8081/api/proyectos
+Authorization: Bearer eyJhbGciOiJIUzM4NCJ9.eyJzdWIiOiJnYWJyaWVsMkB0ZXN0LmNvbSIsInJvbFNpc3RlbWEiOiJVU0VSIiwiaWF0IjoxNzg4MDU5NDg2LCJleHAiOjE3ODgxNDU4ODZ9.hrmk74Ts177-4xL8Joaf_OpEbxqSlI8h3fbJ7igKjF0zEGRcSD-x8N9IPHX46Kg0
+Content-Type: application/json
+
+{
+  "nombre": "Proyecto Gabriel",
+  "descripcion": "Proyecto privado del tenant de Gabriel",
+  "workspaceId": 2
+}
+
+### CREAR PROYECTO CARLOS
+POST http://localhost:8081/api/proyectos
+Authorization: Bearer eyJhbGciOiJIUzM4NCJ9.eyJzdWIiOiJjYXJsb3NAdGVzdC5jb20iLCJyb2xTaXN0ZW1hIjoiVVNFUiIsImlhdCI6MTc4ODA1OTg4MiwiZXhwIjoxNzg4MTQ2MjgyfQ.iCmXtL_tNwi98kYDBWr0ditCGkKqqmblgd-HQbcKxLOncHho9bvwi6pDD8GZMgHe
+Content-Type: application/json
+
+{
+  "nombre": "Proyecto Carlos",
+  "descripcion": "Proyecto privado del tenant de Carlos",
+  "workspaceId": 3
+}
+
+
+### GABRIEL INTENTA LISTAR PROYECTOS DEL WORKSPACE DE CARLOS
+GET http://localhost:8081/api/proyectos?workspaceId=3
+Authorization: Bearer eyJhbGciOiJIUzM4NCJ9.eyJzdWIiOiJnYWJyaWVsMkB0ZXN0LmNvbSIsInJvbFNpc3RlbWEiOiJVU0VSIiwiaWF0IjoxNzg4MDU5NDg2LCJleHAiOjE3ODgxNDU4ODZ9.hrmk74Ts177-4xL8Joaf_OpEbxqSlI8h3fbJ7igKjF0zEGRcSD-x8N9IPHX46Kg0
+
+### GABRIEL INTENTA VER PROYECTO DE CARLOS
+GET http://localhost:8081/api/proyectos/2
+Authorization: Bearer eyJhbGciOiJIUzM4NCJ9.eyJzdWIiOiJnYWJyaWVsMkB0ZXN0LmNvbSIsInJvbFNpc3RlbWEiOiJVU0VSIiwiaWF0IjoxNzg4MDU5NDg2LCJleHAiOjE3ODgxNDU4ODZ9.hrmk74Ts177-4xL8Joaf_OpEbxqSlI8h3fbJ7igKjF0zEGRcSD-x8N9IPHX46Kg0
+
+### CARLOS VE SU PROYECTO
+GET http://localhost:8081/api/proyectos/2
+Authorization: Bearer eyJhbGciOiJIUzM4NCJ9.eyJzdWIiOiJjYXJsb3NAdGVzdC5jb20iLCJyb2xTaXN0ZW1hIjoiVVNFUiIsImlhdCI6MTc4ODA1OTg4MiwiZXhwIjoxNzg4MTQ2MjgyfQ.iCmXtL_tNwi98kYDBWr0ditCGkKqqmblgd-HQbcKxLOncHho9bvwi6pDD8GZMgHe
+
+###prueba del /me
+GET http://localhost:8081/api/auth/me
+Authorization: Bearer eyJhbGciOiJIUzM4NCJ9.eyJzdWIiOiJnYWJyaWVsMkB0ZXN0LmNvbSIsInJvbFNpc3RlbWEiOiJVU0VSIiwiaWF0IjoxNzg4MDU5NDg2LCJleHAiOjE3ODgxNDU4ODZ9.hrmk74Ts177-4xL8Joaf_OpEbxqSlI8h3fbJ7igKjF0zEGRcSD-x8N9IPHX46Kg0
+
+###prueba del workspaces
+GET http://localhost:8081/api/workspaces
+Authorization: Bearer eyJhbGciOiJIUzM4NCJ9.eyJzdWIiOiJnYWJyaWVsMkB0ZXN0LmNvbSIsInJvbFNpc3RlbWEiOiJVU0VSIiwiaWF0IjoxNzg4MDU5NDg2LCJleHAiOjE3ODgxNDU4ODZ9.hrmk74Ts177-4xL8Joaf_OpEbxqSlI8h3fbJ7igKjF0zEGRcSD-x8N9IPHX46Kg0

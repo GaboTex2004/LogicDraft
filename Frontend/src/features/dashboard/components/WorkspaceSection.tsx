@@ -1,0 +1,3 @@
+import type { Workspace } from '../../workspace/types/workspace.types'
+import { WorkspaceCard } from './WorkspaceCard'
+export function WorkspaceSection({ workspaces }: { workspaces: Workspace[] }) { return <section className="content-section" aria-labelledby="workspaces-title"><div className="section-heading"><h2 id="workspaces-title">Tus Workspaces</h2><span>{workspaces.length} en total</span></div>{workspaces.length === 0 ? <div className="empty-state"><h3>Aún no tienes workspaces</h3><p>Cuando formes parte de uno, aparecerá aquí.</p></div> : <div className="workspace-grid">{workspaces.map((workspace) => <WorkspaceCard key={workspace.id} workspace={workspace} />)}</div>}</section> }

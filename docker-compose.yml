@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: diagram-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: diagram_db
+      POSTGRES_USER: diagram_user
+      POSTGRES_PASSWORD: diagram_password
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
