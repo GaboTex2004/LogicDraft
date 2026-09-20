@@ -74,6 +74,59 @@ class DiagramaServiceTest {
     }
 
     @Test
+    void guardaYRecuperaRelacionManyToManySinPerderMetadatos() {
+        GuardarDiagramaRequest request = new GuardarDiagramaRequest();
+        request.setVersion(1);
+        request.setNodes(List.of(Map.of("id", "alumno"), Map.of("id", "materia")));
+        Map<String, Object> relationData = Map.of(
+                "sourceCardinality", "ZERO_MANY", "targetCardinality", "ONE_MANY",
+                "name", "materias", "joinTableName", "alumno_materia");
+        request.setEdges(List.of(Map.of("id", "alumno-materia", "source", "alumno",
+                "target", "materia", "type", "relationship", "data", relationData)));
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.empty());
+        when(diagramaRepository.save(any(Diagrama.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.guardar(10L, request);
+
+        ArgumentCaptor<Diagrama> captor = ArgumentCaptor.forClass(Diagrama.class);
+        verify(diagramaRepository).save(captor.capture());
+        Diagrama saved = captor.getValue();
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.of(saved));
+        Map<?, ?> restoredEdge = (Map<?, ?>) ((List<?>) service.obtenerPorProyecto(10L)
+                .contenido().get("edges")).getFirst();
+        assertEquals(relationData, restoredEdge.get("data"));
+    }
+
+    @Test
+    void guardaYRecuperaMetadatosOpcionalesDeEntidadAsociativa() {
+        GuardarDiagramaRequest request = new GuardarDiagramaRequest();
+        request.setVersion(1);
+        Map<String, Object> association = Map.of(
+                "kind", "MANY_TO_MANY_ASSOCIATION", "tableName", "alumno_materia", "uniquePair", true,
+                "endpoints", List.of(
+                        Map.of("role", "SOURCE", "entityId", "alumno",
+                                "relationshipId", "alumno-inscripcion", "foreignKeyName", "alumno_id"),
+                        Map.of("role", "TARGET", "entityId", "materia",
+                                "relationshipId", "materia-inscripcion", "foreignKeyName", "materia_id")));
+        request.setNodes(List.of(Map.of("id", "inscripcion", "data", Map.of(
+                "id", "inscripcion", "name", "Inscripcion", "attributes", List.of(),
+                "association", association))));
+        request.setEdges(List.of());
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.empty());
+        when(diagramaRepository.save(any(Diagrama.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.guardar(10L, request);
+
+        ArgumentCaptor<Diagrama> captor = ArgumentCaptor.forClass(Diagrama.class);
+        verify(diagramaRepository).save(captor.capture());
+        Diagrama saved = captor.getValue();
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.of(saved));
+        Map<?, ?> node = (Map<?, ?>) ((List<?>) service.obtenerPorProyecto(10L).contenido().get("nodes")).getFirst();
+        Map<?, ?> restoredData = (Map<?, ?>) node.get("data");
+        assertEquals(association, restoredData.get("association"));
+    }
+
+    @Test
     void viewerPuedeLeerPeroNoGuardar() {
         Diagrama diagrama = new Diagrama();
         diagrama.setProyecto(proyecto);

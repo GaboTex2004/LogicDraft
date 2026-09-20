@@ -26,7 +26,7 @@ class FakeClient:
 
 
 class StructuredGenerationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_ollama_receives_schema_and_zero_temperature_only_when_requested(self):
+    async def test_ollama_uses_bounded_conversation_and_structured_decoder_options(self):
         instances = []
 
         def create(**kwargs):
@@ -42,9 +42,9 @@ class StructuredGenerationTests(unittest.IsolatedAsyncioTestCase):
         structured = instances[0].post.await_args.kwargs["json"]
         generic = instances[1].post.await_args.kwargs["json"]
         self.assertEqual(structured["format"], schema)
-        self.assertEqual(structured["options"], {"temperature": 0})
+        self.assertEqual(structured["options"], {"temperature": 0, "num_predict": 1200})
         self.assertNotIn("format", generic)
-        self.assertNotIn("options", generic)
+        self.assertEqual(generic["options"], {"temperature": 0.2, "num_predict": 300})
 
     async def test_ai_service_forwards_optional_schema(self):
         provider = AsyncMock()

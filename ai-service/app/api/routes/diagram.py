@@ -3,6 +3,9 @@ from app.core.config import get_settings
 from app.schemas.diagram import InterpretRequest, InterpretResponse
 from app.services.ai_service import AIService
 from app.services.diagram_ai_service import DiagramAIService
+from app.services.diagram_ai_service import (
+    DiagramIncompleteResponseError, DiagramJsonError, DiagramStructureError,
+)
 from app.services.diagram_normalizer import DiagramConflictError
 from app.services.providers.base import (
     ProviderConfigurationError, ProviderConnectionError, ProviderTimeoutError,
@@ -22,5 +25,11 @@ async def interpret(request: InterpretRequest) -> InterpretResponse:
         raise HTTPException(504, "El proveedor de IA excedio el tiempo de espera.") from None
     except DiagramConflictError:
         raise HTTPException(502, "La respuesta de IA contiene definiciones de atributos en conflicto.") from None
+    except DiagramIncompleteResponseError:
+        raise HTTPException(422, "La IA no pudo completar todas las modificaciones solicitadas.") from None
+    except DiagramJsonError:
+        raise HTTPException(502, "La IA devolvio una respuesta que no es JSON valido.") from None
+    except DiagramStructureError:
+        raise HTTPException(502, "La IA devolvio JSON que no cumple el contrato de operaciones.") from None
     except ProviderResponseError:
         raise HTTPException(502, "El proveedor no devolvio operaciones validas.") from None

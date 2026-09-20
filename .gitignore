@@ -90,6 +90,6 @@ target/
 !.env.example
 !**/.env.example
 
-code.html
+
 # Temporary design files
 code.html

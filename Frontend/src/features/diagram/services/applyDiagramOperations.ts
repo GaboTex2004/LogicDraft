@@ -1,6 +1,7 @@
 import type { AttributeType, DiagramEdge, EntityAttribute, EntityFlowNode } from '../types/diagram.types'
 import type { AiAttribute, AiDataType, DiagramAiOperation } from '../types/diagramAi.types'
 import { equivalentRelationship, isCardinality, normalizeRelationshipEdge } from './relationshipCardinality.ts'
+import { convertManyToManyAssociation } from './associationConversion.ts'
 
 export const AI_TYPE_MAP: Record<AiDataType, AttributeType> = {
   String: 'VARCHAR', Long: 'BIGINT', Integer: 'INTEGER', Double: 'DECIMAL',
@@ -40,17 +41,49 @@ export function parseDiagramAiResponse(value: unknown): DiagramAiOperation[] {
       case 'ADD_RELATIONSHIP': {
         const r = object(op.relationship)
         if (!isCardinality(r.sourceCardinality) || !isCardinality(r.targetCardinality)
-          || Object.keys(r).some(k => !['sourceEntity', 'targetEntity', 'sourceCardinality', 'targetCardinality'].includes(k))) return fail()
-        return { type: op.type, relationship: { sourceEntity: name(r.sourceEntity), targetEntity: name(r.targetEntity), sourceCardinality: r.sourceCardinality, targetCardinality: r.targetCardinality } }
+          || Object.keys(r).some(k => !['sourceEntity', 'targetEntity', 'sourceCardinality', 'targetCardinality', 'name', 'joinTableName'].includes(k))) return fail()
+        return { type: op.type, relationship: {
+          sourceEntity: name(r.sourceEntity), targetEntity: name(r.targetEntity),
+          sourceCardinality: r.sourceCardinality, targetCardinality: r.targetCardinality,
+          ...(r.name == null ? {} : { name: name(r.name) }),
+          ...(r.joinTableName == null ? {} : { joinTableName: name(r.joinTableName) }),
+        } }
+      }
+      case 'CONVERT_MANY_TO_MANY_ASSOCIATION': {
+        const conversion = object(op.conversion)
+        if (Object.keys(op).some(key => !['type', 'conversion'].includes(key))
+          || Object.keys(conversion).some(key => !['relationshipId', 'sourceEntity', 'targetEntity', 'associationEntityName', 'attributes'].includes(key))
+          || !Array.isArray(conversion.attributes) || conversion.attributes.length > 100) return fail()
+        const attributes = conversion.attributes.map(attribute)
+        if (attributes.some(item => item.primaryKey)) return fail('Los atributos propios no pueden reemplazar la PK generada')
+        return { type: op.type, conversion: {
+          relationshipId: name(conversion.relationshipId),
+          sourceEntity: name(conversion.sourceEntity),
+          targetEntity: name(conversion.targetEntity),
+          associationEntityName: name(conversion.associationEntityName),
+          attributes,
+        } }
       }
       default: return fail('La IA devolvió una operación no soportada')
     }
   })
 }
 
+/** Parses an HTTP response and validates its complete preview without mutating the loaded document. */
+export function prepareDiagramAiProposal(
+  response: unknown,
+  currentNodes: EntityFlowNode[],
+  currentEdges: DiagramEdge[],
+) {
+  const operations = parseDiagramAiResponse(response)
+  const preview = applyDiagramOperations(currentNodes, currentEdges, operations)
+  return { operations, preview }
+}
+
 export type DiagramAiEvent =
   | { type: 'NODE_CREATED' | 'NODE_UPDATED'; node: EntityFlowNode }
   | { type: 'EDGE_CREATED'; edge: DiagramEdge }
+  | { type: 'DIAGRAM_BATCH_APPLIED'; document: { version: 1; nodes: EntityFlowNode[]; edges: DiagramEdge[] } }
 
 export function applyDiagramOperations(
   currentNodes: EntityFlowNode[], currentEdges: DiagramEdge[], operations: unknown,
@@ -60,6 +93,7 @@ export function applyDiagramOperations(
   let nodes = [...currentNodes]
   const edges = [...currentEdges]
   const events: DiagramAiEvent[] = []
+  let requiresAtomicBatch = false
   const usedIds = new Set([...nodes.map(n => n.id), ...edges.map(e => e.id), ...nodes.flatMap(n => n.data.attributes.map(a => a.id))])
   const uniqueId = (prefix: string) => {
     const id = `${prefix}-${createId()}`
@@ -105,16 +139,43 @@ export function applyDiagramOperations(
       const updated = { ...node, data: { ...node.data, attributes: [...node.data.attributes, convert(op.attribute)] } }
       nodes = nodes.map(n => n.id === node.id ? updated : n)
       events.push({ type: 'NODE_UPDATED', node: updated })
-    } else {
+    } else if (op.type === 'ADD_RELATIONSHIP') {
       const source = find(op.relationship.sourceEntity).id
       const target = find(op.relationship.targetEntity).id
       if (source === target) fail('Las autorrelaciones nuevas no están habilitadas en este MVP')
-      const candidate: DiagramEdge = { id: '', source, target, data: { sourceCardinality: op.relationship.sourceCardinality, targetCardinality: op.relationship.targetCardinality } }
+      const candidate: DiagramEdge = { id: '', source, target, data: {
+        sourceCardinality: op.relationship.sourceCardinality, targetCardinality: op.relationship.targetCardinality,
+        ...(op.relationship.name == null ? {} : { name: op.relationship.name }),
+        ...(op.relationship.joinTableName == null ? {} : { joinTableName: op.relationship.joinTableName }),
+      } }
       if (edges.some(e => equivalentRelationship(e, candidate))) continue
       const edge = normalizeRelationshipEdge({ ...candidate, id: uniqueId('edge') })
       edges.push(edge)
       events.push({ type: 'EDGE_CREATED', edge })
+    } else {
+      const original = edges.find(edge => edge.id === op.conversion.relationshipId)
+        ?? fail('La relacion N:M indicada no existe o ya fue convertida')
+      const source = find(op.conversion.sourceEntity)
+      const target = find(op.conversion.targetEntity)
+      if (new Set([original.source, original.target]).size !== 2
+        || ![original.source, original.target].includes(source.id)
+        || ![original.source, original.target].includes(target.id)) {
+        fail('Los extremos de la conversion no coinciden con la relacion indicada')
+      }
+      const attributeNames = new Set<string>()
+      for (const item of op.conversion.attributes) {
+        if (attributeNames.has(key(item.name))) fail(`El atributo "${item.name}" esta duplicado`)
+        attributeNames.add(key(item.name))
+      }
+      const converted = convertManyToManyAssociation(nodes, edges, op.conversion.relationshipId,
+        op.conversion.associationEntityName, createId,
+        op.conversion.attributes.map(item => ({ name: item.name, type: AI_TYPE_MAP[item.dataType], nullable: item.nullable })))
+      nodes = converted.document.nodes
+      edges.splice(0, edges.length, ...converted.document.edges)
+      requiresAtomicBatch = true
     }
   }
-  return { nodes, edges, events }
+  return { nodes, edges, events: requiresAtomicBatch
+    ? [{ type: 'DIAGRAM_BATCH_APPLIED' as const, document: { version: 1 as const, nodes, edges } }]
+    : events }
 }

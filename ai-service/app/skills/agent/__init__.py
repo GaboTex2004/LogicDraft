@@ -1,0 +1,1 @@
+"""Contextual consultative agent skill."""

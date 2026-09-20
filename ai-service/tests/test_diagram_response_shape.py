@@ -146,4 +146,23 @@ class ShapeEndpointTests(unittest.IsolatedAsyncioTestCase):
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
                     response = await client.post("/api/ai/diagram/interpret", json={"prompt": PROMPT})
         self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.json(), {"detail": "El proveedor no devolvio operaciones validas."})
+        self.assertEqual(response.json(), {"detail": "La IA devolvio JSON que no cumple el contrato de operaciones."})
+
+    async def test_invalid_json_and_incomplete_batch_have_distinct_errors(self):
+        with patch("app.services.ai_service.AIService.generate", new=AsyncMock(return_value="{invalid")):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+                invalid_json = await client.post("/api/ai/diagram/interpret", json={"prompt": "Crea Producto"})
+        self.assertEqual(invalid_json.status_code, 502)
+        self.assertEqual(invalid_json.json(), {"detail": "La IA devolvio una respuesta que no es JSON valido."})
+
+        incomplete = json.dumps({"operations": [
+            {"type": "ADD_ENTITY", "entity": {"name": "Producto", "attributes": []}},
+        ]})
+        with patch("app.services.ai_service.AIService.generate", new=AsyncMock(return_value=incomplete)):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+                incomplete_response = await client.post(
+                    "/api/ai/diagram/interpret", json={"prompt": "crea 2 entidades Producto y Categoria"})
+        self.assertEqual(incomplete_response.status_code, 422)
+        self.assertEqual(incomplete_response.json(), {
+            "detail": "La IA no pudo completar todas las modificaciones solicitadas.",
+        })

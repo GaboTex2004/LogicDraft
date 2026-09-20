@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cardinalities, CARDINALITY_LABELS, normalizeRelationshipEdge, equivalentRelationship, commitRelationshipEdge } from '../src/features/diagram/services/relationshipCardinality.ts'
+import { cardinalities, CARDINALITY_LABELS, normalizeRelationshipEdge, equivalentRelationship, commitRelationshipEdge, removeRelationshipEdges } from '../src/features/diagram/services/relationshipCardinality.ts'
 import { applyDiagramOperations } from '../src/features/diagram/services/applyDiagramOperations.ts'
+import { deriveJoinTable } from '../src/features/diagram/services/derivedJoinTable.ts'
 
 const edge = (data = {}) => ({ id: 'e', source: 'a', target: 'b', data })
 const entity = name => ({ type: 'ADD_ENTITY', entity: { name, attributes: [] } })
@@ -33,6 +34,30 @@ test('manual edit marks dirty once, emits EDGE_UPDATED, preserves metadata', () 
   assert.equal(state[0].data.custom, 42)
   assert.equal(dirty, 1)
   assert.equal(events[0][0], 'EDGE_UPDATED')
+})
+test('manual create and edit preserve N:M cardinalities and custom names', () => {
+  let state = [], events = []
+  const many = edge({ sourceCardinality: 'ZERO_MANY', targetCardinality: 'ONE_MANY', name: 'materias', joinTableName: 'alumno_materia' })
+  assert.equal(commitRelationshipEdge(state, many, 'EDGE_CREATED', false, {
+    setEdges: next => { state = next }, markDirty: () => {}, publish: (...args) => events.push(args),
+  }), true)
+  assert.deepEqual(state[0].data, {
+    sourceCardinality: 'ZERO_MANY', targetCardinality: 'ONE_MANY', name: 'materias', joinTableName: 'alumno_materia',
+  })
+  assert.equal(commitRelationshipEdge(state, { ...state[0], data: { ...state[0].data, name: 'materiasOptativas' } }, 'EDGE_UPDATED', false, {
+    setEdges: next => { state = next }, markDirty: () => {}, publish: (...args) => events.push(args),
+  }), true)
+  assert.equal(state[0].data.name, 'materiasOptativas')
+  assert.deepEqual(events.map(([kind]) => kind), ['EDGE_CREATED', 'EDGE_UPDATED'])
+  const restored = normalizeRelationshipEdge(JSON.parse(JSON.stringify(state[0])))
+  assert.deepEqual(restored.data, state[0].data)
+  assert.equal(restored.id, state[0].id)
+})
+test('deleting a relationship removes only the selected edge', () => {
+  const current = [normalizeRelationshipEdge(edge()), normalizeRelationshipEdge({ ...edge(), id: 'other' })]
+  const result = removeRelationshipEdges(current, new Set(['e']))
+  assert.deepEqual(result.map(item => item.id), ['other'])
+  assert.equal(current.length, 2)
 })
 test('remote update changes cardinality and preserves selection without reemitting', () => {
   let state = [{ ...normalizeRelationshipEdge(edge()), selected: true }], dirty = 0
@@ -73,6 +98,18 @@ test('equivalent reversed relationship is not duplicated; minima remain distinct
   assert.equal(r.edges.length, 2)
   assert.equal(equivalentRelationship(r.edges[0], { ...r.edges[0], source: r.edges[0].target, target: r.edges[0].source, data: { sourceCardinality: 'ZERO_MANY', targetCardinality: 'ONE_ONE' } }), true)
 })
+test('two named N:M relationships between the same entities remain distinct', () => {
+  const base = apply([], [], [entity('Alumno'), entity('Materia')])
+  const first = { ...relation('Alumno', 'Materia', 'ZERO_MANY', 'ZERO_MANY'), relationship: {
+    ...relation('Alumno', 'Materia', 'ZERO_MANY', 'ZERO_MANY').relationship, name: 'materiasObligatorias',
+  } }
+  const second = { ...relation('Alumno', 'Materia', 'ZERO_MANY', 'ZERO_MANY'), relationship: {
+    ...relation('Alumno', 'Materia', 'ZERO_MANY', 'ZERO_MANY').relationship, name: 'materiasOptativas',
+  } }
+  const result = apply(base.nodes, [], [first, second])
+  assert.equal(result.edges.length, 2)
+  assert.deepEqual(result.edges.map(item => item.data.name), ['materiasObligatorias', 'materiasOptativas'])
+})
 test('legacy edge prevents duplicate AI relationship', () => {
   const r = apply([], [], [entity('Categoria'), entity('Producto')])
   const legacy = { id: 'old', source: r.nodes[0].id, target: r.nodes[1].id, data: { relationshipType: 'ONE_TO_MANY' } }
@@ -83,4 +120,47 @@ test('missing endpoint and self reference reject batch without mutation', () => 
   assert.throws(() => apply(r.nodes, r.edges, [entity('Other'), relation()]))
   assert.throws(() => apply(r.nodes, r.edges, [relation('Categoria', 'Categoria')]))
   assert.deepEqual(r, before)
+})
+
+const diagramEntity = (id, name, type) => ({
+  id, name, attributes: [{ id: `${id}-id`, name: 'id', type, primaryKey: true, nullable: false }],
+})
+
+test('N:M visualization derives table, FK types and generated UNIQUE without creating model objects', () => {
+  const relationship = edge({ sourceCardinality: 'ZERO_MANY', targetCardinality: 'ONE_MANY' })
+  const before = structuredClone(relationship)
+  assert.deepEqual(deriveJoinTable(relationship, diagramEntity('a', 'Alumno', 'INTEGER'), diagramEntity('b', 'Materia', 'BIGINT')), {
+    name: 'alumno_materia',
+    columns: [
+      { name: 'alumno_id', type: 'INTEGER', referencedEntity: 'Alumno' },
+      { name: 'materia_id', type: 'BIGINT', referencedEntity: 'Materia' },
+    ],
+    uniqueConstraint: 'uk_alumno_materia_pair',
+  })
+  assert.deepEqual(relationship, before)
+})
+
+test('custom join table survives JSON persistence and drives the derived visualization', () => {
+  const saved = JSON.stringify(edge({ sourceCardinality: 'ZERO_MANY', targetCardinality: 'ZERO_MANY', joinTableName: 'matriculas_alumno' }))
+  const restored = normalizeRelationshipEdge(JSON.parse(saved))
+  const table = deriveJoinTable(restored, diagramEntity('a', 'Alumno', 'INTEGER'), diagramEntity('b', 'Materia', 'INTEGER'))
+  assert.equal(table?.name, 'matriculas_alumno')
+  assert.equal(table?.uniqueConstraint, 'uk_matriculas_alumno_pair')
+})
+
+test('legacy MANY_TO_MANY reconstructs a derived table while non-N:M stays unchanged', () => {
+  const source = diagramEntity('a', 'Orden de Compra', 'INTEGER')
+  const target = diagramEntity('b', 'Artículo', 'VARCHAR')
+  const legacy = edge({ relationshipType: 'MANY_TO_MANY' })
+  assert.equal(deriveJoinTable(legacy, source, target)?.name, 'orden_de_compra_articulo')
+  assert.equal(deriveJoinTable(edge({ relationshipType: 'ONE_TO_MANY' }), source, target), null)
+})
+
+test('AI-created N:M uses the same single relationship as visualization source', () => {
+  const created = apply([], [], [entity('Alumno'), entity('Materia'), relation('Alumno', 'Materia', 'ZERO_MANY', 'ZERO_MANY')])
+  created.nodes[0].data.attributes.push({ id: 'a-id', name: 'id', type: 'INTEGER', primaryKey: true })
+  created.nodes[1].data.attributes.push({ id: 'b-id', name: 'id', type: 'INTEGER', primaryKey: true })
+  assert.equal(created.edges.length, 1)
+  assert.equal(deriveJoinTable(created.edges[0], created.nodes[0].data, created.nodes[1].data)?.name, 'alumno_materia')
+  assert.equal(created.nodes.length, 2)
 })

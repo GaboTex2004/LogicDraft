@@ -10,7 +10,7 @@ Respuesta tipada:
 {"operations":[
   {"type":"ADD_ENTITY","entity":{"name":"Cliente","attributes":[{"name":"id","dataType":"Long","primaryKey":true,"nullable":false}]}},
   {"type":"ADD_ATTRIBUTE","entityName":"Cliente","attribute":{"name":"telefono","dataType":"String","primaryKey":false,"nullable":true}},
-  {"type":"ADD_RELATIONSHIP","relationship":{"sourceEntity":"Cliente","targetEntity":"Pedido","relationshipType":"ONE_TO_MANY"}}
+  {"type":"ADD_RELATIONSHIP","relationship":{"sourceEntity":"Cliente","targetEntity":"Pedido","sourceCardinality":"ONE_ONE","targetCardinality":"ZERO_MANY"}}
 ]}
 ```
 
@@ -18,10 +18,12 @@ Las tres operaciones tienen campos excluyentes. Spring valida claves exactas,
 campos requeridos, nombres no blancos de hasta 100 caracteres, booleanos reales,
 tipos y relaciones enumerados, hasta 50 operaciones y 100 atributos por entidad.
 Una lista vacia significa que no se pudo identificar una accion; no significa fallo.
-No se comprueba existencia de entidades porque no hay contexto de proyecto todavia.
+La ruta generica valida forma pero no existencia porque no tiene proyecto. La ruta
+contextual del editor y el agente comprueban las entidades contra el diagrama persistido.
 
 Tipos: String, Long, Integer, Double, Boolean, Date, DateTime.
-Relaciones: ONE_TO_ONE, ONE_TO_MANY, MANY_TO_ONE, MANY_TO_MANY.
+Cardinalidades por extremo: ZERO_ONE, ONE_ONE, ZERO_MANY y ONE_MANY. Una N:M usa
+un valor many en ambos extremos. `name` y `joinTableName` son opcionales.
 FastAPI normaliza sinonimos; Spring solo acepta los tipos canonicos resultantes.
 Estos tipos pertenecen al contrato de interpretacion; no cambian los tipos SQL
 existentes del editor. La conversion al editor corresponde a una etapa posterior.

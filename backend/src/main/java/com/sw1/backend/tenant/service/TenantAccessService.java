@@ -40,9 +40,9 @@ public class TenantAccessService {
 
     public void verificarRol(Long tenantId, RolTenant... rolesPermitidos) {
         MiembroTenant membresia = obtenerMembresia(tenantId);
+
         boolean rolPermitido = rolesPermitidos != null
                 && Arrays.asList(rolesPermitidos).contains(membresia.getRol());
-
         if (!rolPermitido) {
             throw new AccesoDenegadoException(
                     "No tienes el rol requerido dentro del tenant");

@@ -21,6 +21,28 @@ class DiagramContractTests(unittest.TestCase):
     def test_safe_fence_and_empty_operations(self):
         self.assertEqual(parse_operations('```json\n{"operations":[]}\n```').operations, [])
 
+    def test_many_to_many_and_associative_entity_operations_are_supported(self):
+        many = {"type": "ADD_RELATIONSHIP", "relationship": {
+            "sourceEntity": "Alumno", "targetEntity": "Materia",
+            "sourceCardinality": "ZERO_MANY", "targetCardinality": "ONE_MANY",
+            "name": "materias", "joinTableName": "alumno_materia",
+        }}
+        associative = [
+            {"type": "ADD_ENTITY", "entity": {"name": "Inscripcion", "attributes": [
+                {"name": "fecha", "dataType": "Date", "primaryKey": False, "nullable": False},
+                {"name": "nota", "dataType": "Double", "primaryKey": False, "nullable": True},
+            ]}},
+            {"type": "ADD_RELATIONSHIP", "relationship": {"sourceEntity": "Alumno",
+                "targetEntity": "Inscripcion", "sourceCardinality": "ONE_ONE", "targetCardinality": "ZERO_MANY"}},
+            {"type": "ADD_RELATIONSHIP", "relationship": {"sourceEntity": "Materia",
+                "targetEntity": "Inscripcion", "sourceCardinality": "ONE_ONE", "targetCardinality": "ZERO_MANY"}},
+        ]
+        result = parse_operations(json.dumps({"operations": [many, *associative]}))
+        self.assertEqual(result.operations[0].relationship.name, "materias")
+        self.assertEqual(result.operations[0].relationship.joinTableName, "alumno_materia")
+        self.assertEqual(result.operations[1].entity.name, "Inscripcion")
+        self.assertEqual(len(result.operations), 4)
+
     def test_invalid_outputs(self):
         for content in [
             "not json", '{"operations":[{"type":"DELETE_ENTITY"}]}',

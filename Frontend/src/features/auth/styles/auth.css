@@ -1,0 +1,659 @@
+/* LogicDraft: estilos exclusivos de autenticación */
+
+.ld-auth-page {
+  --ld-bg: #0e0e10;
+  --ld-surface: #18181b;
+  --ld-field: #1c1b1d;
+  --ld-border: #353437;
+  --ld-primary: #a5b4fc;
+  --ld-text: #f1f0f4;
+  --ld-muted: #9ca3af;
+
+  display: grid;
+  grid-template-columns: minmax(420px, 38%) minmax(0, 1fr);
+  min-height: 100dvh;
+  width: 100%;
+  background: var(--ld-bg);
+  color: var(--ld-text);
+  font-family: "JetBrains Mono", monospace;
+}
+
+.ld-auth-page *,
+.ld-auth-page *::before,
+.ld-auth-page *::after {
+  box-sizing: border-box;
+}
+
+/* Columna del formulario */
+
+.ld-auth-panel {
+  min-width: 0;
+  min-height: 100dvh;
+  padding: clamp(24px, 4vw, 56px);
+  display: flex;
+  flex-direction: column;
+  background: var(--ld-surface);
+  border-right: 1px solid var(--ld-border);
+}
+
+.ld-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: "Sora", sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.ld-auth-brand-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  color: var(--ld-primary);
+  background: #2e2d30;
+  border: 1px solid var(--ld-border);
+}
+
+.ld-auth-content {
+  width: 100%;
+  max-width: 430px;
+  margin: auto;
+  padding: 48px 0;
+}
+
+.ld-auth-content h1 {
+  margin: 0 0 14px;
+  color: var(--ld-text);
+  font:
+    700 clamp(26px, 3vw, 34px)/1.2 "Sora",
+    sans-serif;
+}
+
+.ld-auth-subtitle {
+  margin: 0 0 36px;
+  color: var(--ld-muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+/* Formulario existente */
+
+.ld-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.ld-auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.ld-auth-field label {
+  color: #c6c5d2;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ld-auth-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.ld-auth-input-wrapper input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 12px 48px 12px 44px;
+  background: var(--ld-field);
+  color: var(--ld-text);
+  border: 1px solid var(--ld-border);
+  border-radius: 0;
+  outline: none;
+  font: inherit;
+  font-size: 13px;
+  transition:
+    border-color 180ms,
+    box-shadow 180ms;
+}
+
+.ld-auth-input-wrapper input::placeholder {
+  color: #777782;
+}
+
+.ld-auth-input-wrapper input:focus {
+  border-color: var(--ld-primary);
+  box-shadow: 0 0 0 2px #a5b4fc25;
+}
+
+.ld-auth-input-wrapper input:disabled {
+  opacity: 0.65;
+}
+
+.ld-auth-input-icon {
+  position: absolute;
+  left: 14px;
+  color: var(--ld-muted);
+  font-size: 19px;
+  pointer-events: none;
+}
+
+.ld-auth-password-toggle {
+  position: absolute;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--ld-muted);
+  cursor: pointer;
+}
+
+.ld-auth-password-toggle:hover {
+  color: var(--ld-primary);
+}
+
+.ld-auth-password-toggle:focus-visible,
+.ld-auth-submit:focus-visible,
+.ld-auth-switch a:focus-visible {
+  outline: 2px solid var(--ld-primary);
+  outline-offset: 3px;
+}
+
+.ld-auth-error {
+  margin: 0;
+  padding: 12px;
+  color: #ffb4ab;
+  background: #93000a30;
+  border: 1px solid #93000a;
+  font-size: 12px;
+}
+
+.ld-auth-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  margin-top: 8px;
+  padding: 12px 20px;
+  border: 1px solid var(--ld-primary);
+  border-radius: 0;
+  background: var(--ld-primary);
+  color: #0f172a;
+  font:
+    700 14px "Sora",
+    sans-serif;
+  cursor: pointer;
+  transition:
+    background 180ms,
+    transform 180ms;
+}
+
+.ld-auth-submit:hover:not(:disabled) {
+  background: #b8c4ff;
+}
+
+.ld-auth-submit:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.ld-auth-submit:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.ld-auth-switch {
+  margin-top: 32px;
+  text-align: center;
+  color: var(--ld-muted);
+  font-size: 12px;
+}
+
+.ld-auth-switch a {
+  color: var(--ld-primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.ld-auth-footer {
+  padding-top: 22px;
+  border-top: 1px solid var(--ld-border);
+  color: var(--ld-muted);
+  font-size: 11px;
+}
+
+/* Panel derecho: diagrama decorativo */
+
+.ld-auth-visual {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: clamp(24px, 4vw, 56px);
+  background-color: var(--ld-bg);
+  background-image: radial-gradient(#8f909b35 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.ld-auth-visual-header,
+.ld-auth-visual-footer {
+  position: relative;
+  z-index: 2;
+  color: var(--ld-muted);
+  font-size: 11px;
+}
+
+.ld-auth-canvas {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  aspect-ratio: 760 / 540;
+  margin: auto;
+}
+
+.ld-auth-wire {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.ld-auth-wire path {
+  fill: none;
+  stroke: var(--ld-primary);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  animation: ld-wire-flow 2.5s linear infinite;
+}
+
+.ld-auth-node {
+  position: absolute;
+  width: 30%;
+  padding: 14px;
+  background: #1c1b1d;
+  border: 1px solid #454650;
+  box-shadow: 0 16px 32px #0005;
+  animation: ld-node-float 7s ease-in-out infinite;
+}
+
+.ld-auth-node strong {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--ld-primary);
+  font:
+    600 13px "Sora",
+    sans-serif;
+}
+
+.ld-auth-node span {
+  display: block;
+  margin-top: 6px;
+  color: var(--ld-muted);
+  font-size: 11px;
+}
+
+.ld-auth-node-user {
+  top: 8%;
+  left: 2%;
+}
+
+.ld-auth-node-project {
+  top: 6%;
+  right: 2%;
+  animation-delay: -2s;
+}
+
+.ld-auth-node-diagram {
+  right: 2%;
+  bottom: 8%;
+  animation-delay: -4s;
+}
+
+.ld-auth-node-ai {
+  bottom: 9%;
+  left: 2%;
+  border-color: var(--ld-primary);
+  animation-delay: -1s;
+}
+
+@keyframes ld-node-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+@keyframes ld-wire-flow {
+  to {
+    stroke-dashoffset: -44;
+  }
+}
+
+/* Tablet y móvil */
+
+@media (max-width: 1023px) {
+  .ld-auth-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ld-auth-panel {
+    width: 100%;
+    border-right: 0;
+  }
+
+  .ld-auth-visual {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .ld-auth-panel {
+    padding: 24px 20px;
+  }
+
+  .ld-auth-content {
+    padding: 48px 0;
+  }
+
+  .ld-auth-content h1 {
+    font-size: 27px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ld-auth-page *,
+  .ld-auth-page *::before,
+  .ld-auth-page *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Corrección: evitar que los estilos globales limiten el login */
+#root > main.ld-auth-page {
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(420px, 38%) minmax(0, 1fr);
+}
+
+/* Tablet y móvil: formulario a pantalla completa */
+@media (max-width: 1023px) {
+  #root > main.ld-auth-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ld-auth-page .ld-auth-visual {
+    display: none;
+  }
+}
+
+/* Celulares pequeños */
+@media (max-width: 480px) {
+  .ld-auth-page .ld-auth-panel {
+    padding: 24px 20px;
+    min-width: 0;
+  }
+
+  .ld-auth-page .ld-auth-content {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+/* ========================================
+   AJUSTES VISUALES DEL LOGIN
+   ======================================== */
+
+/* Jerarquía tipográfica */
+.ld-auth-page .ld-auth-content h1 {
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: clamp(28px, 2.5vw, 36px);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+.ld-auth-page .ld-auth-subtitle {
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.7;
+  color: #a6a6b3;
+}
+
+/* Etiquetas */
+.ld-auth-page .ld-auth-field label {
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* Entradas */
+.ld-auth-page .ld-auth-input-wrapper input {
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.ld-auth-page .ld-auth-input-wrapper input::placeholder {
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+/* Iconos SVG de correo y contraseña */
+.ld-auth-page .ld-auth-input-icon {
+  position: absolute;
+  left: 14px;
+  width: 19px;
+  height: 19px;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+/* Botón mostrar/ocultar contraseña */
+.ld-auth-page .ld-auth-password-toggle {
+  right: 9px;
+  width: 36px;
+  height: 36px;
+  color: #a6a6b3;
+}
+
+.ld-auth-page .ld-auth-password-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
+.ld-auth-page .ld-auth-password-toggle:hover {
+  color: #a5b4fc;
+}
+
+/* Botón principal */
+.ld-auth-page .ld-auth-submit {
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ld-auth-page .ld-auth-submit svg {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+}
+
+/* Texto inferior */
+.ld-auth-page .ld-auth-switch {
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Ajustes para móviles */
+@media (max-width: 480px) {
+  .ld-auth-page .ld-auth-content h1 {
+    font-size: 28px;
+  }
+
+  .ld-auth-page .ld-auth-subtitle {
+    font-size: 13px;
+  }
+
+  .ld-auth-page .ld-auth-input-wrapper input {
+    font-size: 16px;
+  }
+}
+/* ======================================
+   DIAGRAMA INTERACTIVO DEL LOGIN
+   ====================================== */
+
+.ld-auth-visual-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.ld-auth-canvas {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  aspect-ratio: 760 / 540;
+  margin: auto;
+  isolation: isolate;
+}
+
+.ld-auth-wire {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ld-auth-node {
+  z-index: 1;
+  width: 30%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+
+  /* Evita que la animación CSS interfiera con el arrastre */
+  animation: none;
+
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.ld-auth-node:hover {
+  border-color: #a5b4fc;
+  box-shadow: 0 18px 36px #0008;
+}
+
+.ld-auth-node:active {
+  cursor: grabbing !important;
+  border-color: #c9d1ff;
+}
+
+.ld-auth-node:focus-visible {
+  outline: 2px solid #a5b4fc;
+  outline-offset: 4px;
+}
+
+.ld-auth-node strong {
+  overflow-wrap: anywhere;
+}
+
+.ld-auth-node span {
+  overflow-wrap: anywhere;
+}
+
+/* Evitar tarjetas demasiado pequeñas en escritorio */
+@media (min-width: 1024px) and (max-width: 1250px) {
+  .ld-auth-node {
+    padding: 9px;
+  }
+
+  .ld-auth-node strong {
+    font-size: 11px;
+  }
+
+  .ld-auth-node span {
+    font-size: 9px;
+  }
+}
+/* ======================================
+   AJUSTES DEL REGISTRO
+   ====================================== */
+
+.ld-auth-register .ld-auth-content {
+  padding-top: 32px;
+  padding-bottom: 32px;
+}
+
+.ld-auth-register .ld-auth-form {
+  gap: 16px;
+}
+
+.ld-auth-register .ld-auth-subtitle {
+  margin-bottom: 26px;
+}
+
+.ld-auth-register .ld-auth-switch {
+  margin-top: 24px;
+}
+
+.ld-auth-hint {
+  margin: 2px 0 0;
+  color: #a6a6b3;
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ld-auth-hint-success {
+  color: #86efac;
+}
+
+.ld-auth-hint-error {
+  color: #ffb4ab;
+}
+
+.ld-auth-register .ld-auth-input-wrapper input[aria-invalid="true"] {
+  border-color: #ffb4ab;
+}
+
+@media (max-width: 480px) {
+  .ld-auth-register .ld-auth-panel {
+    padding: 20px;
+  }
+
+  .ld-auth-register .ld-auth-content {
+    padding: 36px 0;
+  }
+}

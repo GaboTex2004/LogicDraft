@@ -52,6 +52,7 @@ public class CollaborationController {
         return switch (type) {
             case PING, NODE_CREATED, NODE_MOVED, NODE_UPDATED, NODE_DELETED,
                     EDGE_CREATED, EDGE_UPDATED, EDGE_DELETED, DIAGRAM_SAVED -> true;
+            case DIAGRAM_BATCH_APPLIED -> true;
             case USER_JOINED, USER_LEFT -> false;
         };
     }

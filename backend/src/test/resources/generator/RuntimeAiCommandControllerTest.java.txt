@@ -1,0 +1,358 @@
+package com.logicdraft.generated.peluqueria.ai;
+
+import com.logicdraft.generated.peluqueria.dto.*;
+import com.logicdraft.generated.peluqueria.entity.Categoria;
+import com.logicdraft.generated.peluqueria.entity.Corte;
+import com.logicdraft.generated.peluqueria.error.GlobalExceptionHandler;
+import com.logicdraft.generated.peluqueria.repository.CategoriaRepository;
+import com.logicdraft.generated.peluqueria.repository.CorteRepository;
+import com.logicdraft.generated.peluqueria.service.*;
+import java.math.BigDecimal;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.net.SocketTimeoutException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.*;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.server.ResponseStatusException;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
+
+class RuntimeAiCommandControllerTest {
+    private CategoriaService categoriaService;
+    private CorteService corteService;
+    private UsuarioService usuarioService;
+    private CategoriaRepository categoriaRepository;
+    private RuntimeAiCommandController controller;
+
+    @BeforeEach
+    void setUp() {
+        categoriaService = mock(CategoriaService.class);
+        corteService = mock(CorteService.class);
+        usuarioService = mock(UsuarioService.class);
+        categoriaRepository = mock(CategoriaRepository.class);
+        controller = new RuntimeAiCommandController("http://localhost:8000", categoriaService,
+                corteService, categoriaRepository, mock(PeluqueriaService.class), usuarioService);
+    }
+
+    private Map<String, Object> interpreted(String entity, Map<String, Object> values, Map<String, Object> relations) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", "INTERPRETED");
+        result.put("operation", "CREATE");
+        result.put("entity", entity);
+        result.put("values", values);
+        result.put("relations", relations);
+        return result;
+    }
+
+    private Categoria categoria(int id, String nombre) {
+        Categoria result = new Categoria();
+        result.setId(id);
+        result.setNombre(nombre);
+        return result;
+    }
+
+    private RuntimeAiCommandController withClient(RestClient client) {
+        return new RuntimeAiCommandController("http://localhost:8000", client, categoriaService,
+                corteService, categoriaRepository, mock(PeluqueriaService.class), usuarioService);
+    }
+
+    @Test
+    void createsCategoryThroughGeneratedService() {
+        when(categoriaService.crear(any())).thenReturn(new CategoriaResponse(1, "Cabello"));
+        var result = controller.apply(interpreted("Categoria", Map.of("nombre", "Cabello"), Map.of()),
+                "Registra una categoria llamada Cabello");
+        assertEquals("EXECUTED", result.get("status"));
+        assertEquals(1, result.get("recordId"));
+        verify(categoriaService).crear(argThat(request -> request.nombre().equals("Cabello")));
+    }
+
+    @Test
+    void categoryThenCutReachGeneratedRepositories() {
+        CorteRepository corteRepository = mock(CorteRepository.class);
+        when(categoriaRepository.save(any(Categoria.class))).thenAnswer(call -> {
+            Categoria item = call.getArgument(0);
+            item.setId(1);
+            return item;
+        });
+        when(categoriaRepository.findTop2ByNombreIgnoreCase("Cabello"))
+                .thenReturn(List.of(categoria(1, "Cabello")));
+        when(categoriaRepository.findById(1)).thenReturn(Optional.of(categoria(1, "Cabello")));
+        when(corteRepository.save(any(Corte.class))).thenAnswer(call -> {
+            Corte item = call.getArgument(0);
+            item.setId(2);
+            return item;
+        });
+        var realController = new RuntimeAiCommandController("http://localhost:8000",
+                new CategoriaService(categoriaRepository),
+                new CorteService(corteRepository, categoriaRepository), categoriaRepository,
+                mock(PeluqueriaService.class), mock(UsuarioService.class));
+        var category = realController.apply(interpreted("Categoria", Map.of("nombre", "Cabello"), Map.of()),
+                "Registra una categoria llamada Cabello");
+        var cut = realController.apply(interpreted("Corte", Map.of("nombre", "Degradado", "precio", 25),
+                Map.of("categoriaId", "Cabello")), "Registra un corte Degradado de 25 en la categoria Cabello");
+        assertEquals(1, category.get("recordId"));
+        assertEquals(2, cut.get("recordId"));
+        verify(categoriaRepository).save(argThat(item -> item.getNombre().equals("Cabello")));
+        verify(corteRepository).save(argThat(item -> item.getNombre().equals("Degradado")
+                && item.getPrecio().compareTo(new BigDecimal("25")) == 0
+                && item.getCategoria().getId().equals(1)));
+    }
+
+    @Test
+    void rejectsUnknownEntity() {
+        assertEquals("NOT_UNDERSTOOD", controller.apply(interpreted("Inventada", Map.of(), Map.of()), "registra algo").get("status"));
+        verifyNoInteractions(categoriaService, corteService);
+    }
+
+    @Test
+    void rejectsUnknownAttribute() {
+        var result = controller.apply(interpreted("Categoria", Map.of("nombre", "Cabello", "sql", "DROP"), Map.of()), "registra Cabello");
+        assertEquals("NOT_UNDERSTOOD", result.get("status"));
+        verifyNoInteractions(categoriaService);
+    }
+
+    @Test
+    void rejectsWrongType() {
+        var result = controller.apply(interpreted("Corte", Map.of("nombre", "Degradado", "precio", "veinticinco", "categoriaId", 7), Map.of()),
+                "registra corte con categoriaId=7");
+        assertEquals("NOT_UNDERSTOOD", result.get("status"));
+        verifyNoInteractions(corteService);
+    }
+
+    @Test
+    void asksForRequiredField() {
+        var result = controller.apply(interpreted("Corte", Map.of("nombre", "Degradado"), Map.of()), "registra corte");
+        assertEquals("NEEDS_CLARIFICATION", result.get("status"));
+        assertEquals(List.of("precio", "categoriaId"), result.get("missingFields"));
+        assertTrue(result.get("message").toString().contains("precio"));
+        verifyNoInteractions(corteService);
+    }
+
+    @Test
+    void asksForMissingNameWithoutTreatingGeneratedIdAsMissing() {
+        var result = controller.apply(interpreted("Categoria", Map.of(), Map.of()), "registra categoria");
+        assertEquals("NEEDS_CLARIFICATION", result.get("status"));
+        assertEquals(List.of("nombre"), result.get("missingFields"));
+        assertFalse(result.get("message").toString().contains("id"));
+        verifyNoInteractions(categoriaService);
+    }
+
+    @Test
+    void normalizesOnlyUnambiguousGroupedStringPhonesAndPreservesLeadingZeroes() {
+        when(usuarioService.crear(any())).thenReturn(new UsuarioResponse(1, "Ana", "07801503", new BigDecimal("1.25")));
+        var result = controller.apply(interpreted("Usuario", Map.of(
+                "nombre", "Ana", "telefono", "078, 015, 03", "saldo", new BigDecimal("1.25")), Map.of()),
+                "Registra a Ana con telefono 078, 015, 03 y saldo 1.25");
+        assertEquals("EXECUTED", result.get("status"));
+        verify(usuarioService).crear(argThat(request -> request.telefono().equals("07801503")
+                && request.saldo().compareTo(new BigDecimal("1.25")) == 0));
+    }
+
+    @Test
+    void optionalPhoneMayBeOmittedAccordingToSchema() {
+        when(usuarioService.crear(any())).thenReturn(new UsuarioResponse(2, "Ana", null, null));
+        var result = controller.apply(interpreted("Usuario", Map.of("nombre", "Ana"), Map.of()),
+                "Registra a Ana");
+        assertEquals("EXECUTED", result.get("status"));
+        verify(usuarioService).crear(argThat(request -> request.telefono() == null));
+    }
+
+    @Test
+    void createAlwaysUsesInsertionServiceAndNeverTreatsAnExistingIdAsAnUpdate() {
+        when(usuarioService.crear(any()))
+                .thenReturn(new UsuarioResponse(10, "Ana", null, null),
+                        new UsuarioResponse(11, "Ana", null, null));
+        var command = interpreted("Usuario", Map.of("nombre", "Ana"), Map.of());
+        var first = controller.apply(command, "Registra a Ana");
+        var second = controller.apply(command, "Registra a Ana");
+        assertEquals(10, first.get("recordId"));
+        assertEquals(11, second.get("recordId"));
+        verify(usuarioService, times(2)).crear(any());
+        verify(usuarioService, never()).actualizar(any(), any());
+    }
+
+    @Test
+    void ambiguousOrInventedPhoneNeverPersists() {
+        for (var testCase : List.of(
+                Map.entry("781, extension 543", "Registra a Ana con telefono 781, extension 543"),
+                Map.entry("99999999", "Registra a Ana de 23 anos"))) {
+            var result = controller.apply(interpreted("Usuario",
+                    Map.of("nombre", "Ana", "telefono", testCase.getKey()), Map.of()), testCase.getValue());
+            assertEquals("NEEDS_CLARIFICATION", result.get("status"));
+        }
+        verifyNoInteractions(usuarioService);
+    }
+
+    @Test
+    void resolvesRealRelationByUniqueName() {
+        when(categoriaRepository.findTop2ByNombreIgnoreCase("Cabello")).thenReturn(List.of(categoria(7, "Cabello")));
+        when(corteService.crear(any())).thenReturn(new CorteResponse(3, "Degradado", new BigDecimal("25"), 7));
+        var result = controller.apply(interpreted("Corte", Map.of("nombre", "Degradado", "precio", 25),
+                Map.of("categoriaId", "Cabello")), "Registra un corte Degradado de 25 en la categoria Cabello");
+        assertEquals("EXECUTED", result.get("status"));
+        verify(corteService).crear(argThat(request -> request.categoriaId().equals(7)
+                && request.precio().compareTo(new BigDecimal("25")) == 0));
+    }
+
+    @Test
+    void asksWhenRelatedNameDoesNotExist() {
+        when(categoriaRepository.findTop2ByNombreIgnoreCase("Cabello")).thenReturn(List.of());
+        var result = controller.apply(interpreted("Corte", Map.of("nombre", "Degradado", "precio", 25),
+                Map.of("categoriaId", "Cabello")), "Registra Degradado en Cabello");
+        assertEquals("NEEDS_CLARIFICATION", result.get("status"));
+        verifyNoInteractions(corteService);
+    }
+
+    @Test
+    void asksWhenRelatedNameIsAmbiguous() {
+        when(categoriaRepository.findTop2ByNombreIgnoreCase("Cabello"))
+                .thenReturn(List.of(categoria(1, "Cabello"), categoria(2, "cabello")));
+        var result = controller.apply(interpreted("Corte", Map.of("nombre", "Degradado", "precio", 25),
+                Map.of("categoriaId", "Cabello")), "Registra Degradado en Cabello");
+        assertEquals("NEEDS_CLARIFICATION", result.get("status"));
+        verifyNoInteractions(corteService);
+    }
+
+    @Test
+    void rejectsInventedRelationId() {
+        var result = controller.apply(interpreted("Corte", Map.of("nombre", "Degradado", "precio", 25, "categoriaId", 7),
+                Map.of()), "Registra un corte Degradado de 25");
+        assertEquals("NEEDS_CLARIFICATION", result.get("status"));
+        verifyNoInteractions(corteService);
+    }
+
+    @Test
+    void acceptsExplicitRelationIdForExistingCrudToValidate() {
+        when(corteService.crear(any())).thenReturn(new CorteResponse(3, "Degradado", new BigDecimal("25"), 7));
+        var result = controller.apply(interpreted("Corte", Map.of("nombre", "Degradado", "precio", 25, "categoriaId", 7),
+                Map.of()), "Registra Degradado de 25 con categoriaId=7");
+        assertEquals("EXECUTED", result.get("status"));
+        verify(corteService).crear(argThat(request -> request.categoriaId().equals(7)));
+    }
+
+    @Test
+    void rejectsNonCreateOperation() {
+        for (String operation : List.of("UPDATE", "DELETE")) {
+            var command = interpreted("Categoria", Map.of("nombre", "Cabello"), Map.of());
+            command.put("operation", operation);
+            assertEquals("NOT_UNDERSTOOD", controller.apply(command, operation + " Cabello").get("status"));
+        }
+        verifyNoInteractions(categoriaService);
+    }
+
+    @Test
+    void rejectsMalformedAiBody() {
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.apply(null, "registra algo"));
+        assertEquals(HttpStatus.BAD_GATEWAY, error.getStatusCode());
+        verifyNoInteractions(categoriaService, corteService);
+    }
+
+    @Test
+    void callsExactFastApiEndpointAndExecutesInterpretedResponse() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://localhost:8000/api/runtime/interpret"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("Registra una categoria llamada Cabello"),
+                        org.hamcrest.Matchers.containsString("\"schema\"")
+                )))
+                .andRespond(withSuccess("""
+                        {"status":"INTERPRETED","operation":"CREATE","entity":"Categoria",
+                         "values":{"nombre":"Cabello"},"relations":{},"message":null}
+                        """, MediaType.APPLICATION_JSON));
+        when(categoriaService.crear(any())).thenReturn(new CategoriaResponse(1, "Cabello"));
+        var result = withClient(builder.build()).execute(
+                new RuntimeAiCommandController.CommandRequest("Registra una categoria llamada Cabello"));
+        assertEquals("EXECUTED", result.get("status"));
+        assertEquals(1, result.get("recordId"));
+        server.verify();
+    }
+
+    @Test
+    void keepsClarificationAndNotUnderstoodAsSuccessfulStructuredResponses() {
+        for (String status : List.of("NEEDS_CLARIFICATION", "NOT_UNDERSTOOD")) {
+            RestClient.Builder builder = RestClient.builder();
+            MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+            server.expect(requestTo("http://localhost:8000/api/runtime/interpret"))
+                    .andRespond(withSuccess("{\"status\":\"" + status
+                            + "\",\"operation\":null,\"entity\":null,\"values\":null,\"relations\":null,"
+                            + "\"message\":\"Necesito mas datos\",\"missingFields\":[\"telefono\"]}", MediaType.APPLICATION_JSON));
+            var result = withClient(builder.build()).execute(new RuntimeAiCommandController.CommandRequest("registra algo"));
+            assertEquals(status, result.get("status"));
+            assertEquals("Necesito mas datos", result.get("message"));
+            assertEquals(List.of("telefono"), result.get("missingFields"));
+            verifyNoInteractions(categoriaService, corteService);
+            server.verify();
+        }
+    }
+
+    @Test
+    void mapsAiService400And5xxToBadGatewayWithUpstreamMessage() {
+        for (HttpStatus upstream : List.of(HttpStatus.BAD_REQUEST, HttpStatus.INTERNAL_SERVER_ERROR, HttpStatus.BAD_GATEWAY)) {
+            RestClient.Builder builder = RestClient.builder();
+            MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+            server.expect(anything()).andRespond(withStatus(upstream).contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"detail\":\"Fallo controlado del AI service\"}"));
+            ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                    () -> withClient(builder.build()).execute(new RuntimeAiCommandController.CommandRequest("registra algo")));
+            assertEquals(HttpStatus.BAD_GATEWAY, error.getStatusCode());
+            assertEquals("Fallo controlado del AI service", error.getReason());
+            server.verify();
+        }
+        verifyNoInteractions(categoriaService, corteService);
+    }
+
+    @Test
+    void mapsUnavailableServiceTo503() {
+        var unavailable = new RuntimeAiCommandController("http://127.0.0.1:1", RestClient.create(), categoriaService,
+                corteService, categoriaRepository, mock(PeluqueriaService.class), mock(UsuarioService.class));
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> unavailable.execute(new RuntimeAiCommandController.CommandRequest("registra algo")));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
+        verifyNoInteractions(categoriaService, corteService);
+    }
+
+    @Test
+    void mapsTimeoutTo504() {
+        RestClient client = RestClient.builder().requestFactory((uri, method) -> {
+            throw new SocketTimeoutException("simulated timeout");
+        }).build();
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> withClient(client).execute(new RuntimeAiCommandController.CommandRequest("registra algo")));
+        assertEquals(HttpStatus.GATEWAY_TIMEOUT, error.getStatusCode());
+        verifyNoInteractions(categoriaService, corteService);
+    }
+
+    @Test
+    void mapsInvalidJsonAndIncompatibleContractTo502() {
+        for (String body : List.of("{broken", "{\"unexpected\":true}")) {
+            RestClient.Builder builder = RestClient.builder();
+            MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+            server.expect(anything()).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+            ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                    () -> withClient(builder.build()).execute(new RuntimeAiCommandController.CommandRequest("registra algo")));
+            assertEquals(HttpStatus.BAD_GATEWAY, error.getStatusCode());
+            server.verify();
+        }
+        verifyNoInteractions(categoriaService, corteService);
+    }
+
+    @Test
+    void globalHandlerPreservesRuntimeHttpStatusInsteadOfConvertingItTo500() {
+        var response = new GlobalExceptionHandler().responseStatus(
+                new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "AI service no disponible"));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertEquals("AI service no disponible", response.getBody().get("message"));
+    }
+}

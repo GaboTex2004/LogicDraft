@@ -1,5 +1,51 @@
 # LogicDraft AI Service
 
+## IA runtime de aplicaciones exportadas (CREATE V1)
+
+La IA solo admite CREATE. READ, UPDATE y DELETE por IA permanecen fuera de alcance. La voz del Flutter
+generado se transcribe localmente y reutiliza este mismo flujo textual; el ai-service nunca recibe audio.
+
+Cuando reconoce un CREATE incompleto, conserva la entidad y los valores parciales, calcula los campos
+y relaciones obligatorios ausentes y responde `NEEDS_CLARIFICATION` con `missingFields`. Las PK
+generadas se excluyen. No inventa valores ni persiste: Spring repite la validacion obligatoria y es el
+unico componente que llama a los servicios CRUD. El cliente conserva el comando para que el usuario lo
+complete y reenvie entero; no existe memoria conversacional ilimitada.
+
+Ejemplos de prueba:
+
+- Completo: `Registra un personal llamado Jose, edad 23, telefono 78159999`.
+- Incompleto: `Registra un personal llamado Jose, edad 23`.
+- Relacionado: `Registra un corte Degradado de 25 en la categoria Cabello`.
+
+Ollama y su modelo pueden funcionar localmente sin Internet despues de instalarlos. La transcripcion
+Flutter tambien es local cuando sus modelos de voz ya estan instalados.
+
+Los campos identificados explicitamente como telefono se procesan solo cuando el esquema los declara
+`STRING`. Los grupos exclusivamente numericos separados por comas se concatenan sin reordenar ni
+inventar digitos y conservan los ceros iniciales. La secuencia debe aparecer una unica vez, asociada a
+un telefono en el texto original. Ante ambiguedad, ausencia de evidencia o un telefono modelado como
+numero se devuelve `NEEDS_CLARIFICATION`. Ningun importe, decimal u otro atributo usa esta regla.
+
+El backend Spring generado puede llamar a `POST /api/runtime/interpret` con el texto del usuario y un esquema JSON derivado de `ApplicationSchema`. Esta ruta está separada de las rutas de IA del editor y del agente. Devuelve una interpretación estructurada (`INTERPRETED`, `NEEDS_CLARIFICATION` o `NOT_UNDERSTOOD`); no escribe en PostgreSQL ni ejecuta código. El backend generado valida esa respuesta y llama a su servicio CRUD para crear el registro.
+
+Para relaciones `multiple=true`, la interpretacion coloca en `relations` una lista
+de nombres mencionados por el usuario. El ai-service no inventa IDs; Spring resuelve
+cada nombre contra registros existentes, rechaza coincidencias ausentes o ambiguas
+y conserva la transaccion atomica. Solo CREATE esta habilitado.
+
+Para desarrollo local, inicia Ollama con el modelo configurado en `OLLAMA_MODEL`, ejecuta este servicio con `python -m app.main` desde `ai-service` y configura `AI_SERVICE_URL` en el backend generado si no usas `http://localhost:8000`. El ZIP fullstack no incluye ni despliega este servicio; sin él, los formularios CRUD siguen funcionando. Los comandos UPDATE/DELETE y la voz no están implementados.
+
+La ruta real es `POST http://localhost:8000/api/runtime/interpret`. Recibe exactamente:
+
+```json
+{
+  "text": "Registra una categoria llamada Cabello",
+  "schema": "{\"entities\":[...]}"
+}
+```
+
+`schema` es un JSON serializado como string y proviene del `ApplicationSchema` del backend generado. Una respuesta CREATE válida contiene `status`, `operation`, `entity`, `values`, `relations` y `message`. Para probarla sin Flutter puede usarse `/docs` o enviar ese cuerpo directamente; no debe enviarse únicamente `text` porque el ai-service no lee clases Java ni conoce el esquema exportado por otro medio.
+
 Microservicio FastAPI que aísla la integración de LogicDraft con proveedores de IA. Actualmente ofrece health check y generación genérica de texto mediante un Ollama instalado localmente. No modifica diagramas ni descarga modelos.
 
 ## Implementado
@@ -117,6 +163,11 @@ cardinalidad, el prompt interno pide `ONE_ONE/ONE_ONE`; “uno a muchos” se ex
 como `ONE_ONE/ZERO_MANY`. El contexto aún acepta `relationshipType` antiguo y lo
 convierte determinísticamente, pero una respuesta nueva del modelo que use ese
 campo es rechazada por el contrato estricto.
+
+Una N:M usa many en ambos extremos. `name` y `joinTableName` son campos opcionales
+del contrato. Para una asociacion con atributos, el prompt exige una entidad
+asociativa explicita y dos relaciones; no transforma silenciosamente la N:M ni
+inventa columnas.
 
 Para operaciones de diagrama, `DiagramAIService` entrega el mismo JSON Schema a
 Ollama mediante `format` y fija `temperature=0`. Esto limita la forma generada y

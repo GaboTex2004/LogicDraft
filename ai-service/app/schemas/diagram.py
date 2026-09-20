@@ -1,5 +1,5 @@
 from typing import Annotated, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 from app.schemas.data_types import normalize_data_type
 
 
@@ -48,6 +48,12 @@ class RelationshipDefinition(Contract):
     targetEntity: Name
     sourceCardinality: DiagramCardinality
     targetCardinality: DiagramCardinality
+    name: Name | None = None
+    joinTableName: Name | None = None
+
+    @model_serializer(mode="wrap")
+    def omit_absent_names(self, serializer):
+        return {key: value for key, value in serializer(self).items() if value is not None}
 
 
 class AddEntity(Contract):
@@ -66,14 +72,45 @@ class AddRelationship(Contract):
     relationship: RelationshipDefinition
 
 
-Operation = Annotated[AddEntity | AddAttribute | AddRelationship, Field(discriminator="type")]
+class AssociationConversionDefinition(Contract):
+    relationshipId: Name
+    sourceEntity: Name
+    targetEntity: Name
+    associationEntityName: Name
+    attributes: list[AttributeDefinition] = Field(max_length=100)
+
+    @field_validator("attributes")
+    @classmethod
+    def no_primary_keys(cls, value: list[AttributeDefinition]) -> list[AttributeDefinition]:
+        if any(attribute.primaryKey for attribute in value):
+            raise ValueError("association attributes cannot replace the generated primary key")
+        names = [attribute.name.casefold() for attribute in value]
+        if len(names) != len(set(names)):
+            raise ValueError("association attributes must have unique names")
+        return value
+
+
+class ConvertManyToManyAssociation(Contract):
+    type: Literal["CONVERT_MANY_TO_MANY_ASSOCIATION"]
+    conversion: AssociationConversionDefinition
+
+
+Operation = Annotated[AddEntity | AddAttribute | AddRelationship | ConvertManyToManyAssociation,
+                      Field(discriminator="type")]
 
 
 class InterpretResponse(Contract):
     operations: list[Operation] = Field(max_length=50)
 
 
+class ConversionInterpretResponse(Contract):
+    """Narrow provider schema used only while interpreting an explicit conversion."""
+
+    operations: list[ConvertManyToManyAssociation] = Field(max_length=1)
+
+
 class ContextRelationship(RelationshipDefinition):
+    id: Name | None = None
     @model_validator(mode='before')
     @classmethod
     def legacy_context(cls, value: object) -> object:
@@ -93,6 +130,14 @@ class ContextRelationship(RelationshipDefinition):
 class DiagramContext(Contract):
     entities: list[EntityDefinition]
     relationships: list[ContextRelationship]
+    associations: list["AssociationContext"] = Field(default_factory=list)
+
+
+class AssociationContext(Contract):
+    entityName: Name
+    tableName: Name
+    endpointEntityNames: list[Name] = Field(min_length=2, max_length=2)
+    structuralRelationshipIds: list[Name] = Field(min_length=2, max_length=2)
 
 
 InterpretRequest.model_rebuild()

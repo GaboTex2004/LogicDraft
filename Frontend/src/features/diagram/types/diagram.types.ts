@@ -21,10 +21,27 @@ export interface EntityAttribute {
   nullable?: boolean
 }
 
+export type AssociationEndpointRole = 'SOURCE' | 'TARGET'
+
+export interface AssociationEndpoint {
+  role: AssociationEndpointRole
+  entityId: string
+  relationshipId: string
+  foreignKeyName: string
+}
+
+export interface AssociativeEntityMetadata {
+  kind: 'MANY_TO_MANY_ASSOCIATION'
+  tableName: string
+  endpoints: [AssociationEndpoint, AssociationEndpoint]
+  uniquePair: true
+}
+
 export interface DiagramEntity {
   id: string
   name: string
   attributes: EntityAttribute[]
+  association?: AssociativeEntityMetadata
 }
 
 export type EntityNodeData = DiagramEntity & Record<string, unknown>
@@ -34,6 +51,8 @@ export type DiagramCardinality = (typeof DIAGRAM_CARDINALITIES)[number]
 export type RelationshipData = Record<string, unknown> & {
   sourceCardinality?: DiagramCardinality
   targetCardinality?: DiagramCardinality
+  name?: string
+  joinTableName?: string
 }
 export type DiagramEdge = Edge<RelationshipData>
 

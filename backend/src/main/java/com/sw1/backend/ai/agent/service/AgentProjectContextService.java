@@ -10,6 +10,7 @@ import com.sw1.backend.diagrama.model.Diagrama;
 import com.sw1.backend.diagrama.repository.DiagramaRepository;
 import com.sw1.backend.proyecto.repository.ProyectoRepository;
 import com.sw1.backend.workspace.service.WorkspaceAccessService;
+import com.sw1.backend.workspace.model.RolWorkspace;
 import java.util.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -35,10 +36,10 @@ public class AgentProjectContextService {
         var diagram = diagrams.findByProyectoId(projectId);
         if (diagram.isEmpty()) {
             return new AgentProjectContext(projectId, project.getNombre(), null, null, null,
-                    List.of(), List.of(), List.copyOf(request.recentEvents()));
+                    List.of(), List.of(), List.of(), List.copyOf(request.recentEvents()), project.getDescripcion());
         }
         try {
-            return fromDiagram(projectId, project.getNombre(), diagram.get(), request);
+            return fromDiagram(projectId, project.getNombre(), project.getDescripcion(), diagram.get(), request);
         } catch (AiServiceException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -47,7 +48,15 @@ public class AgentProjectContextService {
         }
     }
 
-    private AgentProjectContext fromDiagram(Long projectId, String projectName, Diagrama diagram, AgentAskRequest request) {
+    @Transactional(readOnly = true)
+    public void requireEditAccess(Long projectId) {
+        var project = projects.findById(projectId)
+                .orElseThrow(() -> new RecursoNoEncontradoException("El proyecto no existe"));
+        access.verificarRol(project.getWorkspace().getId(), RolWorkspace.OWNER, RolWorkspace.EDITOR);
+    }
+
+    private AgentProjectContext fromDiagram(Long projectId, String projectName, String projectDescription,
+                                            Diagrama diagram, AgentAskRequest request) {
         var semantic = DiagramContextMapper.fromDocument(diagram.getContenido());
         List<?> rawNodes = list(diagram.getContenido().get("nodes"));
         List<?> rawEdges = list(diagram.getContenido().get("edges"));
@@ -69,12 +78,16 @@ public class AgentProjectContextService {
             String target = text(edge.get("target"));
             var relation = semantic.relationships().get(i);
             relationships.add(new AgentRelationship(id, source, target, namesById.get(source), namesById.get(target),
-                    relation.sourceCardinality(), relation.targetCardinality()));
+                    relation.sourceCardinality(), relation.targetCardinality(), relation.name(), relation.joinTableName()));
         }
         String selectedNode = namesById.containsKey(request.selectedNodeId()) ? request.selectedNodeId() : null;
         String selectedEdge = edgeIds.contains(request.selectedEdgeId()) ? request.selectedEdgeId() : null;
+        var associations = semantic.associations().stream().map(association ->
+                new AgentProjectContext.AgentAssociation(association.entityName(), association.tableName(),
+                        association.endpointEntityNames(), association.structuralRelationshipIds())).toList();
         return new AgentProjectContext(projectId, projectName, diagram.getId(), selectedNode, selectedEdge,
-                List.copyOf(entities), List.copyOf(relationships), List.copyOf(request.recentEvents()));
+                List.copyOf(entities), List.copyOf(relationships), associations,
+                List.copyOf(request.recentEvents()), projectDescription);
     }
 
     private static Map<?, ?> map(Object value) {

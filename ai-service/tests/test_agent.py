@@ -14,7 +14,7 @@ from app.services.providers.base import ProviderConnectionError
 
 def payload():
     return {
-        "message": "¿Con qué está relacionada esta entidad?",
+        "message": "¿Cómo mejorarías esta relación?",
         "context": {
             "projectId": 10,
             "projectName": "Tienda",
@@ -44,26 +44,37 @@ def payload():
 
 class AgentTests(unittest.IsolatedAsyncioTestCase):
     async def test_endpoint_receives_context_and_returns_text(self):
-        with patch("app.services.ai_service.AIService.generate", new=AsyncMock(return_value="Producto pertenece a Categoria.")) as generate:
+        generated = 'Producto pertenece a Categoria.'
+        with patch("app.services.ai_service.AIService.generate", new=AsyncMock(return_value=generated)) as generate:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
                 response = await client.post("/api/agent/ask", json=payload())
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"answer": "Producto pertenece a Categoria."})
+        self.assertEqual(response.json(), {"answer": "Producto pertenece a Categoria.", "operations": []})
         self.assertEqual(len(generate.call_args.args), 1)
 
     async def test_prompt_contains_selection_relationships_cardinality_and_events(self):
-        model = AsyncMock(return_value="Respuesta")
+        model = AsyncMock(return_value='Respuesta contextual')
         request = AgentAskRequest.model_validate(payload())
         before = copy.deepcopy(request.model_dump(mode="json"))
         result = await AgentService(SimpleNamespace(generate=model)).ask(request)
         prompt = model.call_args.args[0]
-        self.assertEqual(result.answer, "Respuesta")
+        self.assertEqual(result.answer, "Respuesta contextual")
         self.assertIn('"selectedEntity":{"id":"producto"', prompt)
         self.assertIn('"selectedRelationship":{"id":"rel-1"', prompt)
         self.assertIn('"targetCardinality":"ZERO_MANY"', prompt)
         self.assertIn('"type":"NODE_SELECTED"', prompt)
-        self.assertIn("no produzcas operaciones ADD_*", prompt)
+        self.assertNotIn("ADD_RELATIONSHIP", prompt)
+        self.assertIn("únicamente texto conversacional", prompt)
         self.assertEqual(request.model_dump(mode="json"), before)
+
+    async def test_prompt_contains_bounded_conversation(self):
+        body = payload()
+        body["message"] = "Agrega una entidad Profesor"
+        body["conversation"] = [{"role": "user", "text": "¿Qué contiene mi diagrama?"}]
+        model = AsyncMock(return_value='{"answer":"Propuesta preparada","operations":['
+                                      '{"type":"ADD_ENTITY","entity":{"name":"Profesor","attributes":[]}}]}')
+        await AgentService(SimpleNamespace(generate=model)).ask(AgentAskRequest.model_validate(body))
+        self.assertIn('"conversation":[{"role":"user"', model.call_args.args[0])
 
     async def test_provider_error_is_controlled(self):
         with patch("app.services.ai_service.AIService.generate", new=AsyncMock(side_effect=ProviderConnectionError("private"))):
@@ -76,7 +87,8 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         body = payload()
         body["context"].update({"diagramId": None, "selectedNodeId": None, "selectedEdgeId": None,
                                 "entities": [], "relationships": []})
-        with patch("app.services.ai_service.AIService.generate", new=AsyncMock(return_value="Aún no hay diagrama.")):
+        generated = 'Aun no hay diagrama.'
+        with patch("app.services.ai_service.AIService.generate", new=AsyncMock(return_value=generated)):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
                 response = await client.post("/api/agent/ask", json=body)
         self.assertEqual(response.status_code, 200)
@@ -93,6 +105,30 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
                     response = await client.post("/api/agent/ask", json=body)
             self.assertEqual(response.status_code, 422)
             generate.assert_not_called()
+
+    async def test_agent_returns_an_actionable_many_to_many_operation(self):
+        body = payload()
+        body["context"]["entities"] = [
+            {"id": "student", "name": "Alumno", "attributes": []},
+            {"id": "subject", "name": "Materia", "attributes": []},
+        ]
+        body["context"]["relationships"] = []
+        body["message"] = "Relaciona Alumno y Materia de muchos a muchos"
+        generated = json.dumps({"answer": "Relacion N:M propuesta.", "operations": [{
+            "type": "ADD_RELATIONSHIP", "relationship": {
+                "sourceEntity": "Alumno", "targetEntity": "Materia",
+                "sourceCardinality": "ZERO_MANY", "targetCardinality": "ZERO_MANY",
+                "name": "materias", "joinTableName": "alumno_materia",
+            },
+        }]})
+        with patch("app.services.ai_service.AIService.generate", new=AsyncMock(return_value=generated)):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.post("/api/agent/ask", json=body)
+        self.assertEqual(response.status_code, 200)
+        relation = response.json()["operations"][0]["relationship"]
+        self.assertEqual(relation["sourceCardinality"], "ZERO_MANY")
+        self.assertEqual(relation["targetCardinality"], "ZERO_MANY")
+        self.assertEqual(relation["joinTableName"], "alumno_materia")
 
 
 if __name__ == "__main__":

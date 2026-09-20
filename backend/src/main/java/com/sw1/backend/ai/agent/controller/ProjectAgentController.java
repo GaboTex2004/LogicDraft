@@ -18,4 +18,10 @@ public class ProjectAgentController {
     public AgentAskResponse ask(@PathVariable Long projectId, @Valid @RequestBody AgentAskRequest request) {
         return service.ask(projectId, request);
     }
+
+    @PostMapping("/authorize-edit")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    public void authorizeEdit(@PathVariable Long projectId) {
+        service.authorizeEdit(projectId);
+    }
 }

@@ -8,15 +8,26 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 import java.util.Optional;
 
-public interface MiembroTenantRepository extends JpaRepository<MiembroTenant, Long> {
+public interface MiembroTenantRepository
+        extends JpaRepository<MiembroTenant, Long> {
 
     Optional<MiembroTenant> findByUsuarioIdAndTenantId(
             Long usuarioId,
-            Long tenantId);
+            Long tenantId
+    );
 
-    boolean existsByUsuarioAndTenant(Usuario usuario, Tenant tenant);
+    boolean existsByUsuarioAndTenant(
+            Usuario usuario,
+            Tenant tenant
+    );
 
     List<MiembroTenant> findByTenant(Tenant tenant);
 
-    Optional<MiembroTenant> findByUsuarioAndTenant(Usuario usuario, Tenant tenant);
+    Optional<MiembroTenant> findByUsuarioAndTenant(
+            Usuario usuario,
+            Tenant tenant
+    );
+
+    // Permite consultar todos los tenants del usuario autenticado.
+    List<MiembroTenant> findByUsuarioId(Long usuarioId);
 }

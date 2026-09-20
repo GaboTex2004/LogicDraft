@@ -33,7 +33,9 @@
   flex-direction: column;
   background: var(--surface-2);
   border-right: 1px solid var(--border);
-  transition: width 180ms ease, transform 0.2s;
+  transition:
+    width 180ms ease,
+    transform 0.2s;
 }
 .dashboard-brand {
   height: 66px;
@@ -64,10 +66,15 @@
   border: 1px solid var(--border);
   color: var(--muted);
   background: transparent;
-  font: 22px/1 Consolas, monospace;
+  font:
+    22px/1 Consolas,
+    monospace;
   cursor: pointer;
 }
-.sidebar-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.sidebar-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .sidebar-navigation {
   flex: 1;
   overflow: auto;
@@ -169,21 +176,62 @@
   width: calc(100% - 260px);
   min-height: 100vh;
   margin-left: 260px;
-  transition: width 180ms ease, margin-left 180ms ease;
+  transition:
+    width 180ms ease,
+    margin-left 180ms ease;
 }
-.dashboard-sidebar.is-collapsed { width: 68px; }
+.dashboard-sidebar.is-collapsed {
+  width: 68px;
+}
 .dashboard-sidebar.is-collapsed .sidebar-text,
 .dashboard-sidebar.is-collapsed .sidebar-caption,
-.dashboard-sidebar.is-collapsed .sidebar-link small { display: none; }
-.dashboard-sidebar.is-collapsed .dashboard-brand { padding: 0; justify-content: center; }
-.dashboard-sidebar.is-collapsed .dashboard-brand svg { width: 27px; height: 27px; }
-.dashboard-sidebar.is-collapsed .sidebar-toggle { position: absolute; right: -13px; bottom: -14px; width: 26px; height: 26px; background: var(--surface-2); font-size: 20px; }
-.dashboard-sidebar.is-collapsed .sidebar-navigation { padding: 24px 10px 18px; }
-.dashboard-sidebar.is-collapsed .sidebar-link { justify-content: center; gap: 0; padding: 11px 8px; }
-.dashboard-sidebar.is-collapsed .sidebar-link:disabled::after { content: ''; position: absolute; width: 4px; height: 4px; margin: 20px 0 0 20px; background: var(--muted); }
-.dashboard-sidebar.is-collapsed .sidebar-footer { padding: 12px 10px; }
-.dashboard-sidebar.is-collapsed .user-card { padding: 6px; justify-content: center; }
-.sidebar-collapsed .dashboard-panel { width: calc(100% - 68px); margin-left: 68px; }
+.dashboard-sidebar.is-collapsed .sidebar-link small {
+  display: none;
+}
+.dashboard-sidebar.is-collapsed .dashboard-brand {
+  padding: 0;
+  justify-content: center;
+}
+.dashboard-sidebar.is-collapsed .dashboard-brand svg {
+  width: 27px;
+  height: 27px;
+}
+.dashboard-sidebar.is-collapsed .sidebar-toggle {
+  position: absolute;
+  right: -13px;
+  bottom: -14px;
+  width: 26px;
+  height: 26px;
+  background: var(--surface-2);
+  font-size: 20px;
+}
+.dashboard-sidebar.is-collapsed .sidebar-navigation {
+  padding: 24px 10px 18px;
+}
+.dashboard-sidebar.is-collapsed .sidebar-link {
+  justify-content: center;
+  gap: 0;
+  padding: 11px 8px;
+}
+.dashboard-sidebar.is-collapsed .sidebar-link:disabled::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  margin: 20px 0 0 20px;
+  background: var(--muted);
+}
+.dashboard-sidebar.is-collapsed .sidebar-footer {
+  padding: 12px 10px;
+}
+.dashboard-sidebar.is-collapsed .user-card {
+  padding: 6px;
+  justify-content: center;
+}
+.sidebar-collapsed .dashboard-panel {
+  width: calc(100% - 68px);
+  margin-left: 68px;
+}
 .dashboard-header {
   height: 49px;
   position: sticky;
@@ -576,17 +624,43 @@
   .dashboard-sidebar.is-open {
     transform: translateX(0);
   }
-  .dashboard-sidebar.is-collapsed { width: 260px; }
-  .dashboard-sidebar.is-collapsed .sidebar-text { display: flex; }
-  .dashboard-sidebar.is-collapsed .dashboard-brand { padding: 0 24px; justify-content: flex-start; }
-  .dashboard-sidebar.is-collapsed .sidebar-caption { display: block; }
-  .dashboard-sidebar.is-collapsed .sidebar-navigation { padding: 18px 16px; }
-  .dashboard-sidebar.is-collapsed .sidebar-link { justify-content: flex-start; gap: 14px; padding: 10px 9px; }
-  .dashboard-sidebar.is-collapsed .sidebar-link small { display: block; }
-  .dashboard-sidebar.is-collapsed .sidebar-link:disabled::after { display: none; }
-  .dashboard-sidebar.is-collapsed .sidebar-footer { padding: 16px; }
-  .dashboard-sidebar.is-collapsed .user-card { padding: 10px; justify-content: flex-start; }
-  .sidebar-toggle { display: none; }
+  .dashboard-sidebar.is-collapsed {
+    width: 260px;
+  }
+  .dashboard-sidebar.is-collapsed .sidebar-text {
+    display: flex;
+  }
+  .dashboard-sidebar.is-collapsed .dashboard-brand {
+    padding: 0 24px;
+    justify-content: flex-start;
+  }
+  .dashboard-sidebar.is-collapsed .sidebar-caption {
+    display: block;
+  }
+  .dashboard-sidebar.is-collapsed .sidebar-navigation {
+    padding: 18px 16px;
+  }
+  .dashboard-sidebar.is-collapsed .sidebar-link {
+    justify-content: flex-start;
+    gap: 14px;
+    padding: 10px 9px;
+  }
+  .dashboard-sidebar.is-collapsed .sidebar-link small {
+    display: block;
+  }
+  .dashboard-sidebar.is-collapsed .sidebar-link:disabled::after {
+    display: none;
+  }
+  .dashboard-sidebar.is-collapsed .sidebar-footer {
+    padding: 16px;
+  }
+  .dashboard-sidebar.is-collapsed .user-card {
+    padding: 10px;
+    justify-content: flex-start;
+  }
+  .sidebar-toggle {
+    display: none;
+  }
   .dashboard-overlay {
     position: fixed;
     inset: 0;
@@ -601,7 +675,10 @@
     width: 100%;
     margin: 0;
   }
-  .sidebar-collapsed .dashboard-panel { width: 100%; margin: 0; }
+  .sidebar-collapsed .dashboard-panel {
+    width: 100%;
+    margin: 0;
+  }
   .mobile-menu {
     display: grid;
   }
@@ -658,4 +735,770 @@
 }
 .workspace-card footer a:hover {
   text-decoration: underline;
+}
+/* ==========================================
+   DASHBOARD: DISEÑO DE INICIO
+   ========================================== */
+
+/* Área principal */
+.dashboard-shell .dashboard-main {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 42px clamp(20px, 3.5vw, 56px) 80px;
+}
+
+/* Bienvenida */
+.dashboard-shell .welcome {
+  position: relative;
+  margin-bottom: 42px;
+  padding-bottom: 30px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-shell .welcome .eyebrow {
+  display: block;
+  margin: 0 0 14px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+.dashboard-shell .welcome h1 {
+  margin: 0 0 12px;
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: clamp(29px, 3.5vw, 42px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+}
+
+.dashboard-shell .welcome p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* Secciones */
+.dashboard-shell .content-section {
+  margin-bottom: 46px;
+  min-width: 0;
+}
+
+.dashboard-shell .section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.dashboard-shell .section-heading h2 {
+  margin: 0;
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: clamp(18px, 2vw, 23px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.dashboard-shell .section-heading span {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Cuadrícula adaptable al espacio disponible */
+.dashboard-shell .workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: 16px;
+}
+
+/* Tarjetas de proyectos y workspaces */
+.dashboard-shell .workspace-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  min-height: 190px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    transform 180ms ease;
+}
+
+.dashboard-shell .workspace-card:hover {
+  border-color: #8998db;
+  background: var(--surface-2);
+  transform: translateY(-2px);
+}
+
+.dashboard-shell .workspace-card > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dashboard-shell .workspace-card h3 {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-shell .role-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid #505474;
+  background: rgba(165, 180, 252, 0.08);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-shell .workspace-card p {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 22px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-shell .workspace-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.dashboard-shell .workspace-card footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.dashboard-shell .workspace-card footer a:hover {
+  color: #e0e5ff;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.dashboard-shell .workspace-card footer a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* Estados vacíos */
+.dashboard-shell .empty-state {
+  min-height: 180px;
+  padding: 32px 24px;
+  border: 1px dashed var(--border);
+  background: rgba(32, 31, 34, 0.45);
+}
+
+.dashboard-shell .empty-state > svg {
+  width: 32px;
+  height: 32px;
+  color: var(--accent);
+}
+
+.dashboard-shell .empty-state h3 {
+  margin: 14px 0 8px;
+  font-size: 16px;
+}
+
+.dashboard-shell .empty-state p {
+  max-width: 420px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* Sidebar: claridad en la navegación */
+.dashboard-shell .sidebar-link {
+  min-width: 0;
+  border-radius: 0;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.dashboard-shell .sidebar-link:hover {
+  color: var(--text);
+  background: rgba(165, 180, 252, 0.08);
+}
+
+.dashboard-shell .sidebar-link.is-active {
+  color: var(--accent);
+  background: rgba(165, 180, 252, 0.12);
+}
+
+.dashboard-shell .sidebar-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.dashboard-shell .sidebar-link .sidebar-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Responsive */
+@media (max-width: 760px) {
+  .dashboard-shell .dashboard-main {
+    padding: 28px 18px 60px;
+  }
+
+  .dashboard-shell .welcome {
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+  }
+
+  .dashboard-shell .workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-shell .workspace-card {
+    min-height: 170px;
+    padding: 18px;
+  }
+
+  .dashboard-shell .content-section {
+    margin-bottom: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-shell .workspace-card,
+  .dashboard-shell .sidebar-link {
+    transition: none;
+  }
+
+  .dashboard-shell .workspace-card:hover {
+    transform: none;
+  }
+}
+/* ==========================================
+   LOGICDRAFT · DASHBOARD FINAL
+   Estadísticas, workspaces y proyectos
+   ========================================== */
+
+/* Distribución general */
+.dashboard-shell .dashboard-main {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 36px clamp(20px, 3vw, 48px) 72px;
+}
+
+/* Bienvenida */
+.dashboard-shell .welcome {
+  margin-bottom: 28px;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.dashboard-shell .welcome h1 {
+  font-size: clamp(30px, 3.5vw, 44px);
+}
+
+/* ==========================================
+   ESTADÍSTICAS
+   ========================================== */
+
+.dashboard-shell .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 40px;
+}
+
+.dashboard-shell .stats-card {
+  min-width: 0;
+  min-height: 142px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.dashboard-shell .stats-card:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.dashboard-shell .stats-card > span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dashboard-shell .stats-card > div {
+  margin-top: 26px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.dashboard-shell .stats-card strong {
+  color: var(--text);
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: clamp(28px, 3vw, 38px);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.dashboard-shell .stats-card svg {
+  width: 25px;
+  height: 25px;
+  color: #777b91;
+}
+
+.dashboard-shell .stats-card small {
+  font-size: 10px;
+}
+
+/* ==========================================
+   SECCIONES
+   ========================================== */
+
+.dashboard-shell .content-section {
+  margin-bottom: 38px;
+}
+
+.dashboard-shell .section-heading {
+  margin-bottom: 18px;
+}
+
+.dashboard-shell .section-heading h2 {
+  font-size: 22px;
+}
+
+.dashboard-shell .section-heading span {
+  font-size: 10px;
+}
+
+/* ==========================================
+   WORKSPACES
+   ========================================== */
+
+.dashboard-shell .dashboard-workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+/* Tarjeta existente */
+.dashboard-shell .dashboard-workspace-grid .workspace-card {
+  min-height: 178px;
+  padding: 22px;
+}
+
+.dashboard-shell .dashboard-workspace-grid .workspace-card h3 {
+  font-size: 16px;
+}
+
+.dashboard-shell .dashboard-workspace-grid .workspace-card p {
+  margin: 18px 0;
+}
+
+/* Tarjeta para crear un workspace */
+.dashboard-shell .dashboard-create-workspace {
+  width: 100%;
+  min-height: 178px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+
+  border: 1px dashed #686a79;
+  border-radius: 0;
+
+  background: rgba(32, 31, 34, 0.25);
+  color: var(--muted);
+
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.dashboard-shell .dashboard-create-workspace:hover {
+  border-color: var(--accent);
+  background: rgba(165, 180, 252, 0.06);
+  color: var(--accent);
+}
+
+.dashboard-shell .dashboard-create-workspace:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.dashboard-shell .dashboard-create-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+
+  color: var(--accent);
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 36px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.dashboard-shell .dashboard-create-workspace strong {
+  color: var(--text);
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dashboard-shell .dashboard-create-workspace small {
+  max-width: 260px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.dashboard-shell .dashboard-workspace-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* ==========================================
+   FORMULARIO DE CREACIÓN
+   ========================================== */
+
+.dashboard-shell .dashboard-create-panel {
+  margin-top: 16px;
+  padding: 24px;
+  border: 1px solid var(--accent);
+  background: var(--surface);
+}
+
+.dashboard-shell .create-workspace-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+
+.dashboard-shell .create-workspace-form h3 {
+  margin: 0;
+  color: var(--text);
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 20px;
+}
+
+.dashboard-shell .create-workspace-form > p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.dashboard-shell .create-workspace-form label {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dashboard-shell .create-workspace-form input {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  outline: none;
+
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.dashboard-shell .create-workspace-form input:focus {
+  border-color: var(--accent);
+}
+
+.dashboard-shell .create-workspace-form input::placeholder {
+  color: var(--muted);
+}
+
+.dashboard-shell .create-workspace-form .create-workspace-error {
+  color: #ffb4ab;
+  font-size: 12px;
+}
+
+.dashboard-shell .create-workspace-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.dashboard-shell .create-workspace-actions button {
+  min-height: 40px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dashboard-shell .create-workspace-actions button[type="submit"] {
+  border-color: var(--accent);
+  background: #a5b4fc;
+  color: #1a2b6a;
+}
+
+.dashboard-shell .create-workspace-actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.dashboard-shell .create-workspace-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   TABLA DE PROYECTOS RECIENTES
+   ========================================== */
+
+.dashboard-shell .dashboard-project-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.dashboard-shell .dashboard-project-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+}
+
+.dashboard-shell .dashboard-project-table thead {
+  background: var(--surface-2);
+}
+
+.dashboard-shell .dashboard-project-table th {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dashboard-shell .dashboard-project-table td {
+  padding: 18px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.dashboard-shell .dashboard-project-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.dashboard-shell .dashboard-project-table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.dashboard-shell .dashboard-project-name {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 180px;
+}
+
+.dashboard-shell .dashboard-project-name > svg {
+  width: 21px;
+  height: 21px;
+  color: var(--accent);
+}
+
+.dashboard-shell .dashboard-project-name > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.dashboard-shell .dashboard-project-name strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-shell .dashboard-project-name small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-shell .dashboard-project-table td:last-child {
+  text-align: right;
+}
+
+.dashboard-shell .dashboard-project-table td:last-child a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.dashboard-shell .dashboard-project-table td:last-child a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.dashboard-shell .dashboard-project-table td:last-child a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.dashboard-shell .dashboard-project-table td:last-child svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Avisos de datos */
+.dashboard-shell .dashboard-data-warning {
+  margin: -16px 0 28px;
+  padding: 12px 16px;
+  border: 1px solid #936454;
+  background: rgba(147, 100, 84, 0.1);
+  color: #ffb4ab;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ==========================================
+   RESPONSIVE
+   ========================================== */
+
+@media (max-width: 1100px) {
+  .dashboard-shell .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboard-shell .dashboard-main {
+    padding: 28px 18px 60px;
+  }
+
+  .dashboard-shell .stats-grid {
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+
+  .dashboard-shell .stats-card {
+    min-height: 120px;
+    padding: 15px;
+  }
+
+  .dashboard-shell .stats-card > div {
+    margin-top: 22px;
+  }
+
+  .dashboard-shell .dashboard-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-shell .dashboard-create-panel {
+    padding: 18px;
+  }
+
+  .dashboard-shell .dashboard-project-table {
+    min-width: 560px;
+  }
+}
+
+@media (max-width: 400px) {
+  .dashboard-shell .stats-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-shell .stats-card {
+    min-height: 110px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-shell .stats-card,
+  .dashboard-shell .dashboard-create-workspace {
+    transition: none;
+  }
 }

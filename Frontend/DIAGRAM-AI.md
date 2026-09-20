@@ -37,11 +37,30 @@ nullable se conserva como propiedad opcional del atributo; en documentos antiguo
 su valor efectivo es !primaryKey. El panel manual existente no incorpora un nuevo
 control de nulabilidad en esta etapa.
 
-Las conexiones guardan data.relationshipType con ONE_TO_ONE, ONE_TO_MANY,
-MANY_TO_ONE o MANY_TO_MANY. Mantienen la flecha existente: no se ha implementado
-un renderer de notacion avanzada de cardinalidades. Edges antiguos sin data son
-compatibles y su cardinalidad se considera desconocida, no una relacion identica
-a una cardinalidad concreta. La direccion source/target importa.
+Las conexiones actuales guardan `sourceCardinality` y `targetCardinality` usando
+`ZERO_ONE`, `ONE_ONE`, `ZERO_MANY` o `ONE_MANY`. El renderer muestra `0..1`, `1..1`,
+`0..N` o `1..N` en cada extremo. Documentos legacy con `relationshipType` se
+normalizan al abrirse. Una N:M tiene un extremo many en ambos lados y no depende
+de la posicion visual ni de la direccion del trazo.
+
+El panel de propiedades permite editar los campos opcionales `name` y, para N:M,
+`joinTableName`. Esos valores sobreviven guardado, colaboracion y reapertura. Dos
+relaciones equivalentes sin nombre son duplicadas; dos relaciones entre las mismas
+entidades solo son distintas si tienen nombres distintos. Las autorrelaciones se
+rechazan en Generator V1.
+
+## N:M manual, IA y agente
+
+Manualmente conecta dos entidades y selecciona `0..N` o `1..N` en ambos extremos.
+La tabla intermedia no se inserta como nodo: se deriva durante la exportacion. Si
+necesita atributos, crea una entidad asociativa explicita y dos relaciones.
+
+La barra IA acepta, por ejemplo, `Crea Alumno y Materia y relacionalas de muchos a
+muchos`. El agente contextual tambien puede devolver operaciones `ADD_ENTITY`,
+`ADD_ATTRIBUTE` y `ADD_RELATIONSHIP`; Spring valida el lote contra el diagrama
+persistido y el editor lo aplica con el mismo mecanismo transaccional, autosave y
+eventos de colaboracion que la barra IA. Una respuesta textual sin operaciones no
+modifica el canvas.
 
 Las entidades nuevas se colocan en una columna libre debajo de los nodos
 existentes, reservando altura segun sus atributos. Ajustar vista se ejecuta
@@ -52,7 +71,7 @@ despues de crear entidades para hacerlas visibles.
 Al completar el lote, se actualiza React Flow y se llama una vez a markDirty.
 El debounce existente guarda por HTTP PUT; no hay una segunda persistencia de IA.
 Se emiten NODE_CREATED, NODE_UPDATED y EDGE_CREATED por publishEvent existente.
-Los receptores conservan nullable y data.relationshipType y no reemiten eventos.
+Los receptores conservan nullable, ambas cardinalidades y nombres de relacion, y no reemiten eventos.
 Si se pierde WebSocket, se mantienen las limitaciones del modo last-write-wins
 existente; esta etapa no agrega una cola de mensajes ni sincronizacion offline.
 
@@ -89,11 +108,12 @@ npm run build
 6. Pedir "Crea una entidad Pedido con id y total"; comprobar la nueva entidad
    y que Ajustar vista la muestra sin superponerla sobre otros nodos.
 7. Pedir "Relaciona Personal con Pedido uno a muchos"; comprobar la conexion.
-   En la respuesta y en el documento guardado, comprobar relationshipType.
-8. Abrir el mismo proyecto con un segundo usuario EDITOR en otro navegador:
+   En la respuesta y en el documento guardado, comprobar ambas cardinalidades.
+8. Pedir una N:M entre Alumno y Materia, guardar, recargar y editar su nombre.
+9. Abrir el mismo proyecto con un segundo usuario EDITOR en otro navegador:
    repetir los pasos y comprobar la aparicion por eventos normales de WebSocket.
-9. Esperar Guardado, recargar ambas sesiones y comprobar nodos, atributos y edges.
-10. Probar una entidad inexistente, una entidad duplicada y un atributo de tipo
+10. Esperar Guardado, recargar ambas sesiones y comprobar nodos, atributos y edges.
+11. Probar una entidad inexistente, una entidad duplicada y un atributo de tipo
     incompatible: debe aparecer error o no-op segun la propuesta validada, nunca
     una aplicacion parcial. Probar VIEWER: Spring debe devolver 403.
 

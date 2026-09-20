@@ -9,6 +9,7 @@ export type CollaborationEventType =
   | 'EDGE_CREATED'
   | 'EDGE_UPDATED'
   | 'EDGE_DELETED'
+  | 'DIAGRAM_BATCH_APPLIED'
   | 'DIAGRAM_SAVED'
 
 export type DiagramCollaborationEventType = Exclude<

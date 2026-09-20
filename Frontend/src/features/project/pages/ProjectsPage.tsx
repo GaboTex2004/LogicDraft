@@ -1,125 +1,370 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { isUnauthorizedError } from '../../../shared/api/apiError'
-import { crearProyecto, eliminarProyecto, obtenerProyectos } from '../api/projectApi'
-import { ProjectList } from '../components/ProjectList'
-import type { Proyecto } from '../types/project.types'
-import '../project.css'
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { isUnauthorizedError } from "../../../shared/api/apiError";
+import {
+  crearProyecto,
+  eliminarProyecto,
+  obtenerProyectos,
+} from "../api/projectApi";
+import { ProjectList } from "../components/ProjectList";
+import type { Proyecto } from "../types/project.types";
+import "../project.css";
+
+import {
+  confirmarImportacionEnterpriseArchitect,
+  obtenerVistaPreviaEnterpriseArchitect,
+  type EnterpriseArchitectImportPreview,
+} from "../../diagram/api/enterpriseArchitectImportApi";
 
 function parseId(value: string | undefined): number | null {
-  if (!value) return null
-  const id = Number(value)
-  return Number.isSafeInteger(id) && id > 0 ? id : null
+  if (!value) return null;
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 export function ProjectsPage() {
-  const { workspaceId: workspaceIdParam } = useParams()
-  const workspaceId = parseId(workspaceIdParam)
-  const navigate = useNavigate()
-  const [projects, setProjects] = useState<Proyecto[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [showForm, setShowForm] = useState(false)
-  const [nombre, setNombre] = useState('')
-  const [descripcion, setDescripcion] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [deletingProjectId, setDeletingProjectId] = useState<number | null>(null)
-
+  const { workspaceId: workspaceIdParam } = useParams();
+  const workspaceId = parseId(workspaceIdParam);
+  const navigate = useNavigate();
+  const [projects, setProjects] = useState<Proyecto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [nombre, setNombre] = useState("");
+  const [descripcion, setDescripcion] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deletingProjectId, setDeletingProjectId] = useState<number | null>(
+    null,
+  );
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] =
+    useState<EnterpriseArchitectImportPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
   useEffect(() => {
-    let active = true
+    let active = true;
 
     async function loadProjects() {
       if (workspaceId === null) {
-        setError('El workspace indicado no es válido.')
-        setLoading(false)
-        return
+        setError("El workspace indicado no es válido.");
+        setLoading(false);
+        return;
       }
       try {
-        const data = await obtenerProyectos(workspaceId)
-        if (active) setProjects(data)
+        const data = await obtenerProyectos(workspaceId);
+        if (active) setProjects(data);
       } catch (requestError: unknown) {
         if (isUnauthorizedError(requestError)) {
-          localStorage.removeItem('token')
-          navigate('/login', { replace: true })
+          localStorage.removeItem("token");
+          navigate("/login", { replace: true });
         } else if (active) {
-          setError('No se pudieron cargar los proyectos del workspace.')
+          setError("No se pudieron cargar los proyectos del workspace.");
         }
       } finally {
-        if (active) setLoading(false)
+        if (active) setLoading(false);
       }
     }
 
-    void loadProjects()
-    return () => { active = false }
-  }, [navigate, workspaceId])
+    void loadProjects();
+    return () => {
+      active = false;
+    };
+  }, [navigate, workspaceId]);
 
   function redirectIfUnauthorized(requestError: unknown): boolean {
-    if (!isUnauthorizedError(requestError)) return false
-    localStorage.removeItem('token')
-    navigate('/login', { replace: true })
-    return true
+    if (!isUnauthorizedError(requestError)) return false;
+    localStorage.removeItem("token");
+    navigate("/login", { replace: true });
+    return true;
   }
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (workspaceId === null || !nombre.trim()) return
-    setSaving(true)
-    setError('')
+    event.preventDefault();
+    if (workspaceId === null || !nombre.trim()) return;
+    setSaving(true);
+    setError("");
     try {
-      const created = await crearProyecto({ nombre: nombre.trim(), descripcion: descripcion.trim() || null, workspaceId })
-      setProjects((current) => [created, ...current])
-      setNombre('')
-      setDescripcion('')
-      setShowForm(false)
+      const created = await crearProyecto({
+        nombre: nombre.trim(),
+        descripcion: descripcion.trim() || null,
+        workspaceId,
+      });
+      setProjects((current) => [created, ...current]);
+      setNombre("");
+      setDescripcion("");
+      setShowForm(false);
     } catch (requestError: unknown) {
-      if (!redirectIfUnauthorized(requestError)) setError('No se pudo crear el proyecto. Revisa los datos e inténtalo nuevamente.')
+      if (!redirectIfUnauthorized(requestError))
+        setError(
+          "No se pudo crear el proyecto. Revisa los datos e inténtalo nuevamente.",
+        );
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
   }
 
   async function handleDelete(project: Proyecto) {
-    if (!window.confirm(`¿Eliminar el proyecto "${project.nombre}"? Esta acción no se puede deshacer.`)) return
-    setDeletingProjectId(project.id)
-    setError('')
+    if (
+      !window.confirm(
+        `¿Eliminar el proyecto "${project.nombre}"? Esta acción no se puede deshacer.`,
+      )
+    )
+      return;
+    setDeletingProjectId(project.id);
+    setError("");
     try {
-      await eliminarProyecto(project.id)
-      setProjects((current) => current.filter((item) => item.id !== project.id))
+      await eliminarProyecto(project.id);
+      setProjects((current) =>
+        current.filter((item) => item.id !== project.id),
+      );
     } catch (requestError: unknown) {
-      if (!redirectIfUnauthorized(requestError)) setError('No se pudo eliminar el proyecto.')
+      if (!redirectIfUnauthorized(requestError))
+        setError("No se pudo eliminar el proyecto.");
     } finally {
-      setDeletingProjectId(null)
+      setDeletingProjectId(null);
+    }
+  }
+  async function handleImportFile(file: File | null) {
+    setImportFile(null);
+    setImportPreview(null);
+    setImportError("");
+
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".xmi")) {
+      setImportError("Selecciona un archivo con extensión .xmi.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setImportError("El archivo no puede superar los 5 MB.");
+      return;
+    }
+
+    setPreviewLoading(true);
+
+    try {
+      const preview = await obtenerVistaPreviaEnterpriseArchitect(file);
+      setImportFile(file);
+      setImportPreview(preview);
+    } catch (requestError: unknown) {
+      if (!redirectIfUnauthorized(requestError)) {
+        setImportError("No se pudo interpretar el archivo XMI.");
+      }
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
+  async function handleConfirmImport() {
+    if (
+      workspaceId === null ||
+      !importFile ||
+      !importPreview ||
+      importPreview.warnings.length > 0 ||
+      importing
+    ) {
+      return;
+    }
+
+    setImporting(true);
+    setImportError("");
+
+    try {
+      const created = await confirmarImportacionEnterpriseArchitect(
+        workspaceId,
+        importFile,
+      );
+
+      navigate(`/proyectos/${created.id}/editor`);
+    } catch (requestError: unknown) {
+      if (!redirectIfUnauthorized(requestError)) {
+        setImportError("No se pudo completar la importación.");
+      }
+    } finally {
+      setImporting(false);
+    }
+  }
   return (
     <main className="projects-page">
       <header className="projects-header">
         <div>
-          <Link className="projects-back" to="/dashboard">← Volver al dashboard</Link>
+          <Link className="projects-back" to="/dashboard">
+            ← Volver al dashboard
+          </Link>
           <span className="projects-eyebrow">Workspace {workspaceIdParam}</span>
           <h1>Proyectos</h1>
           <p>Selecciona un proyecto o crea uno nuevo para comenzar.</p>
         </div>
-        <button className="project-button primary new-project-button" type="button" disabled={workspaceId === null} onClick={() => setShowForm((current) => !current)}>
-          {showForm ? 'Cancelar' : 'Nuevo proyecto'}
+        <button
+          className="project-button primary new-project-button"
+          type="button"
+          disabled={workspaceId === null}
+          onClick={() => setShowForm((current) => !current)}
+        >
+          {showForm ? "Cancelar" : "Nuevo proyecto"}
+        </button>
+        <button
+          className="project-button"
+          type="button"
+          disabled={workspaceId === null || importing}
+          onClick={() => {
+            setShowImport((current) => !current);
+            setShowForm(false);
+            setImportFile(null);
+            setImportPreview(null);
+            setImportError("");
+          }}
+        >
+          {showImport
+            ? "Cancelar importación"
+            : "Importar desde Enterprise Architect"}
         </button>
       </header>
+      {showImport && workspaceId !== null && (
+        <section
+          className="project-form-panel"
+          aria-labelledby="import-project-title"
+        >
+          <h2 id="import-project-title">Importar desde Enterprise Architect</h2>
 
-      {showForm && workspaceId !== null && <section className="project-form-panel" aria-labelledby="new-project-title">
-        <h2 id="new-project-title">Nuevo proyecto</h2>
-        <form onSubmit={handleCreate}>
-          <label htmlFor="project-name">Nombre</label>
-          <input id="project-name" maxLength={100} required value={nombre} onChange={(event) => setNombre(event.target.value)} />
-          <label htmlFor="project-description">Descripción</label>
-          <textarea id="project-description" maxLength={500} rows={4} value={descripcion} onChange={(event) => setDescripcion(event.target.value)} />
-          <button className="project-button primary" type="submit" disabled={saving}>{saving ? 'Creando...' : 'Crear proyecto'}</button>
-        </form>
-      </section>}
+          <p>
+            Selecciona un archivo XMI 2.1 para crear un proyecto nuevo en
+            LogicDraft.
+          </p>
 
-      {error && <p className="projects-error" role="alert">{error}</p>}
-      {loading ? <div className="projects-loading">Cargando proyectos...</div> : <ProjectList projects={projects} deletingProjectId={deletingProjectId} onOpen={(projectId) => navigate(`/proyectos/${projectId}/editor`)} onDelete={(project) => void handleDelete(project)} />}
+          <label htmlFor="enterprise-architect-file">Archivo XMI</label>
+
+          <input
+            id="enterprise-architect-file"
+            type="file"
+            accept=".xmi"
+            disabled={previewLoading || importing}
+            onChange={(event) => {
+              void handleImportFile(event.target.files?.[0] ?? null);
+            }}
+          />
+
+          {previewLoading && <p role="status">Analizando el archivo XMI...</p>}
+
+          {importError && (
+            <p className="projects-error" role="alert">
+              {importError}
+            </p>
+          )}
+
+          {importPreview && (
+            <div>
+              <h3>Vista previa</h3>
+
+              <p>
+                <strong>Proyecto:</strong> {importPreview.projectName}
+              </p>
+
+              <p>
+                <strong>Entidades:</strong> {importPreview.nodes.length}
+              </p>
+
+              <p>
+                <strong>Relaciones:</strong> {importPreview.edges.length}
+              </p>
+
+              <h4>Entidades detectadas</h4>
+
+              <ul>
+                {importPreview.nodes.map((node, index) => {
+                  const data = node.data as { name?: string } | undefined;
+
+                  return (
+                    <li key={String(node.id ?? index)}>
+                      {data?.name ?? "Entidad sin nombre"}
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {importPreview.warnings.length > 0 && (
+                <div role="alert">
+                  <h4>Advertencias</h4>
+
+                  <ul>
+                    {importPreview.warnings.map((warning, index) => (
+                      <li key={index}>{warning}</li>
+                    ))}
+                  </ul>
+
+                  <p>
+                    La importación no se puede confirmar mientras existan
+                    advertencias.
+                  </p>
+                </div>
+              )}
+
+              <button
+                className="project-button primary"
+                type="button"
+                disabled={
+                  !importFile || importing || importPreview.warnings.length > 0
+                }
+                onClick={() => void handleConfirmImport()}
+              >
+                {importing ? "Importando..." : "Confirmar importación"}
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+      {showForm && workspaceId !== null && (
+        <section
+          className="project-form-panel"
+          aria-labelledby="new-project-title"
+        >
+          <h2 id="new-project-title">Nuevo proyecto</h2>
+          <form onSubmit={handleCreate}>
+            <label htmlFor="project-name">Nombre</label>
+            <input
+              id="project-name"
+              maxLength={100}
+              required
+              value={nombre}
+              onChange={(event) => setNombre(event.target.value)}
+            />
+            <label htmlFor="project-description">Descripción</label>
+            <textarea
+              id="project-description"
+              maxLength={500}
+              rows={4}
+              value={descripcion}
+              onChange={(event) => setDescripcion(event.target.value)}
+            />
+            <button
+              className="project-button primary"
+              type="submit"
+              disabled={saving}
+            >
+              {saving ? "Creando..." : "Crear proyecto"}
+            </button>
+          </form>
+        </section>
+      )}
+
+      {error && (
+        <p className="projects-error" role="alert">
+          {error}
+        </p>
+      )}
+      {loading ? (
+        <div className="projects-loading">Cargando proyectos...</div>
+      ) : (
+        <ProjectList
+          projects={projects}
+          deletingProjectId={deletingProjectId}
+          onOpen={(projectId) => navigate(`/proyectos/${projectId}/editor`)}
+          onDelete={(project) => void handleDelete(project)}
+        />
+      )}
     </main>
-  )
+  );
 }
-

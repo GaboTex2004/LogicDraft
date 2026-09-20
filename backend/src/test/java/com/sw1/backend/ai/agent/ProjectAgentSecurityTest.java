@@ -22,4 +22,10 @@ class ProjectAgentSecurityTest {
                 .content("{\"message\":\"revisa\",\"selectedNodeId\":null,\"selectedEdgeId\":null,\"recentEvents\":[]}"))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void editAuthorizationEndpointRequiresJwt() throws Exception {
+        mvc.perform(post("/api/proyectos/10/agent/authorize-edit"))
+                .andExpect(status().isUnauthorized());
+    }
 }

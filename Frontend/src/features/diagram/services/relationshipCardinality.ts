@@ -30,8 +30,14 @@ export function normalizeRelationshipEdge(edge: DiagramEdge): DiagramEdge {
 }
 export function equivalentRelationship(a: DiagramEdge, b: DiagramEdge): boolean {
   const ac = cardinalities(a.data), bc = cardinalities(b.data)
-  return (a.source === b.source && a.target === b.target && ac.sourceCardinality === bc.sourceCardinality && ac.targetCardinality === bc.targetCardinality)
-    || (a.source === b.target && a.target === b.source && ac.sourceCardinality === bc.targetCardinality && ac.targetCardinality === bc.sourceCardinality)
+  const an = typeof a.data?.name === 'string' ? a.data.name.trim().toLocaleLowerCase() : ''
+  const bn = typeof b.data?.name === 'string' ? b.data.name.trim().toLocaleLowerCase() : ''
+  return an === bn && ((a.source === b.source && a.target === b.target && ac.sourceCardinality === bc.sourceCardinality && ac.targetCardinality === bc.targetCardinality)
+    || (a.source === b.target && a.target === b.source && ac.sourceCardinality === bc.targetCardinality && ac.targetCardinality === bc.sourceCardinality))
+}
+
+export function removeRelationshipEdges(current: DiagramEdge[], edgeIds: ReadonlySet<string>): DiagramEdge[] {
+  return current.filter(edge => !edgeIds.has(edge.id))
 }
 
 // Used by both manual edits and remote events. Only local changes publish.

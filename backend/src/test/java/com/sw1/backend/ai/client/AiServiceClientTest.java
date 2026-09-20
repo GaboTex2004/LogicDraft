@@ -61,7 +61,23 @@ class AiServiceClientTest {
         respondAgent(200, "{\"answer\":\"Producto tiene una relacion.\"}");
         var context = new AgentProjectContext(10L, "Tienda", null, null, null,
                 java.util.List.of(), java.util.List.of(), java.util.List.of());
-        assertEquals("Producto tiene una relacion.", client.askAgent(new AgentUpstreamRequest("revisa", context)));
+        var response = client.askAgent(new AgentUpstreamRequest("revisa", context));
+        assertEquals("Producto tiene una relacion.", response.answer());
+        assertTrue(response.operations().isEmpty());
+    }
+
+    @Test void returnsValidatedAgentManyToManyOperations() {
+        respondAgent(200, """
+                {"answer":"Relacion propuesta.","operations":[{"type":"ADD_RELATIONSHIP","relationship":{
+                "sourceEntity":"Alumno","targetEntity":"Materia","sourceCardinality":"ZERO_MANY",
+                "targetCardinality":"ONE_MANY","name":"materias","joinTableName":"alumno_materia"}}]}
+                """);
+        var context = new AgentProjectContext(10L, "Academia", null, null, null,
+                java.util.List.of(), java.util.List.of(), java.util.List.of());
+        var response = client.askAgent(new AgentUpstreamRequest("relaciona", context));
+        assertEquals(1, response.operations().size());
+        assertEquals("materias", response.operations().getFirst().relationship().name());
+        assertEquals("alumno_materia", response.operations().getFirst().relationship().joinTableName());
     }
 
     @Test void rejectsInvalidAgentAnswer() {
@@ -76,7 +92,10 @@ class AiServiceClientTest {
     @Test void rejectsMalformedJson() { respond(200, "not-json"); fails(HttpStatus.BAD_GATEWAY); }
     @Test void rejectsWrongContentType() { respond(200, "{\"content\":123}"); fails(HttpStatus.BAD_GATEWAY); }
     @Test void rejectsMissingContent() { respond(200, "{}"); fails(HttpStatus.BAD_GATEWAY); }
-    @Test void hidesUpstreamClientError() { respond(422, "{\"detail\":\"private\"}"); fails(HttpStatus.BAD_GATEWAY); }
+    @Test void mapsIncompleteBatchWithoutLeakingUpstreamBody() {
+        respond(422, "{\"detail\":\"private\"}");
+        fails(HttpStatus.UNPROCESSABLE_ENTITY);
+    }
     @Test void hidesUpstreamServerError() { respond(500, "{\"detail\":\"private\"}"); fails(HttpStatus.BAD_GATEWAY); }
     @Test void mapsUnavailable() { respond(503, "{}"); fails(HttpStatus.SERVICE_UNAVAILABLE); }
     @Test void mapsUpstreamTimeout() { respond(504, "{}"); fails(HttpStatus.GATEWAY_TIMEOUT); }

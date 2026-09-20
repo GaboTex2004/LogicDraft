@@ -38,6 +38,10 @@ public final class DiagramContextMapper {
             List<RelationshipDefinition> relationships = new ArrayList<>();
             for (Object raw : list(document.get("edges"))) {
                 Map<?, ?> edge = map(raw);
+                // Older persisted diagrams did not require edge IDs. Keep them valid for
+                // ordinary contextual operations, while exposing the real ID when present
+                // so association conversion can require it explicitly.
+                String relationshipId = optionalText(edge.get("id"));
                 String source = namesById.get(text(edge.get("source")));
                 String target = namesById.get(text(edge.get("target")));
                 if (source == null || target == null) throw new IllegalArgumentException();
@@ -46,14 +50,40 @@ public final class DiagramContextMapper {
                 if (data.containsKey("sourceCardinality") || data.containsKey("targetCardinality")) {
                     relationships.add(new RelationshipDefinition(source, target,
                         DiagramCardinality.valueOf(text(data.get("sourceCardinality"))),
-                        DiagramCardinality.valueOf(text(data.get("targetCardinality")))));
+                        DiagramCardinality.valueOf(text(data.get("targetCardinality"))),
+                        optionalText(data.get("name")), optionalText(data.get("joinTableName")), relationshipId));
                 } else {
                     Object kind = data.get("relationshipType");
                     RelationshipType type = kind == null ? null : RelationshipType.valueOf(text(kind));
-                    relationships.add(RelationshipDefinition.fromLegacy(source, target, type));
+                    RelationshipDefinition legacy = RelationshipDefinition.fromLegacy(source, target, type);
+                    relationships.add(new RelationshipDefinition(legacy.sourceEntity(), legacy.targetEntity(),
+                            legacy.sourceCardinality(), legacy.targetCardinality(), legacy.name(),
+                            legacy.joinTableName(), relationshipId));
                 }
             }
-            return new DiagramContext(List.copyOf(entities), List.copyOf(relationships));
+            List<DiagramAssociationContext> associations = new ArrayList<>();
+            for (Object raw : list(document.get("nodes"))) {
+                Map<?, ?> node = map(raw);
+                Map<?, ?> data = map(node.get("data"));
+                if (data.get("association") == null) continue;
+                Map<?, ?> association = map(data.get("association"));
+                if (!"MANY_TO_MANY_ASSOCIATION".equals(text(association.get("kind")))
+                        || !bool(association.get("uniquePair"))) throw new IllegalArgumentException();
+                List<String> endpointNames = new ArrayList<>();
+                List<String> relationshipIds = new ArrayList<>();
+                for (Object endpointRaw : list(association.get("endpoints"))) {
+                    Map<?, ?> endpoint = map(endpointRaw);
+                    String endpointName = namesById.get(text(endpoint.get("entityId")));
+                    if (endpointName == null) throw new IllegalArgumentException();
+                    endpointNames.add(endpointName);
+                    relationshipIds.add(text(endpoint.get("relationshipId")));
+                }
+                if (endpointNames.size() != 2) throw new IllegalArgumentException();
+                associations.add(new DiagramAssociationContext(text(data.get("name")),
+                        text(association.get("tableName")), List.copyOf(endpointNames),
+                        List.copyOf(relationshipIds)));
+            }
+            return new DiagramContext(List.copyOf(entities), List.copyOf(relationships), List.copyOf(associations));
         } catch (IllegalArgumentException e) {
             throw new AiServiceException(HttpStatus.CONFLICT, "El diagrama guardado no es valido para interpretacion contextual");
         }
@@ -91,4 +121,5 @@ public final class DiagramContextMapper {
         if (!(value instanceof Boolean b)) throw new IllegalArgumentException();
         return b;
     }
+    private static String optionalText(Object value) { return value == null ? null : text(value); }
 }

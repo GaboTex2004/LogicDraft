@@ -1,0 +1,1 @@
+"""Structured diagram generation skill."""

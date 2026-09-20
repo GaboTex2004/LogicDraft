@@ -50,7 +50,15 @@ Al cargar, `relationshipType` legacy se convierte así: `ONE_TO_ONE` →
 `ZERO_MANY` porque el formato anterior no expresaba un mínimo obligatorio. Al
 guardar nuevamente se persisten las dos cardinalidades nuevas.
 
+Una N:M se crea seleccionando un extremo many en ambos lados. El inspector permite
+definir `name` y `joinTableName`; la tabla intermedia es un artefacto derivado y no
+un nodo adicional. Dos relaciones entre las mismas entidades deben tener nombres
+distintos. Si la asociacion necesita atributos, se crea una entidad asociativa
+explicita y dos relaciones.
+
 La aplicación de operaciones IA continúa siendo transaccional en memoria: puede
 crear entidades y después relacionarlas dentro del mismo batch. No se agregan
 relaciones si falta un extremo, si es una autorrelación nueva o si ya existe una
 relación equivalente (incluyendo la misma relación con extremos invertidos).
+El agente contextual puede proponer las mismas operaciones estructuradas; el editor
+las vuelve a validar y reutiliza dirty, autosave y colaboracion existentes.

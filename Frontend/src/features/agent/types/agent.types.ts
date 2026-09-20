@@ -16,5 +16,9 @@ export interface AgentAskRequest {
   selectedNodeId: string | null
   selectedEdgeId: string | null
   recentEvents: AgentEvent[]
+  conversation: AgentConversationMessage[]
 }
-export interface AgentAskResponse { answer: string }
+export interface AgentConversationMessage { role: 'user' | 'agent'; text: string }
+import type { DiagramAiOperation } from '../../diagram/types/diagramAi.types'
+
+export interface AgentAskResponse { answer: string; operations: DiagramAiOperation[] }

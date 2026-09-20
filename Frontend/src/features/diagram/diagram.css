@@ -187,6 +187,39 @@
 .persistence-badge.is-error,
 .persistence-badge.is-forbidden { color: #ffb4ab; }
 .persistence-badge.is-saving { color: #a5b4fc; }
+.export-message {
+  max-width: 220px;
+  color: var(--de-muted);
+  font-size: 10px;
+}
+.project-export-menu {
+  position: relative;
+}
+.project-export-options {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 7px);
+  right: 0;
+  width: 230px;
+  padding: 5px;
+  border: 1px solid var(--de-border);
+  background: #17171b;
+  box-shadow: 0 14px 30px rgb(0 0 0 / 35%);
+}
+.diagram-toolbar-actions .project-export-options button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 0;
+  text-align: left;
+}
+.project-export-options small {
+  color: var(--de-muted);
+  font-size: 10px;
+}
 .project-presence {
   position: absolute;
   z-index: 30;
@@ -658,8 +691,104 @@
   font-size: 12px;
   pointer-events: none;
 }
+.derived-join-table {
+  position: absolute;
+  width: 250px;
+  overflow: hidden;
+  border: 1px solid #7c6ee6;
+  border-radius: 7px;
+  color: var(--de-text);
+  background: #18181d;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 38%);
+  pointer-events: all;
+  cursor: pointer;
+}
+.derived-join-table.is-selected {
+  border-color: #fff;
+  box-shadow: 0 0 22px rgb(167 139 250 / 22%);
+}
+.derived-join-table header {
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #35343f;
+  background: #272631;
+}
+.derived-join-table header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #c4b5fd;
+  font-size: 12px;
+}
+.derived-join-table header small { margin-left: auto; color: #8d8a9c; font-size: 8px; text-transform: uppercase; }
+.derived-join-columns > div {
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #2d2c35;
+  font-size: 10px;
+}
+.derived-join-columns b { color: #facc15; font-size: 8px; }
+.derived-join-columns code { color: var(--de-accent); background: transparent; font-size: 9px; }
+.derived-join-table footer { padding: 7px 10px; display: grid; gap: 4px; }
+.derived-join-table footer span { overflow: hidden; color: #86efac; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.derived-join-table footer small { color: #8d8a9c; font-size: 8px; line-height: 1.35; }
+.derived-table-help {
+  margin: -8px 0 18px;
+  padding: 9px;
+  border-left: 2px solid #7c6ee6;
+  color: var(--de-muted);
+  background: rgb(124 110 230 / 8%);
+  font-size: 9px;
+  line-height: 1.45;
+}
 .react-flow__edge.selected .react-flow__edge-path { stroke: #a78bfa; stroke-width: 2; }
 .diagram-properties .properties-content > label select { display: block; width: 100%; margin: 8px 0 18px; }
+.derived-table-details,
+.association-structural-fields {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 10px;
+  border: 1px solid #3d3a50;
+  border-radius: 7px;
+  background: rgb(124 110 230 / 8%);
+}
+.derived-table-details div { display: flex; justify-content: space-between; gap: 8px; }
+.derived-table-details small,
+.association-structural-fields small { color: #86efac; }
+.derived-table-details button { padding: 9px; border: 0; border-radius: 6px; color: white; background: #6d5bd0; cursor: pointer; }
+.association-structural-fields span { color: var(--de-muted); }
+.association-dialog-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 65%);
+}
+.association-dialog {
+  width: min(440px, 100%);
+  padding: 20px;
+  border: 1px solid #4c4860;
+  border-radius: 10px;
+  color: var(--de-text);
+  background: #18181d;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 55%);
+}
+.association-dialog header { margin-bottom: 10px; color: #c4b5fd; font-size: 16px; font-weight: 700; }
+.association-dialog p { color: var(--de-muted); font-size: 12px; line-height: 1.5; }
+.association-dialog label { display: grid; gap: 7px; margin-top: 14px; font-size: 11px; }
+.association-dialog input { padding: 10px; border: 1px solid var(--de-border); border-radius: 6px; color: var(--de-text); background: #111115; }
+.association-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.association-dialog button { padding: 9px 14px; border: 1px solid var(--de-border); border-radius: 6px; color: var(--de-text); background: #24242b; cursor: pointer; }
+.association-dialog button.primary { border-color: #7c6ee6; background: #6d5bd0; }
+.association-dialog button:disabled { opacity: .45; cursor: not-allowed; }
+.association-dialog .association-dialog-error { color: #fca5a5; }
 
 .agent-panel {
   position: fixed;

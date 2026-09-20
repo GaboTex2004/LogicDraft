@@ -26,9 +26,12 @@ class OllamaProvider(BaseAIProvider):
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                body: dict[str, Any] = {"model": self._model, "prompt": prompt, "stream": False}
+                body: dict[str, Any] = {
+                    "model": self._model, "prompt": prompt, "stream": False,
+                    "options": {"temperature": 0.2, "num_predict": 300},
+                }
                 if json_schema is not None:
-                    body.update({"format": json_schema, "options": {"temperature": 0}})
+                    body.update({"format": json_schema, "options": {"temperature": 0, "num_predict": 1200}})
                 response = await client.post(
                     f"{self._base_url}/api/generate",
                     json=body,

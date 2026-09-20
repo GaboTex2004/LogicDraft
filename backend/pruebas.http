@@ -80,3 +80,21 @@ Authorization: Bearer eyJhbGciOiJIUzM4NCJ9.eyJzdWIiOiJnYWJyaWVsMkB0ZXN0LmNvbSIsI
 ###prueba del workspaces
 GET http://localhost:8081/api/workspaces
 Authorization: Bearer eyJhbGciOiJIUzM4NCJ9.eyJzdWIiOiJnYWJyaWVsMkB0ZXN0LmNvbSIsInJvbFNpc3RlbWEiOiJVU0VSIiwiaWF0IjoxNzg4MDU5NDg2LCJleHAiOjE3ODgxNDU4ODZ9.hrmk74Ts177-4xL8Joaf_OpEbxqSlI8h3fbJ7igKjF0zEGRcSD-x8N9IPHX46Kg0
+
+###prueba de generador
+GET http://localhost:8081/api/proyectos/4/generator/schema
+Authorization: Bearer eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJnYWJyaWVsMUBnbWFpbC5jb20iLCJyb2xTaXN0ZW1hIjoiVVNFUiIsImlhdCI6MTc4ODg4MjE4NywiZXhwIjoxNzg4OTY4NTg3fQ.4sCHablxJVXYdfgKCdZV25ULD1IsU03LXqZ9Vu-RqYiil9I5F0vZQ4-3L12tu0J7ybMX5De2KaqYrfZXiO_4Cw
+
+### LOGIN gabriel
+
+POST http://localhost:8081/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "gabriel@gmail.com",
+  "password": "12341234"
+}
+
+###prueba del backend
+POST http://localhost:8081/api/proyectos/3/generator/fullstack
+Authorization: Bearer eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJnYWJyaWVsQGdtYWlsLmNvbSIsInJvbFNpc3RlbWEiOiJVU0VSIiwiaWF0IjoxNzg4OTYwNTAyLCJleHAiOjE3ODkwNDY5MDJ9.PI3IQac447p77gx8sHIEFW-QzjT8w_erNgA0SfNGKXmCBMac7UEQw80s3SDN7nRMArnZnvXUjWLOKNqcIRac2A

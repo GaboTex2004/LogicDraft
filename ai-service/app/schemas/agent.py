@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from app.schemas.diagram import AttributeDefinition, DiagramCardinality, Name
+from app.schemas.diagram import AssociationContext, AttributeDefinition, DiagramCardinality, Name, Operation
 
 
 class AgentContract(BaseModel):
@@ -43,22 +43,32 @@ class AgentRelationship(AgentContract):
     targetEntity: Name
     sourceCardinality: DiagramCardinality
     targetCardinality: DiagramCardinality
+    name: Name | None = None
+    joinTableName: Name | None = None
 
 
 class AgentContext(AgentContract):
     projectId: int = Field(gt=0)
     projectName: Name
+    projectDescription: str | None = Field(default=None, max_length=500)
     diagramId: int | None = Field(default=None, gt=0)
     selectedNodeId: str | None = Field(default=None, max_length=100)
     selectedEdgeId: str | None = Field(default=None, max_length=100)
     entities: list[AgentEntity] = Field(max_length=500)
     relationships: list[AgentRelationship] = Field(max_length=1000)
+    associations: list[AssociationContext] = Field(default_factory=list, max_length=500)
     recentEvents: list[AgentEvent] = Field(max_length=25)
+
+
+class AgentConversationMessage(AgentContract):
+    role: Literal["user", "agent"]
+    text: str = Field(min_length=1, max_length=4000)
 
 
 class AgentAskRequest(AgentContract):
     message: str = Field(min_length=1, max_length=4000)
     context: AgentContext
+    conversation: list[AgentConversationMessage] = Field(default_factory=list, max_length=10)
 
     @field_validator("message")
     @classmethod
@@ -70,3 +80,4 @@ class AgentAskRequest(AgentContract):
 
 class AgentAskResponse(AgentContract):
     answer: str = Field(min_length=1, max_length=20000)
+    operations: list[Operation] = Field(default_factory=list, max_length=50)

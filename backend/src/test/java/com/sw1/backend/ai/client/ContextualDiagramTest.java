@@ -37,6 +37,13 @@ class ContextualDiagramTest {
     @Test void existingEntityAcceptsNewAttribute() {
         assertEquals(1, validate(addAttribute("CLIENTE", new AttributeDefinition("telefono", DiagramDataType.String, false, true))).operations().size());
     }
+    @Test void multipleAttributesForDifferentEntitiesArePreserved() {
+        var telefono = new AttributeDefinition("telefono", DiagramDataType.String, false, true);
+        var codigo = new AttributeDefinition("codigo", DiagramDataType.String, false, true);
+        var result = validate(addAttribute("Cliente", telefono), addAttribute("Pedido", codigo));
+        assertEquals(2, result.operations().size());
+        assertEquals(List.of("Cliente", "Pedido"), result.operations().stream().map(DiagramOperation::entityName).toList());
+    }
     @Test void newEntityAccepted() { assertEquals(1, validate(addEntity("Producto")).operations().size()); }
     @Test void validRelationshipAccepted() { assertEquals(1, validate(relation("Cliente", "Pedido")).operations().size()); }
     @Test void missingReferencesRejected() {
@@ -61,6 +68,62 @@ class ContextualDiagramTest {
         assertEquals(2, validate(addEntity("Producto"), relation("Cliente", "Producto")).operations().size());
         assertEquals(2, context.entities().size());
         assertThrows(AiServiceException.class, () -> validate(relation("Cliente", "Producto"), addEntity("Producto")));
+    }
+    @Test void twoCreationsCanBeFollowedByManyToManyInTheSameBatch() {
+        var relation = new DiagramOperation(DiagramOperationType.ADD_RELATIONSHIP, null, null, null,
+                new RelationshipDefinition("Alumno", "Materia", DiagramCardinality.ZERO_MANY,
+                        DiagramCardinality.ZERO_MANY, "materias", "alumno_materia"));
+        var result = validate(addEntity("Alumno"), addEntity("Materia"), relation);
+        assertEquals(List.of(DiagramOperationType.ADD_ENTITY, DiagramOperationType.ADD_ENTITY,
+                DiagramOperationType.ADD_RELATIONSHIP), result.operations().stream().map(DiagramOperation::type).toList());
+    }
+    @Test void invalidTailRejectsTheWholeVirtualBatchWithoutChangingContext() {
+        var before = List.copyOf(context.entities());
+        assertThrows(AiServiceException.class, () -> validate(
+                addAttribute("Cliente", new AttributeDefinition("telefono", DiagramDataType.String, false, true)),
+                addAttribute("Inexistente", new AttributeDefinition("codigo", DiagramDataType.String, false, true))));
+        assertEquals(before, context.entities());
+        assertEquals(List.of(id), context.entities().getFirst().attributes());
+    }
+    @Test void validatesAssociationConversionByRealIdAndRejectsEveryAmbiguousOrInvalidState() {
+        var alumno = new EntityDefinition("Alumno", List.of(id));
+        var materia = new EntityDefinition("Materia", List.of(id));
+        var many = new RelationshipDefinition("Alumno", "Materia", DiagramCardinality.ZERO_MANY,
+                DiagramCardinality.ONE_MANY, "cursa", "alumno_materia", "student-subject");
+        var associationContext = new DiagramContext(List.of(alumno, materia), List.of(many));
+        var own = new AttributeDefinition("nota", DiagramDataType.Integer, false, true);
+        var valid = new DiagramOperation(DiagramOperationType.CONVERT_MANY_TO_MANY_ASSOCIATION,
+                null, null, null, null, new AssociationConversionDefinition("student-subject", "Alumno",
+                "Materia", "Inscripcion", List.of(own)));
+        assertEquals(1, ContextualOperationValidator.validate(associationContext,
+                new DiagramInterpretResponse(List.of(valid))).operations().size());
+
+        var invented = new DiagramOperation(DiagramOperationType.CONVERT_MANY_TO_MANY_ASSOCIATION,
+                null, null, null, null, new AssociationConversionDefinition("invented", "Alumno",
+                "Materia", "Inscripcion", List.of()));
+        assertThrows(AiServiceException.class, () -> ContextualOperationValidator.validate(associationContext,
+                new DiagramInterpretResponse(List.of(invented))));
+        var oneToMany = new DiagramContext(List.of(alumno, materia), List.of(new RelationshipDefinition(
+                "Alumno", "Materia", DiagramCardinality.ONE_ONE, DiagramCardinality.ZERO_MANY,
+                null, null, "student-subject")));
+        assertThrows(AiServiceException.class, () -> ContextualOperationValidator.validate(oneToMany,
+                new DiagramInterpretResponse(List.of(valid))));
+        var duplicateName = new DiagramContext(List.of(alumno, materia,
+                new EntityDefinition("Inscripcion", List.of(id))), List.of(many));
+        assertThrows(AiServiceException.class, () -> ContextualOperationValidator.validate(duplicateName,
+                new DiagramInterpretResponse(List.of(valid))));
+        var ambiguous = new DiagramContext(List.of(alumno, materia), List.of(many,
+                new RelationshipDefinition("Alumno", "Materia", DiagramCardinality.ONE_MANY,
+                        DiagramCardinality.ZERO_MANY, "aprueba", "alumno_materia_aprueba", "second")));
+        assertThrows(AiServiceException.class, () -> ContextualOperationValidator.validate(ambiguous,
+                new DiagramInterpretResponse(List.of(valid))));
+        var converted = new DiagramContext(List.of(alumno, materia), List.of(many), List.of(
+                new DiagramAssociationContext("InscripcionAnterior", "alumno_materia", List.of("Alumno", "Materia"),
+                        List.of("student-enrollment", "subject-enrollment"))));
+        assertThrows(AiServiceException.class, () -> ContextualOperationValidator.validate(converted,
+                new DiagramInterpretResponse(List.of(valid))));
+        assertEquals(2, associationContext.entities().size());
+        assertEquals(1, associationContext.relationships().size());
     }
     @Test void projectsAndPermissionsAreCheckedBeforeDiagram() {
         var projects = mock(ProyectoRepository.class);

@@ -37,6 +37,7 @@ class AgentProjectContextServiceTest {
         project = new Proyecto();
         project.setId(10L);
         project.setNombre("Tienda");
+        project.setDescripcion("Gestión de catálogo y ventas");
         project.setWorkspace(workspace);
     }
 
@@ -52,6 +53,7 @@ class AgentProjectContextServiceTest {
         verify(access).verificarAcceso(20L);
         verifyNoMoreInteractions(access);
         assertEquals(30L, context.diagramId());
+        assertEquals("Gestión de catálogo y ventas", context.projectDescription());
         assertEquals(List.of("Categoria", "Producto"), context.entities().stream().map(AgentProjectContext.AgentEntity::name).toList());
         assertEquals("producto", context.selectedNodeId());
         assertEquals("rel-1", context.selectedEdgeId());

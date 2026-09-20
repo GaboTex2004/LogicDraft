@@ -31,11 +31,29 @@ public final class DiagramOperationValidator {
                     }
                     case ADD_RELATIONSHIP -> {
                         object(op, "type", "relationship");
-                        Map<?, ?> rel = object(op.get("relationship"), "sourceEntity", "targetEntity", "sourceCardinality", "targetCardinality");
+                        Map<?, ?> rel = objectWithOptional(op.get("relationship"),
+                                Set.of("sourceEntity", "targetEntity", "sourceCardinality", "targetCardinality"),
+                                Set.of("name", "joinTableName"));
                         operations.add(new DiagramOperation(type, null, null, null, new RelationshipDefinition(
                             text(rel.get("sourceEntity")), text(rel.get("targetEntity")),
                             DiagramCardinality.valueOf(text(rel.get("sourceCardinality"))),
-                            DiagramCardinality.valueOf(text(rel.get("targetCardinality"))))));
+                            DiagramCardinality.valueOf(text(rel.get("targetCardinality"))),
+                            optionalText(rel.get("name")), optionalText(rel.get("joinTableName")))));
+                    }
+                    case CONVERT_MANY_TO_MANY_ASSOCIATION -> {
+                        object(op, "type", "conversion");
+                        Map<?, ?> conversion = object(op.get("conversion"), "relationshipId", "sourceEntity",
+                                "targetEntity", "associationEntityName", "attributes");
+                        List<AttributeDefinition> attributes = new ArrayList<>();
+                        for (Object value : list(conversion.get("attributes"), 100)) {
+                            AttributeDefinition attribute = attribute(value);
+                            if (attribute.primaryKey()) throw new IllegalArgumentException();
+                            attributes.add(attribute);
+                        }
+                        operations.add(new DiagramOperation(type, null, null, null, null,
+                                new AssociationConversionDefinition(text(conversion.get("relationshipId")),
+                                        text(conversion.get("sourceEntity")), text(conversion.get("targetEntity")),
+                                        text(conversion.get("associationEntityName")), List.copyOf(attributes))));
                     }
                 }
             }
@@ -56,6 +74,12 @@ public final class DiagramOperationValidator {
         if (!(raw instanceof Map<?, ?> map) || !map.keySet().equals(Set.of(keys))) throw new IllegalArgumentException();
         return map;
     }
+    private static Map<?, ?> objectWithOptional(Object raw, Set<String> required, Set<String> optional) {
+        if (!(raw instanceof Map<?, ?> map) || !map.keySet().containsAll(required)
+                || map.keySet().stream().anyMatch(key -> !(key instanceof String text)
+                || !required.contains(text) && !optional.contains(text))) throw new IllegalArgumentException();
+        return map;
+    }
 
     private static List<?> list(Object raw, int max) {
         if (!(raw instanceof List<?> list) || list.size() > max) throw new IllegalArgumentException();
@@ -67,4 +91,5 @@ public final class DiagramOperationValidator {
             throw new IllegalArgumentException();
         return s;
     }
+    private static String optionalText(Object raw) { return raw == null ? null : text(raw); }
 }

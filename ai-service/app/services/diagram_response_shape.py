@@ -1,6 +1,8 @@
 """Conservative adaptation of model envelopes, never of operation contents."""
 
-_OPERATION_TYPES = ("ADD_ENTITY", "ADD_ATTRIBUTE", "ADD_RELATIONSHIP")
+_OPERATION_TYPES = (
+    "ADD_ENTITY", "ADD_ATTRIBUTE", "ADD_RELATIONSHIP", "CONVERT_MANY_TO_MANY_ASSOCIATION",
+)
 
 
 def _is_operation(value: object) -> bool:

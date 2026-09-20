@@ -27,6 +27,15 @@ test('ADD_ATTRIBUTE uses existing node and SQL type', () => {
   assert.equal(r.nodes[0].data.attributes.at(-1).type, 'VARCHAR')
   assert.equal(r.events[0].type, 'NODE_UPDATED')
 })
+test('two attributes for different entities are both applied', () => {
+  const original = initial()
+  const r = apply(original.nodes, [], [
+    attribute('Cliente', attr('codigo', 'String')),
+    attribute('Pedido', attr('codigo', 'String')),
+  ])
+  assert.deepEqual(r.nodes.map(node => node.data.attributes.at(-1).name), ['codigo', 'codigo'])
+  assert.equal(r.events.length, 2)
+})
 test('ADD_ATTRIBUTE missing entity fails', () => assert.throws(() => apply([], [], [attribute()])))
 test('identical attributes do not duplicate', () => {
   const r = apply(initial().nodes, [], [attribute(), attribute('CLIENTE', attr('TELEFONO', 'String'))])
@@ -45,12 +54,46 @@ test('relationship resolves IDs and stores cardinality', () => {
   assert.equal(r.edges[0].data.targetCardinality, 'ZERO_MANY')
   assert.equal(r.events[0].type, 'EDGE_CREATED')
 })
+test('AI creates a named N:M relation with one derived join table definition', () => {
+  const base = apply([], [], [entity('Alumno'), entity('Materia')])
+  const operation = { type: 'ADD_RELATIONSHIP', relationship: {
+    sourceEntity: 'Alumno', targetEntity: 'Materia', sourceCardinality: 'ZERO_MANY',
+    targetCardinality: 'ONE_MANY', name: 'materias', joinTableName: 'alumno_materia',
+  } }
+  const result = apply(base.nodes, [], [operation])
+  assert.equal(result.edges.length, 1)
+  assert.deepEqual(result.edges[0].data, {
+    sourceCardinality: 'ZERO_MANY', targetCardinality: 'ONE_MANY',
+    name: 'materias', joinTableName: 'alumno_materia',
+  })
+})
+test('AI models an associative entity explicitly instead of inventing join attributes', () => {
+  const operations = [
+    entity('Alumno'), entity('Materia'), entity('Inscripcion', [attr(), attr('fecha', 'Date'), attr('nota', 'Double')]),
+    { type: 'ADD_RELATIONSHIP', relationship: { sourceEntity: 'Alumno', targetEntity: 'Inscripcion', sourceCardinality: 'ONE_ONE', targetCardinality: 'ZERO_MANY' } },
+    { type: 'ADD_RELATIONSHIP', relationship: { sourceEntity: 'Materia', targetEntity: 'Inscripcion', sourceCardinality: 'ONE_ONE', targetCardinality: 'ZERO_MANY' } },
+  ]
+  const result = apply([], [], operations)
+  assert.equal(result.nodes.length, 3)
+  assert.equal(result.edges.length, 2)
+  assert.deepEqual(result.nodes[2].data.attributes.map(item => item.name), ['id', 'fecha', 'nota'])
+})
 test('relationship with missing target fails', () => assert.throws(() => apply(initial().nodes, [], [relationship('Persona')])))
 test('batch runs in dependency order', () => {
   const r = apply([], [], [entity(), entity('Pedido'), attribute(), relationship()])
   assert.equal(r.nodes.length, 2)
   assert.equal(r.edges.length, 1)
   assert.deepEqual(r.events.map(e => e.type), ['NODE_CREATED', 'NODE_CREATED', 'NODE_UPDATED', 'EDGE_CREATED'])
+})
+test('two entities and their N:M relationship are applied in one batch', () => {
+  const manyToMany = { type: 'ADD_RELATIONSHIP', relationship: {
+    sourceEntity: 'Alumno', targetEntity: 'Materia',
+    sourceCardinality: 'ZERO_MANY', targetCardinality: 'ZERO_MANY',
+  } }
+  const r = apply([], [], [entity('Alumno'), entity('Materia'), manyToMany])
+  assert.equal(r.nodes.length, 2)
+  assert.equal(r.edges.length, 1)
+  assert.deepEqual(r.events.map(event => event.type), ['NODE_CREATED', 'NODE_CREATED', 'EDGE_CREATED'])
 })
 test('failure after a valid operation leaves original graph unchanged', () => {
   const original = initial()

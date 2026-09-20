@@ -9,4 +9,11 @@ export interface AiAttribute {
 export type DiagramAiOperation =
   | { type: 'ADD_ENTITY'; entity: { name: string; attributes: AiAttribute[] } }
   | { type: 'ADD_ATTRIBUTE'; entityName: string; attribute: AiAttribute }
-  | { type: 'ADD_RELATIONSHIP'; relationship: { sourceEntity: string; targetEntity: string; sourceCardinality: DiagramCardinality; targetCardinality: DiagramCardinality } }
+  | { type: 'ADD_RELATIONSHIP'; relationship: { sourceEntity: string; targetEntity: string; sourceCardinality: DiagramCardinality; targetCardinality: DiagramCardinality; name?: string; joinTableName?: string } }
+  | { type: 'CONVERT_MANY_TO_MANY_ASSOCIATION'; conversion: {
+      relationshipId: string
+      sourceEntity: string
+      targetEntity: string
+      associationEntityName: string
+      attributes: AiAttribute[]
+    } }

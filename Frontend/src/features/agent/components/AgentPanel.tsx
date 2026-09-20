@@ -1,14 +1,13 @@
 import { useState, type FormEvent } from 'react'
-
-interface Message { role: 'user' | 'agent'; text: string }
+import type { AgentAskResponse, AgentConversationMessage } from '../types/agent.types'
 
 export function AgentPanel({ onAsk, disabledReason }: {
-  onAsk: (message: string) => Promise<string>
+  onAsk: (message: string, conversation: AgentConversationMessage[]) => Promise<AgentAskResponse>
   disabledReason?: string
 }) {
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<AgentConversationMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -18,11 +17,12 @@ export function AgentPanel({ onAsk, disabledReason }: {
     if (!question || loading || disabledReason) return
     setMessage('')
     setError('')
-    setMessages(current => [...current, { role: 'user', text: question } satisfies Message].slice(-10))
+    const conversation = messages.slice(-10)
+    setMessages(current => [...current, { role: 'user', text: question } satisfies AgentConversationMessage].slice(-10))
     setLoading(true)
     try {
-      const answer = await onAsk(question)
-      setMessages(current => [...current, { role: 'agent', text: answer } satisfies Message].slice(-10))
+      const response = await onAsk(question, conversation)
+      setMessages(current => [...current, { role: 'agent', text: response.answer } satisfies AgentConversationMessage].slice(-10))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No se pudo consultar al agente.')
     } finally {
@@ -33,12 +33,12 @@ export function AgentPanel({ onAsk, disabledReason }: {
   return <section className={`agent-panel ${open ? 'is-open' : ''}`}>
     <button className="agent-toggle" type="button" onClick={() => setOpen(value => !value)}
       aria-expanded={open} aria-controls="agent-conversation">
-      Agente consultivo
+      Agente contextual
     </button>
     {open && <div id="agent-conversation" className="agent-conversation">
       <header>
         <strong>Contexto del proyecto</strong>
-        <small>No modifica el diagrama</small>
+        <small>Las acciones estructuradas se validan antes de aplicarse</small>
       </header>
       <div className="agent-messages" aria-live="polite">
         {!messages.length && <p>Pregunta por la entidad o relación seleccionada.</p>}
@@ -54,7 +54,7 @@ export function AgentPanel({ onAsk, disabledReason }: {
           {loading ? 'Consultando…' : 'Preguntar'}
         </button>
       </form>
-      <small className={error ? 'agent-error' : ''}>{error || disabledReason || 'Solo consulta el diagrama guardado.'}</small>
+      <small className={error ? 'agent-error' : ''}>{error || disabledReason || 'Consulta o propone acciones sobre el diagrama guardado.'}</small>
     </div>}
   </section>
 }

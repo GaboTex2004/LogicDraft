@@ -5,9 +5,12 @@ import com.sw1.backend.ai.diagram.dto.*;
 import com.sw1.backend.ai.diagram.validation.ContextualOperationValidator;
 import com.sw1.backend.ai.dto.request.AiGenerateRequest;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class ContextualDiagramAiService {
+    private static final Logger log = LoggerFactory.getLogger(ContextualDiagramAiService.class);
     private final ProjectDiagramContextService context;
     private final AiServiceClient client;
 
@@ -20,6 +23,9 @@ public class ContextualDiagramAiService {
         DiagramContext initial = context.load(projectId);
         DiagramInterpretResponse response = client.interpret(new ContextualInterpretRequest(request.prompt(), initial));
         // Fresh short read transaction and permission check after slow inference.
-        return ContextualOperationValidator.validate(context.load(projectId), response);
+        DiagramInterpretResponse validated = ContextualOperationValidator.validate(context.load(projectId), response);
+        log.info("Diagram AI batch stage=spring_validated count={} types={}", validated.operations().size(),
+                validated.operations().stream().map(operation -> operation.type().name()).toList());
+        return validated;
     }
 }

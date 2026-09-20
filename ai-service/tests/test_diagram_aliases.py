@@ -118,5 +118,5 @@ class AliasEndpointTests(unittest.IsolatedAsyncioTestCase):
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
                     response = await client.post("/api/ai/diagram/interpret", json={"prompt": PROMPT, "diagram": {"entities": [], "relationships": []}})
         self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.json(), {"detail": "El proveedor no devolvio operaciones validas."})
+        self.assertEqual(response.json(), {"detail": "La IA devolvio JSON que no cumple el contrato de operaciones."})
         self.assertIn("unsupported dataType 'BananaType'", " ".join(logs.output))

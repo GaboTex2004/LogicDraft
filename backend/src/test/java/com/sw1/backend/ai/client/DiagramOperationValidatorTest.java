@@ -31,4 +31,24 @@ class DiagramOperationValidatorTest {
         assertThrows(AiServiceException.class, () -> DiagramOperationValidator.validate(null));
         assertThrows(AiServiceException.class, () -> DiagramOperationValidator.validate(Map.of("operations", List.of(), "sql", "private")));
     }
+
+    @Test void acceptsStrictManyToManyAssociationConversion() {
+        var own = Map.of("name", "nota", "dataType", "Integer", "primaryKey", false, "nullable", true);
+        var result = DiagramOperationValidator.validate(Map.of("operations", List.of(Map.of(
+                "type", "CONVERT_MANY_TO_MANY_ASSOCIATION",
+                "conversion", Map.of("relationshipId", "student-subject", "sourceEntity", "Alumno",
+                        "targetEntity", "Materia", "associationEntityName", "Inscripcion",
+                        "attributes", List.of(own))))));
+        assertEquals(DiagramOperationType.CONVERT_MANY_TO_MANY_ASSOCIATION, result.operations().getFirst().type());
+        assertEquals("student-subject", result.operations().getFirst().conversion().relationshipId());
+        assertEquals("nota", result.operations().getFirst().conversion().attributes().getFirst().name());
+
+        var generatedPk = new LinkedHashMap<>(own);
+        generatedPk.put("primaryKey", true);
+        assertThrows(AiServiceException.class, () -> DiagramOperationValidator.validate(Map.of("operations", List.of(Map.of(
+                "type", "CONVERT_MANY_TO_MANY_ASSOCIATION",
+                "conversion", Map.of("relationshipId", "student-subject", "sourceEntity", "Alumno",
+                        "targetEntity", "Materia", "associationEntityName", "Inscripcion",
+                        "attributes", List.of(generatedPk)))))));
+    }
 }
