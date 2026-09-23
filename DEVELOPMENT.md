@@ -220,3 +220,29 @@ flutter run -d windows --dart-define=API_BASE_URL=http://localhost:8082
 ```
 
 `SERVER_PORT` controla el puerto del backend generado y `API_BASE_URL` indica a Flutter dónde encontrarlo; ambos deben apuntar al mismo backend.
+
+
+### Ollama intenta usar CUDA y se cae
+
+Síntoma:
+
+```text
+CUDA error
+llama-server process has terminated
+
+netstat -ano | findstr :11434
+Get-Process -Id <PID>
+Stop-Process -Id <PID> -Force
+
+$env:CUDA_VISIBLE_DEVICES="-1"
+$env:OLLAMA_LLM_LIBRARY="cpu"
+ollama serve
+ollama run llama3.2 "Responde solamente: funcionando"
+
+
+docker start logicdraft-migration-test
+docker start logicdraft-ai-test
+docker start logicdraft-backend-test
+docker start logicdraft-frontend-test
+
+http://localhost:18080

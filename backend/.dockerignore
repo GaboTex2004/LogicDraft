@@ -1,0 +1,27 @@
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+
+# Archivos generados
+target/
+*.log
+
+# Configuración del editor
+.vscode/
+.idea/
+*.iml
+
+# Archivos temporales y exportaciones
+logicdraft_schema.sql
+pruebas.http
+*.bak
+*.tmp
+
+# Git
+.git/
+.gitignore
+
+# Archivos propios de Docker
+Dockerfile*
+docker-compose*.yml

@@ -88,32 +88,110 @@ public final class SpringStaticTemplates {
         return """
                 # %s backend
 
-                Backend generado deterministicamente por LogicDraft para Java 21, Spring Boot y PostgreSQL.
+                API REST generada deterministicamente por LogicDraft a partir del diagrama de **%s**. Incluye
+                entidades JPA, DTO, repositorios, servicios, controladores, validacion y persistencia PostgreSQL.
+                El contrato detallado de cada recurso se encuentra en [`API.md`](API.md).
 
                 ## Requisitos
 
                 - Java 21
                 - Maven 3.9+
-                - PostgreSQL 17 (o una version compatible)
+                - PostgreSQL 17 (local o mediante el `docker-compose.yml` incluido)
+                - Docker con Compose es opcional y solo se necesita si deseas iniciar el PostgreSQL incluido
 
-                Inicia PostgreSQL de desarrollo con `docker compose up -d`, o configura:
+                Este proyecto no incluye Maven Wrapper. Verifica las herramientas con `java -version`, `mvn -version`
+                y, si usaras el contenedor incluido, `docker compose version`.
+
+                ## Variables de entorno
 
                 - `SERVER_PORT` (default `8080`)
                 - `DB_URL` (default `jdbc:postgresql://localhost:5434/%s`)
-                - `DB_USER` (default `postgres`)
+                - `DB_USER` (default `postgres`): usuario PostgreSQL. Si tu plataforma llama a esta variable
+                  `DB_USERNAME`, asigna su valor a `DB_USER`; el nombre consumido por este proyecto es `DB_USER`.
                 - `DB_PASSWORD` (default `postgres`, solo desarrollo)
                 - `CORS_ALLOWED_ORIGINS` (lista separada por comas; default `http://localhost:3000`)
                 - `AI_SERVICE_URL` (default `http://localhost:8000`): ai-service local de LogicDraft.
 
-                `.env.example` es solo una referencia: Spring no carga archivos `.env` automaticamente.
+                Consulta `.env.example` para ver todos los valores. Es un archivo de referencia: Spring no carga
+                `.env` automaticamente. Exporta las variables en la terminal, configuralas en el IDE o usa el
+                mecanismo de secretos de tu plataforma. No guardes credenciales reales en Git.
 
-                Ejecuta con `mvn spring-boot:run`. `ddl-auto=update` simplifica desarrollo; produccion debe usar migraciones versionadas.
+                ## Escenario 1: primera ejecucion de un proyecto nuevo
 
-                ## Endpoints
+                La base PostgreSQL debe existir antes de iniciar Spring. Hibernate puede crear o actualizar tablas
+                con `ddl-auto=update`, pero no crea la base de datos.
+
+                Opcion recomendada para desarrollo, usando el Docker Compose que realmente incluye este ZIP:
+
+                ```bash
+                docker compose up -d
+                docker compose ps
+                mvn spring-boot:run
+                ```
+
+                El contenedor crea `%s` en el puerto host `5434`, con usuario y password `postgres`. Tambien puedes
+                crear la base manualmente en tu servidor PostgreSQL y definir `DB_URL`, `DB_USER` y `DB_PASSWORD`
+                antes de ejecutar `mvn spring-boot:run`.
+
+                Comprueba la API en `http://localhost:8080%s`. Una respuesta `[]` confirma que el endpoint esta
+                disponible y todavia no contiene registros.
+
+                ## Escenario 2: PostgreSQL o proyecto ya configurado
+
+                No inicies el contenedor incluido si ya utilizas otra instancia. Conserva tus datos y configura la
+                conexion existente, por ejemplo en PowerShell:
+
+                ```powershell
+                $env:DB_URL="jdbc:postgresql://localhost:5432/mi_base_existente"
+                $env:DB_USER="mi_usuario"
+                $env:DB_PASSWORD="mi_password"
+                $env:SERVER_PORT="8080"
+                mvn spring-boot:run
+                ```
+
+                `ddl-auto=update` intenta adaptar tablas sin borrar la base, pero sigue siendo una comodidad de
+                desarrollo. Antes de conectarte a datos importantes crea un respaldo y, para produccion, usa
+                migraciones versionadas revisadas por tu equipo.
+
+                ## Estructura del proyecto
+
+                ```text
+                src/main/java/com/logicdraft/generated/.../
+                  config/       CORS
+                  controller/   endpoints REST
+                  dto/          contratos CreateRequest, UpdateRequest y Response
+                  entity/       entidades JPA
+                  error/        respuestas de error
+                  repository/   acceso a PostgreSQL
+                  service/      logica CRUD y relaciones
+                src/main/resources/application.properties
+                API.md
+                .env.example
+                docker-compose.yml
+                pom.xml
+                ```
+
+                ## Ejecucion y URL base
+
+                Ejecuta `mvn spring-boot:run`. La URL base predeterminada es `http://localhost:8080`; puedes cambiar
+                el puerto con `SERVER_PORT`. Abrir `/` puede devolver 404 porque este proyecto es una API: utiliza
+                las rutas `/api/...` listadas a continuacion y detalladas en `API.md`.
+
+                ## Resumen de endpoints CRUD
 
                 Cada ruta admite GET de coleccion, GET por ID, POST, PUT y DELETE:
 
                 %s
+
+                ## Conectar un frontend externo y CORS
+
+                Configura el cliente con `http://localhost:8080` como URL del backend. Por ejemplo, Axios puede usar
+                `axios.create({ baseURL: 'http://localhost:8080/api' })`; Flutter puede recibir la URL mediante
+                `--dart-define=API_BASE_URL=http://localhost:8080`.
+
+                En navegadores, agrega el origen exacto del frontend a `CORS_ALLOWED_ORIGINS`. Para Vite suele ser
+                `http://localhost:5173`; para varios origenes usa una lista separada por comas. No uses `*` con
+                credenciales. Reinicia Spring despues de cambiar variables de entorno.
 
                 ## Comandos de IA en desarrollo local
 
@@ -205,6 +283,7 @@ public final class SpringStaticTemplates {
                   variables en tu entorno o configuralas desde tu IDE o terminal.
                 - `spring.jpa.hibernate.ddl-auto=update` es solo para desarrollo. En produccion utiliza migraciones
                   versionadas.
-                """.formatted(schema.projectName(), database, endpoints);
+                """.formatted(schema.projectName(), schema.projectName(), database, database,
+                    SpringNames.restRoute(schema.entities().get(0).technicalName()), endpoints);
     }
 }

@@ -856,3 +856,193 @@
 @media (max-width: 680px) {
   .agent-panel { top: 122px; left: 12px; width: min(330px, calc(100vw - 24px)); }
 }
+
+/* Paneles adaptativos del editor. En desktop se conserva el layout de tres columnas. */
+.diagram-panel-toggle,
+.diagram-panel-close,
+.diagram-panel-backdrop {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .diagram-panel-toggle {
+    display: inline-flex;
+    min-height: 38px;
+    align-items: center;
+  }
+  .diagram-panel-toggle[aria-pressed="true"] {
+    color: var(--de-accent);
+    border-color: var(--de-accent);
+    background: rgb(165 180 252 / 10%);
+  }
+  .diagram-panel-close {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    margin-left: auto;
+    padding: 0;
+    place-items: center;
+    border: 1px solid var(--de-border);
+    color: var(--de-text);
+    background: transparent;
+    cursor: pointer;
+    font-size: 20px;
+  }
+  .diagram-panel-backdrop {
+    position: fixed;
+    z-index: 28;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: rgb(0 0 0 / 48%);
+  }
+  .diagram-sidebar {
+    z-index: 31;
+    width: 250px;
+    transform: translateX(-102%);
+    transition: transform 180ms ease;
+  }
+  .diagram-editor.is-sidebar-open .diagram-sidebar {
+    transform: translateX(0);
+  }
+  .diagram-properties {
+    z-index: 31;
+    width: 320px;
+    transform: translateX(102%);
+    transition: transform 180ms ease;
+  }
+  .diagram-editor.is-properties-open .diagram-properties {
+    transform: translateX(0);
+  }
+  .diagram-toolbar {
+    z-index: 25;
+    left: 0;
+    right: 0;
+  }
+  .diagram-canvas {
+    left: 0;
+    right: 0;
+  }
+  .project-presence {
+    right: 12px;
+  }
+  .ai-prompt-wrapper {
+    left: 50%;
+    width: min(520px, calc(100vw - 32px));
+  }
+  .agent-panel {
+    left: 12px;
+    width: min(340px, calc(100vw - 24px));
+  }
+}
+
+@media (max-width: 680px) {
+  .diagram-toolbar {
+    min-height: 98px;
+    height: auto;
+    padding: 8px 10px;
+    flex-wrap: wrap;
+    align-content: center;
+    gap: 6px;
+  }
+  .diagram-breadcrumb {
+    width: 100%;
+  }
+  .diagram-breadcrumb span,
+  .diagram-breadcrumb b,
+  .diagram-breadcrumb small,
+  .diagram-breadcrumb i {
+    display: none;
+  }
+  .diagram-toolbar-actions {
+    width: 100%;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .diagram-toolbar-actions > button,
+  .diagram-toolbar-actions > .project-export-menu > button {
+    min-height: 40px;
+    white-space: nowrap;
+  }
+  .diagram-toolbar-actions .danger-action,
+  .persistence-badge {
+    display: none;
+  }
+  .diagram-canvas {
+    top: 98px;
+    bottom: 0;
+  }
+  .diagram-sidebar {
+    top: 0;
+    bottom: 0;
+    width: min(86vw, 300px);
+    height: 100%;
+    border-right: 1px solid var(--de-border);
+    border-bottom: 0;
+  }
+  .diagram-brand {
+    height: 58px;
+    padding: 0 14px;
+    display: flex;
+  }
+  .diagram-section-label,
+  .diagram-help {
+    display: block;
+  }
+  .diagram-sidebar-content {
+    padding: 22px 15px;
+  }
+  .add-entity-button {
+    width: 100%;
+    min-height: 44px;
+  }
+  .diagram-properties {
+    inset: auto 0 0;
+    width: 100%;
+    height: min(72vh, 620px);
+    border-top: 1px solid var(--de-border);
+    border-left: 0;
+    transform: translateY(102%);
+  }
+  .diagram-editor.is-properties-open .diagram-properties {
+    transform: translateY(0);
+  }
+  .diagram-properties > header {
+    height: 52px;
+    justify-content: space-between;
+  }
+  .properties-content {
+    display: block;
+  }
+  .properties-empty {
+    padding: 24px;
+  }
+  .project-presence {
+    top: 108px;
+    right: 8px;
+    min-width: 190px;
+  }
+  .ai-prompt-wrapper {
+    bottom: 14px;
+    width: calc(100vw - 20px);
+  }
+  .agent-panel {
+    top: 108px;
+    left: 8px;
+    width: min(330px, calc(100vw - 16px));
+  }
+  .export-message {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diagram-sidebar,
+  .diagram-properties {
+    transition: none;
+  }
+}

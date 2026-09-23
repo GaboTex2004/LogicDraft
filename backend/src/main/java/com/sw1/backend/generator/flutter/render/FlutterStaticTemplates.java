@@ -701,15 +701,25 @@ public final class FlutterStaticTemplates {
                   @override
                   Widget build(BuildContext context) => Scaffold(
                     appBar: AppBar(title: const Text('%s')),
-                    body: ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        const RuntimeCommand(),
-                        const SizedBox(height: 20),
-                        const Text('Entidades', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 12),
+                    body: LayoutBuilder(
+                      builder: (context, constraints) => Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 960),
+                          child: ListView(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: constraints.maxWidth < 600 ? 16 : 24,
+                              vertical: 16,
+                            ),
+                            children: [
+                              const RuntimeCommand(),
+                              const SizedBox(height: 20),
+                              const Text('Entidades', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 12),
                 %s
-                      ],
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   );
                 }

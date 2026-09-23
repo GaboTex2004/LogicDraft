@@ -27,6 +27,7 @@ class FullStackGeneratorTest {
         assertTrue(first.files().containsKey("README.md"));
         assertTrue(first.files().containsKey("backend/pom.xml"));
         assertTrue(first.files().containsKey("backend/src/main/resources/application.properties"));
+        assertTrue(first.files().containsKey("backend/API.md"));
         assertTrue(first.files().containsKey("frontend/pubspec.yaml"));
         assertTrue(first.files().containsKey("frontend/lib/main.dart"));
         String readme = first.files().get("README.md");
@@ -42,6 +43,7 @@ class FullStackGeneratorTest {
         assertFalse(readme.contains("```powershell\nset SERVER_PORT"));
         assertTrue(readme.contains("ambos tienen que coincidir"));
         assertTrue(readme.contains("tabla intermedia con foreign keys y pareja UNIQUE"));
+        assertTrue(readme.contains("backend/API.md"));
 
         var expectedBackend = new SpringBootGenerator().generate(schema).files();
         var actualBackend = new LinkedHashMap<String, String>();
@@ -60,6 +62,7 @@ class FullStackGeneratorTest {
         List<String> entries = entries(zip);
         assertTrue(entries.stream().allMatch(path -> path.startsWith("peluqueria/")));
         assertTrue(entries.contains("peluqueria/backend/pom.xml"));
+        assertTrue(entries.contains("peluqueria/backend/API.md"));
         assertTrue(entries.contains("peluqueria/frontend/pubspec.yaml"));
         assertTrue(entries.contains("peluqueria/README.md"));
         assertArrayEquals(zip, SafeZipWriter.write(second));

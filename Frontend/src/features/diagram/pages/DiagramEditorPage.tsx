@@ -289,6 +289,8 @@ function DiagramEditorCanvas({
   const [exportMessage, setExportMessage] = useState("");
   const [conversionOpen, setConversionOpen] = useState(false);
   const [conversionError, setConversionError] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [pendingProposal, setPendingProposal] = useState<{
     operations: DiagramAiOperation[];
     revision: number;
@@ -323,6 +325,16 @@ function DiagramEditorCanvas({
   const protectedSelection =
     nodes.some((node) => node.selected && protectedNodeIds.has(node.id)) ||
     edges.some((edge) => edge.selected && protectedEdgeIds.has(edge.id));
+
+  useEffect(() => {
+    const closePanels = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setSidebarOpen(false);
+      setPropertiesOpen(false);
+    };
+    window.addEventListener("keydown", closePanels);
+    return () => window.removeEventListener("keydown", closePanels);
+  }, []);
   const selectedAssociationColumns =
     selectedNode?.data.association?.endpoints.map((endpoint) => {
       const referenced = nodes.find((node) => node.id === endpoint.entityId);
@@ -1111,10 +1123,22 @@ function DiagramEditorCanvas({
   );
 
   return (
-    <div className="diagram-editor">
+    <div className={`diagram-editor${sidebarOpen ? " is-sidebar-open" : ""}${propertiesOpen ? " is-properties-open" : ""}`}>
+      {(sidebarOpen || propertiesOpen) && (
+        <button
+          className="diagram-panel-backdrop"
+          type="button"
+          aria-label="Cerrar paneles"
+          onClick={() => {
+            setSidebarOpen(false);
+            setPropertiesOpen(false);
+          }}
+        />
+      )}
       <DiagramSidebar
         projectsPath={`/workspaces/${project.workspaceId}/proyectos`}
         onAddEntity={addEntity}
+        onClose={() => setSidebarOpen(false)}
       />
       <DiagramToolbar
         projectName={project.nombre}
@@ -1136,6 +1160,16 @@ function DiagramEditorCanvas({
         onExportEnterpriseArchitect={() =>
           void handleEnterpriseArchitectExport()
         }
+        sidebarOpen={sidebarOpen}
+        propertiesOpen={propertiesOpen}
+        onToggleSidebar={() => {
+          setPropertiesOpen(false);
+          setSidebarOpen((open) => !open);
+        }}
+        onToggleProperties={() => {
+          setSidebarOpen(false);
+          setPropertiesOpen((open) => !open);
+        }}
       />
       <ProjectPresence status={status} collaborators={collaborators} />
       <section className="diagram-canvas" aria-label="Canvas del diagrama">
@@ -1187,6 +1221,7 @@ function DiagramEditorCanvas({
         </ReactFlow>
       </section>
       <DiagramPropertiesPanel
+        onClose={() => setPropertiesOpen(false)}
         edge={selectedEdge}
         joinTable={selectedJoinTable}
         structuralRelationship={Boolean(

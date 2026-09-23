@@ -1,0 +1,18 @@
+# Dependencias y archivos generados
+node_modules/
+dist/
+coverage/
+*.log
+
+# Variables de entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Configuración local
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore

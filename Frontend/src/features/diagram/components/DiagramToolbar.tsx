@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+
 export type SaveStatus =
   | "clean"
   | "dirty"
@@ -23,6 +25,10 @@ interface DiagramToolbarProps {
   onExportBackend: () => void;
   onExportFullStack: () => void;
   onExportEnterpriseArchitect?: () => void;
+  onToggleSidebar: () => void;
+  onToggleProperties: () => void;
+  sidebarOpen: boolean;
+  propertiesOpen: boolean;
 }
 
 const statusLabels: Record<SaveStatus, string> = {
@@ -47,6 +53,10 @@ export function DiagramToolbar({
   onExportBackend,
   onExportFullStack,
   onExportEnterpriseArchitect,
+  onToggleSidebar,
+  onToggleProperties,
+  sidebarOpen,
+  propertiesOpen,
 }: DiagramToolbarProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -71,6 +81,12 @@ export function DiagramToolbar({
         <small>{statusLabels[saveStatus]}</small>
       </div>
       <div className="diagram-toolbar-actions">
+        <button className="diagram-panel-toggle" type="button" aria-pressed={sidebarOpen} onClick={onToggleSidebar}>
+          Herramientas
+        </button>
+        <button className="diagram-panel-toggle" type="button" aria-pressed={propertiesOpen} onClick={onToggleProperties}>
+          Propiedades
+        </button>
         <button type="button" onClick={onFitView}>
           Ajustar vista
         </button>
@@ -163,4 +179,3 @@ export function DiagramToolbar({
     </header>
   );
 }
-import { useEffect, useRef, useState } from "react";

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test:diagram-ai": "node --experimental-strip-types --test tests/diagramAi.test.mjs tests/relationships.test.mjs tests/joinTableVisualization.test.mjs tests/associationMetadata.test.mjs tests/associationConversion.test.mjs tests/associationAi.test.mjs tests/agentSession.test.mjs tests/agentAuthorization.test.mjs tests/generatorDownload.test.mjs tests/generatorExportUi.test.mjs",
+    "test:diagram-ai": "node --experimental-strip-types --test tests/diagramAi.test.mjs tests/relationships.test.mjs tests/joinTableVisualization.test.mjs tests/associationMetadata.test.mjs tests/associationConversion.test.mjs tests/associationAi.test.mjs tests/agentSession.test.mjs tests/agentAuthorization.test.mjs tests/generatorDownload.test.mjs tests/generatorExportUi.test.mjs tests/diagramResponsive.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -30,6 +30,9 @@ class FlutterGeneratorTest {
         assertTrue(project.files().get("pubspec.yaml").contains("record: ^6.1.2"));
         assertTrue(project.files().get("pubspec.yaml").contains("sherpa_onnx: 1.13.8"));
         assertTrue(project.files().get("lib/main.dart").contains("MaterialApp"));
+        String home = project.files().get("lib/screens/home_screen.dart");
+        assertTrue(home.contains("LayoutBuilder("));
+        assertTrue(home.contains("BoxConstraints(maxWidth: 960)"));
         String widgetTest = project.files().get("test/widget_test.dart");
         assertTrue(widgetTest.contains("import 'package:servicios/main.dart';"));
         assertTrue(widgetTest.contains("const " + com.sw1.backend.generator.flutter.render.FlutterStaticTemplates.APPLICATION_CLASS_NAME + "()"));
@@ -56,11 +59,16 @@ class FlutterGeneratorTest {
         assertTrue(service.contains("ApiClient.put('$route/$id', request)"));
         assertTrue(service.contains("ApiClient.delete('$route/$id')"));
         String form = project.files().get("lib/screens/servicio/servicio_form_screen.dart");
+        assertTrue(form.contains("LayoutBuilder("));
+        assertTrue(form.contains("BoxConstraints(maxWidth: 720)"));
+        assertTrue(form.contains("constraints.maxWidth < 600"));
         assertFalse(form.contains("_idController"));
         assertTrue(form.contains("if (text.isEmpty) return 'Campo requerido'"));
         assertTrue(form.contains("double.tryParse(text)"));
         assertTrue(form.contains("Error al guardar"));
         String list = project.files().get("lib/screens/servicio/servicio_list_screen.dart");
+        assertTrue(list.contains("LayoutBuilder("));
+        assertTrue(list.contains("BoxConstraints(maxWidth: 960)"));
         assertTrue(list.contains("No hay registros de Servicio."));
         assertTrue(list.contains("Registrar Servicio"));
         assertTrue(list.contains("Registro guardado correctamente"));

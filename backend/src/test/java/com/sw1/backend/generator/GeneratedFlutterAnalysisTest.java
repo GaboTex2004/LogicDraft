@@ -5,6 +5,10 @@ import com.sw1.backend.generator.schema.ApplicationSchema;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -33,7 +37,7 @@ class GeneratedFlutterAnalysisTest {
             Files.createDirectories(target.getParent());
             Files.writeString(target, file.getValue());
         }
-        run(directory, flutter, "create", "--platforms=android,windows", ".");
+        run(directory, flutter, "create", "--no-pub", "--platforms=android,windows", ".");
         assertEquals(generatedWidgetTest, Files.readString(directory.resolve("test/widget_test.dart")),
                 "flutter create no debe sobrescribir el smoke test generado por LogicDraft");
         assertEquals(generatedVoiceTest, Files.readString(directory.resolve("test/runtime_command_test.dart")),
@@ -45,9 +49,14 @@ class GeneratedFlutterAnalysisTest {
     }
 
     private void run(Path directory, String executable, String... arguments) throws Exception {
-        String[] command = new String[arguments.length + 1];
-        command[0] = executable;
-        System.arraycopy(arguments, 0, command, 1, arguments.length);
+        var command = new ArrayList<String>();
+        if (System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("windows")
+                && executable.toLowerCase(Locale.ROOT).endsWith(".bat")) {
+            command.addAll(List.of("cmd.exe", "/d", "/c", "call", executable));
+        } else {
+            command.add(executable);
+        }
+        command.addAll(Arrays.asList(arguments));
         Path outputFile = Files.createTempFile(directory, "flutter-", ".log");
         Process process = new ProcessBuilder(command).directory(directory.toFile())
                 .redirectErrorStream(true).redirectOutput(outputFile.toFile()).start();

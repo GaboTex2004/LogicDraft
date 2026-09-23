@@ -21,6 +21,7 @@ public class SpringBootGenerator {
         files.put("pom.xml", SpringStaticTemplates.pom(artifact));
         files.put("src/main/resources/application.properties", SpringStaticTemplates.properties(database));
         files.put("README.md", SpringStaticTemplates.readme(schema, artifact, database));
+        files.put("API.md", ApiDocumentationRenderer.render(schema, relations));
         files.put(".env.example", SpringStaticTemplates.envExample(database));
         files.put("docker-compose.yml", SpringStaticTemplates.compose(database));
         files.put(".gitignore", "target/\n.idea/\n*.iml\n");

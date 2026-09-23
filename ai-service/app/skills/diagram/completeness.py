@@ -287,7 +287,44 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
     for name in _requested_entity_names(plain_prompt):
         if _key(name) not in {_key(item) for item in names}:
             names.append(name)
+    # Reconocer varias entidades con atributos en una misma oración.
+    # Ejemplo: Crea las entidades Autor con ID Integer y Nombre String,
+    # y Libro con ID Integer y Titulo String.
+    inline_attributes: list[tuple[str, str]] = []
 
+    inline_match = re.search(
+        r"\b(?:crea|crear|creame|agrega|anade|genera)\s+las?\s+entidades\s+([^.;]+)",
+        plain_prompt,
+    )
+
+    if inline_match:
+        blocks = re.split(
+            r",\s*y\s+(?=[a-z][\w-]*\s+con\b)",
+            inline_match.group(1),
+        )
+
+        for block in blocks:
+            match = re.match(r"\s*([a-z][\w-]*)\s+con\s+(.+)", block)
+
+            if not match:
+                continue
+
+            entity_name, attributes_text = match.groups()
+
+            if entity_name not in names:
+                names.append(entity_name)
+
+            for attribute in _TYPED_ATTRIBUTE.finditer(attributes_text):
+                attribute_name = (
+                    attribute.group("double")
+                    or attribute.group("single")
+                    or attribute.group("bare")
+                )
+
+                target = (entity_name, attribute_name)
+
+                if target not in inline_attributes:
+                    inline_attributes.append(target)
     pairs: list[tuple[str, str]] = []
     direct_patterns = [
         r"\b(?:conecta|relaciona)\s+([a-z][\w-]*)\s+con\s+([a-z][\w-]*)",
@@ -328,7 +365,9 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
         new_count,
         tuple(names),
         tuple(pairs),
-        tuple(_requested_attributes(plain_prompt, names)),
+        tuple(dict.fromkeys(
+            _requested_attributes(plain_prompt, names) + inline_attributes
+        )),
     )
 
 
@@ -343,7 +382,10 @@ def _sanitize_requested_operations(
     entity_keys = {_key(name) for name in expected.entity_names}
     attribute_keys = {(_key(entity), _key(attribute)) for entity, attribute in expected.attribute_targets}
     relationship_keys = [{_key(source), _key(target)} for source, target in expected.relationship_pairs]
-    mentions_attributes = re.search(r"\b(?:atributos?|attributes?|campos?|fields?)\b", plain_prompt) is not None
+    mentions_attributes = bool(attribute_keys) or re.search(
+        r"\b(?:atributos?|attributes?|campos?|fields?)\b",
+        plain_prompt,
+    ) is not None
     mentions_relationship = bool(relationship_keys) or re.search(
         r"\b(?:relacion|relaciones|relaciona|relacionar|relacione|conecta|conectar|conecte|pertenece)\b",
         plain_prompt,

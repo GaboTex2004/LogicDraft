@@ -1,0 +1,27 @@
+# Entorno virtual y archivos de Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Variables privadas
+.env
+.env.*
+!.env.example
+
+# Archivos locales
+.vscode/
+.idea/
+*.log
+*.tmp
+
+# Git
+.git/
+.gitignore
+
+# Archivos de prueba y documentacion
+tests/
+probe_agent_conversation.py
+*.md

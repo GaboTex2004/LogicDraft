@@ -25,6 +25,7 @@ interface DiagramPropertiesPanelProps {
     changes: Partial<Omit<EntityAttribute, "id">>,
   ) => void;
   onDeleteAttribute: (attributeId: string) => void;
+  onClose: () => void;
 }
 
 export function DiagramPropertiesPanel({
@@ -40,11 +41,12 @@ export function DiagramPropertiesPanel({
   onAddAttribute,
   onChangeAttribute,
   onDeleteAttribute,
+  onClose,
 }: DiagramPropertiesPanelProps) {
   if (edge) {
     const cards = cardinalities(edge.data);
     return <aside className="diagram-properties">
-      <header>Propiedades de relación</header>
+      <header><span>Propiedades de relación</span><button className="diagram-panel-close" type="button" aria-label="Cerrar propiedades" onClick={onClose}>×</button></header>
       <div className="properties-content">
         <label>Nombre de la relacion
           <input maxLength={100} value={typeof edge.data?.name === 'string' ? edge.data.name : ''}
@@ -79,7 +81,7 @@ export function DiagramPropertiesPanel({
   }
   return (
     <aside className="diagram-properties">
-      <header>Propiedades de entidad</header>
+      <header><span>Propiedades de entidad</span><button className="diagram-panel-close" type="button" aria-label="Cerrar propiedades" onClick={onClose}>×</button></header>
       {!entity ? (
         <div className="properties-empty">
           <span aria-hidden="true">◇</span>

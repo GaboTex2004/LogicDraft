@@ -104,9 +104,13 @@ public final class DartScreenRenderer {
                   @override
                   Widget build(BuildContext context) => Scaffold(
                     appBar: AppBar(title: const Text('%s')),
-                    body: RefreshIndicator(
-                      onRefresh: _load,
-                      child: _loading
+                    body: LayoutBuilder(
+                      builder: (context, constraints) => Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 960),
+                          child: RefreshIndicator(
+                            onRefresh: _load,
+                            child: _loading
                           ? const Center(child: CircularProgressIndicator())
                           : _error != null
                               ? ListView(children: [
@@ -149,6 +153,9 @@ public final class DartScreenRenderer {
                                         );
                                       },
                                     ),
+                          ),
+                        ),
+                      ),
                     ),
                     floatingActionButton: FloatingActionButton.extended(
                       onPressed: _openForm,
@@ -292,11 +299,18 @@ public final class DartScreenRenderer {
                   @override
                   Widget build(BuildContext context) => Scaffold(
                     appBar: AppBar(title: Text(widget.initial == null ? 'Crear %s' : 'Editar %s')),
-                    body: Form(
-                      key: _formKey,
-                      child: ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
+                    body: LayoutBuilder(
+                      builder: (context, constraints) => Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
+                          child: Form(
+                            key: _formKey,
+                            child: ListView(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: constraints.maxWidth < 600 ? 16 : 24,
+                                vertical: 16,
+                              ),
+                              children: [
                 %s          if (_saveError != null) ...[
                             Text(_saveError!, key: const Key('save-error'), style: const TextStyle(color: Colors.red)),
                             const SizedBox(height: 12),
@@ -306,7 +320,10 @@ public final class DartScreenRenderer {
                             onPressed: _saving ? null : _save,
                             child: Text(_saving ? 'Guardando...' : 'Guardar'),
                           ),
-                        ],
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   );

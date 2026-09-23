@@ -1,0 +1,70 @@
+name: logicdraft-deploy
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: logicdraft_db
+      POSTGRES_USER: logicdraft_user
+      POSTGRES_PASSWORD: ${DEPLOY_DB_PASSWORD:?Configura DEPLOY_DB_PASSWORD}
+
+    volumes:
+      - logicdraft_deploy_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logicdraft_user -d logicdraft_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://postgres:5432/logicdraft_db
+      DB_USER: logicdraft_user
+      DB_PASSWORD: ${DEPLOY_DB_PASSWORD:?Configura DEPLOY_DB_PASSWORD}
+      JWT_SECRET: ${DEPLOY_JWT_SECRET:?Configura DEPLOY_JWT_SECRET}
+      CORS_ALLOWED_ORIGIN: ${DEPLOY_FRONTEND_ORIGIN:?Configura DEPLOY_FRONTEND_ORIGIN}
+      AI_SERVICE_URL: http://ai-service:8000
+      AI_SERVICE_TIMEOUT_SECONDS: 420
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ai-service:
+    build:
+      context: ./ai-service
+    restart: unless-stopped
+
+    environment:
+      AI_PROVIDER: ${DEPLOY_AI_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: ${DEPLOY_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${DEPLOY_OLLAMA_MODEL:-llama3.2}
+      AI_REQUEST_TIMEOUT: 240
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${DEPLOY_GEMINI_MODEL:-gemini-3.5-flash-lite}
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  frontend:
+    build:
+      context: ./Frontend
+      args:
+        VITE_API_URL: /api
+        VITE_WS_URL: /ws
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:18082:80"
+
+    depends_on:
+      - backend
+volumes:
+  logicdraft_deploy_data:

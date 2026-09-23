@@ -11,6 +11,18 @@ def build_repair_prompt(
     parts = [
         "Repara una respuesta estructurada de LogicDraft.",
         "Devuelve SOLO JSON válido que cumpla el schema proporcionado.",
+        'La raiz debe ser exactamente {"operations":[...]}. '
+        'Cada operacion necesita obligatoriamente un campo "type" con uno de estos valores: '
+        'ADD_ENTITY, ADD_ATTRIBUTE, ADD_RELATIONSHIP o CONVERT_MANY_TO_MANY_ASSOCIATION.',
+        'Formato ADD_ENTITY: {"type":"ADD_ENTITY","entity":{"name":"Cliente",'
+        '"attributes":[{"name":"id","dataType":"Integer","primaryKey":true,"nullable":false}]}}.',
+        'Formato ADD_ATTRIBUTE: {"type":"ADD_ATTRIBUTE","entityName":"Cliente",'
+        '"attribute":{"name":"nombre","dataType":"String","primaryKey":false,"nullable":true}}.',
+        'Formato ADD_RELATIONSHIP: {"type":"ADD_RELATIONSHIP","relationship":'
+        '{"sourceEntity":"Cliente","targetEntity":"Pedido",'
+        '"sourceCardinality":"ONE_ONE","targetCardinality":"ZERO_MANY"}}.',
+        'Los ejemplos indican el FORMATO, no son operaciones solicitadas. '
+        'No copies sus entidades ni atributos.',
         "Devuelve el lote COMPLETO de operaciones, no solamente las operaciones faltantes.",
         "Incluye todas las entidades, todos sus atributos y todas las relaciones solicitadas.",
         "No uses Markdown, explicaciones, SQL ni campos adicionales.",

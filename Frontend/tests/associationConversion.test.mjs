@@ -79,7 +79,7 @@ test('dialog cancellation and collaboration use explicit non-mutating UI paths a
   const editor = readFileSync(new URL('../src/features/diagram/pages/DiagramEditorPage.tsx', import.meta.url), 'utf8')
   assert.match(dialog, /onCancel/)
   assert.match(dialog, /Cancelar/)
-  assert.match(editor, /publishEvent\('DIAGRAM_BATCH_APPLIED'/)
+  assert.match(editor, /publishEvent\(["']DIAGRAM_BATCH_APPLIED["']/)
   assert.match(editor, /remoteDocument\(event\.payload\)/)
   assert.doesNotMatch(dialog, /setNodes|setEdges/)
 })

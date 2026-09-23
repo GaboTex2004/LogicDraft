@@ -70,7 +70,7 @@ test('el flujo React revalida permisos y solo publica después de aceptar', () =
   const commit = editor.indexOf('commitDiagramOperations(proposal.operations)', permissionCheck)
   const publish = editor.indexOf('publishEvent(event.type', editor.indexOf('function commitDiagramOperations'))
   assert.ok(handlerStart >= 0)
-  assert.ok(editor.indexOf('prepareAgentResponse(message, response', handlerStart) > handlerStart)
+  assert.match(editor.slice(handlerStart), /prepareAgentResponse\(\s*message,\s*response/)
   assert.ok(permissionCheck > acceptStart)
   assert.ok(commit > permissionCheck)
   assert.ok(publish >= 0)

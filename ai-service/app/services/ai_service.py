@@ -2,7 +2,7 @@ from typing import Any
 from app.core.config import Settings
 from app.services.providers.base import BaseAIProvider, ProviderConfigurationError
 from app.services.providers.ollama_provider import OllamaProvider
-
+from app.services.providers.gemini_provider import GeminiProvider
 
 class AIService:
     def __init__(self, provider: BaseAIProvider) -> None:
@@ -15,6 +15,13 @@ class AIService:
             provider = OllamaProvider(
                 base_url=settings.ollama_base_url,
                 model=settings.ollama_model,
+                timeout=settings.ai_request_timeout,
+            )
+            return cls(provider)
+        if provider_name == "gemini":
+            provider = GeminiProvider(
+                api_key=settings.gemini_api_key,
+                model=settings.gemini_model,
                 timeout=settings.ai_request_timeout,
             )
             return cls(provider)

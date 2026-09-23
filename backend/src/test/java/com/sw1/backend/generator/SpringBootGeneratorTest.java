@@ -19,7 +19,7 @@ class SpringBootGeneratorTest {
 
         assertEquals("servicios-backend", project.rootDirectoryName());
         assertTrue(project.files().keySet().containsAll(List.of(
-                "pom.xml", "src/main/resources/application.properties", "README.md", ".env.example",
+                "pom.xml", "src/main/resources/application.properties", "README.md", "API.md", ".env.example",
                 "docker-compose.yml", root + "ServiciosApplication.java", root + "entity/Servicio.java",
                 root + "repository/ServicioRepository.java", root + "service/ServicioService.java",
                 root + "controller/ServicioController.java", root + "dto/ServicioCreateRequest.java",
@@ -31,6 +31,15 @@ class SpringBootGeneratorTest {
         assertTrue(project.files().get("src/main/resources/application.properties").contains("servicios_db"));
         assertTrue(project.files().containsKey("docker-compose.yml"));
 
+        String readme = project.files().get("README.md");
+        assertTrue(readme.contains("## Escenario 1: primera ejecucion de un proyecto nuevo"));
+        assertTrue(readme.contains("## Escenario 2: PostgreSQL o proyecto ya configurado"));
+        assertTrue(readme.contains("## Estructura del proyecto"));
+        assertTrue(readme.contains("## Conectar un frontend externo y CORS"));
+        assertTrue(readme.contains("DB_USER"));
+        assertTrue(readme.contains("DB_USERNAME"));
+        assertTrue(readme.contains("API.md"));
+
         String entity = project.files().get(root + "entity/Servicio.java");
         assertTrue(entity.contains("@GeneratedValue(strategy = GenerationType.IDENTITY)"));
         assertTrue(entity.contains("private Integer id;"));
@@ -41,6 +50,33 @@ class SpringBootGeneratorTest {
                 .contains("JpaRepository<Servicio, Integer>"));
         assertTrue(project.files().get(root + "controller/ServicioController.java")
                 .contains("@RequestMapping(\"/api/servicio\")"));
+    }
+
+    @Test
+    void generatesApiDocumentationFromRealSchemaAndRelations() {
+        GeneratedProject project = generator.generate(flutterAllTypesSchema());
+        String api = project.files().get("API.md");
+
+        assertNotNull(api);
+        assertTrue(api.contains("# API REST de Registros"));
+        assertTrue(api.contains("### `GET /api/registro`"));
+        assertTrue(api.contains("### `GET /api/registro/{id}`"));
+        assertTrue(api.contains("### `POST /api/registro`"));
+        assertTrue(api.contains("### `PUT /api/registro/{id}`"));
+        assertTrue(api.contains("### `DELETE /api/registro/{id}`"));
+        assertTrue(api.contains("\"texto\": \"ejemplo\""));
+        assertTrue(api.contains("\"cantidad\": 1"));
+        assertTrue(api.contains("\"monto\": 10.50"));
+        assertTrue(api.contains("\"activo\": true"));
+        assertTrue(api.contains("\"fecha\": \"2026-01-15\""));
+        assertTrue(api.contains("\"instante\": \"2026-01-15T10:30:00\""));
+        assertTrue(api.contains("\"eventoIds\": [1, 2]"));
+        assertTrue(api.contains("Relacion con Evento"));
+        String postSection = api.substring(api.indexOf("### `POST /api/registro`"),
+                api.indexOf("### `PUT /api/registro/{id}`"));
+        String postBody = postSection.substring(postSection.indexOf("Body de ejemplo:"),
+                postSection.indexOf("Respuesta de ejemplo:"));
+        assertFalse(postBody.contains("\"id\""));
     }
 
     @Test

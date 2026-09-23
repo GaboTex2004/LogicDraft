@@ -88,7 +88,8 @@ public class FullStackGenerator {
                 ambos tienen que coincidir.
 
                 Consulta `backend/README.md` para PostgreSQL y `frontend/README.md` para Windows, Android fisico,
-                IP local y `adb reverse`.
+                IP local y `adb reverse`. El contrato REST completo, con bodies y respuestas de ejemplo, esta en
+                `backend/API.md`.
                 """.formatted(schema.projectName());
     }
 }

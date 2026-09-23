@@ -7,7 +7,7 @@ const api = await readFile(new URL('../src/features/diagram/api/generatorApi.ts'
 const page = await readFile(new URL('../src/features/diagram/pages/DiagramEditorPage.tsx', import.meta.url), 'utf8')
 
 test('la acción de proyecto mantiene ambas opciones en un solo menú', () => {
-  assert.match(toolbar, /'Exportar'/)
+  assert.match(toolbar, /["']Exportar["']/)
   assert.match(toolbar, />Solo backend</)
   assert.match(toolbar, />Proyecto completo</)
   assert.match(toolbar, /aria-haspopup="menu"/)
@@ -15,17 +15,17 @@ test('la acción de proyecto mantiene ambas opciones en un solo menú', () => {
 
 test('las opciones conservan los endpoints y el bloqueo por cambios pendientes', () => {
   assert.match(api, /generator\/\$\{kind\}/)
-  assert.match(api, /responseType: 'blob'/)
+  assert.match(api, /responseType:\s*["']blob["']/)
   assert.match(api, /triggerBlobDownload/)
-  assert.match(page, /handleExport\('backend'\)/)
-  assert.match(page, /handleExport\('fullstack'\)/)
-  assert.match(page, /saveStatus === 'dirty'/)
-  assert.match(page, /saveStatus === 'saving'/)
-  assert.match(page, /saveStatus === 'forbidden'/)
+  assert.match(page, /handleExport\(["']backend["']\)/)
+  assert.match(page, /handleExport\(["']fullstack["']\)/)
+  assert.match(page, /saveStatus === ["']dirty["']/)
+  assert.match(page, /saveStatus === ["']saving["']/)
+  assert.match(page, /saveStatus === ["']forbidden["']/)
 })
 
 test('muestra loading y diferencia los errores de exportación', () => {
-  assert.match(toolbar, /'Generando\.\.\.'/)
+  assert.match(toolbar, /["']Generando\.\.\.["']/)
   assert.match(toolbar, /exportStatus !== null/)
   assert.match(page, /isUnauthorizedError\(requestError\)/)
   assert.match(page, /isForbiddenError\(requestError\)/)

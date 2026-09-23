@@ -90,11 +90,11 @@ test('strict parser rejects scalar FK, generated PK and unknown conversion field
 test('editor requires explicit acceptance and cancellation is non-mutating', () => {
   const editor = readFileSync(new URL('../src/features/diagram/pages/DiagramEditorPage.tsx', import.meta.url), 'utf8')
   const dialog = readFileSync(new URL('../src/features/diagram/components/DiagramAiProposalDialog.tsx', import.meta.url), 'utf8')
-  assert.match(editor, /setPendingProposal\(\{ operations/)
+  assert.match(editor, /setPendingProposal\(\s*\{\s*operations/)
   assert.match(editor, /prepareDiagramAiProposal/)
   assert.match(editor, /acceptAiProposal/)
   assert.match(editor, /Propuesta cancelada; no se realizaron cambios/)
-  assert.match(editor, /publishEvent\(event\.type, \{ document:/)
+  assert.match(editor, /publishEvent\(event\.type,\s*\{\s*document:/)
   assert.match(dialog, /Aplicar cambios/)
   assert.match(dialog, /Cancelar/)
   assert.doesNotMatch(dialog, /setNodes|setEdges/)
