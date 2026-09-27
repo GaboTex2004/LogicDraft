@@ -5,6 +5,7 @@ import test from 'node:test'
 const toolbar = await readFile(new URL('../src/features/diagram/components/DiagramToolbar.tsx', import.meta.url), 'utf8')
 const api = await readFile(new URL('../src/features/diagram/api/generatorApi.ts', import.meta.url), 'utf8')
 const page = await readFile(new URL('../src/features/diagram/pages/DiagramEditorPage.tsx', import.meta.url), 'utf8')
+const projectsPage = await readFile(new URL('../src/features/project/pages/ProjectsPage.tsx', import.meta.url), 'utf8')
 
 test('la acción de proyecto mantiene ambas opciones en un solo menú', () => {
   assert.match(toolbar, /["']Exportar["']/)
@@ -32,4 +33,11 @@ test('muestra loading y diferencia los errores de exportación', () => {
   assert.match(page, /response\?\.status === 409/)
   assert.match(page, /!requestError\.response/)
   assert.match(page, />= 500/)
+})
+
+test('la importación EA admite XMI/XML y sus warnings no bloquean la confirmación', () => {
+  assert.match(projectsPage, /accept="\.xmi,\.xml"/)
+  assert.match(projectsPage, /Puedes continuar; revisa estas conversiones/)
+  assert.doesNotMatch(projectsPage, /importPreview\.warnings\.length\s*>\s*0\s*\|\|\s*importing/)
+  assert.match(projectsPage, /disabled=\{!importFile \|\| importing\}/)
 })

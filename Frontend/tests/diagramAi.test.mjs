@@ -17,7 +17,7 @@ test('ADD_ENTITY creates real entity node and preserves attributes', () => {
   assert.equal(r.nodes[0].data.attributes[0].primaryKey, true)
   assert.equal(r.nodes[0].data.attributes[0].nullable, false)
   assert.equal(r.nodes[0].data.attributes[1].type, 'VARCHAR')
-  assert.equal(r.events[0].type, 'NODE_CREATED')
+  assert.equal(r.events[0].type, 'DIAGRAM_BATCH_APPLIED')
 })
 test('duplicate entity name is case insensitive and rejected', () => {
   assert.throws(() => apply(initial().nodes, [], [entity('CLIENTE')]))
@@ -25,7 +25,7 @@ test('duplicate entity name is case insensitive and rejected', () => {
 test('ADD_ATTRIBUTE uses existing node and SQL type', () => {
   const r = apply(initial().nodes, [], [attribute('cLiEnTe')])
   assert.equal(r.nodes[0].data.attributes.at(-1).type, 'VARCHAR')
-  assert.equal(r.events[0].type, 'NODE_UPDATED')
+  assert.equal(r.events[0].type, 'DIAGRAM_BATCH_APPLIED')
 })
 test('two attributes for different entities are both applied', () => {
   const original = initial()
@@ -34,7 +34,7 @@ test('two attributes for different entities are both applied', () => {
     attribute('Pedido', attr('codigo', 'String')),
   ])
   assert.deepEqual(r.nodes.map(node => node.data.attributes.at(-1).name), ['codigo', 'codigo'])
-  assert.equal(r.events.length, 2)
+  assert.equal(r.events.length, 1)
 })
 test('ADD_ATTRIBUTE missing entity fails', () => assert.throws(() => apply([], [], [attribute()])))
 test('identical attributes do not duplicate', () => {
@@ -52,7 +52,7 @@ test('relationship resolves IDs and stores cardinality', () => {
   assert.equal(r.edges[0].target, original.nodes[1].id)
   assert.equal(r.edges[0].data.sourceCardinality, 'ONE_ONE')
   assert.equal(r.edges[0].data.targetCardinality, 'ZERO_MANY')
-  assert.equal(r.events[0].type, 'EDGE_CREATED')
+  assert.equal(r.events[0].type, 'DIAGRAM_BATCH_APPLIED')
 })
 test('AI creates a named N:M relation with one derived join table definition', () => {
   const base = apply([], [], [entity('Alumno'), entity('Materia')])
@@ -83,7 +83,7 @@ test('batch runs in dependency order', () => {
   const r = apply([], [], [entity(), entity('Pedido'), attribute(), relationship()])
   assert.equal(r.nodes.length, 2)
   assert.equal(r.edges.length, 1)
-  assert.deepEqual(r.events.map(e => e.type), ['NODE_CREATED', 'NODE_CREATED', 'NODE_UPDATED', 'EDGE_CREATED'])
+  assert.deepEqual(r.events.map(e => e.type), ['DIAGRAM_BATCH_APPLIED'])
 })
 test('two entities and their N:M relationship are applied in one batch', () => {
   const manyToMany = { type: 'ADD_RELATIONSHIP', relationship: {
@@ -93,7 +93,7 @@ test('two entities and their N:M relationship are applied in one batch', () => {
   const r = apply([], [], [entity('Alumno'), entity('Materia'), manyToMany])
   assert.equal(r.nodes.length, 2)
   assert.equal(r.edges.length, 1)
-  assert.deepEqual(r.events.map(event => event.type), ['NODE_CREATED', 'NODE_CREATED', 'EDGE_CREATED'])
+  assert.deepEqual(r.events.map(event => event.type), ['DIAGRAM_BATCH_APPLIED'])
 })
 test('failure after a valid operation leaves original graph unchanged', () => {
   const original = initial()

@@ -150,6 +150,24 @@ class ContextualDiagramTest {
         verify(client).interpret(expected);
         verify(loader, times(2)).load(1L);
     }
+    @Test void semanticSelectionIsCanonicalizedAndUnknownSelectionNeverCallsAI() {
+        var loader = mock(ProjectDiagramContextService.class);
+        var client = mock(AiServiceClient.class);
+        when(loader.load(1L)).thenReturn(context);
+        var expectedSelection = new DiagramSelection("ENTITY", "Cliente", null, null, null);
+        var expected = new ContextualInterpretRequest("agrega telefono", context, expectedSelection);
+        when(client.interpret(expected)).thenReturn(new DiagramInterpretResponse(List.of()));
+        var service = new ContextualDiagramAiService(loader, client);
+        assertTrue(service.interpret(1L, new AiGenerateRequest("agrega telefono",
+                new DiagramSelection("ENTITY", "cliente", null, null, null))).operations().isEmpty());
+        verify(client).interpret(expected);
+
+        var unknownClient = mock(AiServiceClient.class);
+        assertThrows(AiServiceException.class, () -> new ContextualDiagramAiService(loader, unknownClient)
+                .interpret(1L, new AiGenerateRequest("eliminala",
+                        new DiagramSelection("ENTITY", "Inexistente", null, null, null))));
+        verifyNoInteractions(unknownClient);
+    }
     @Test void rejectedAccessNeverCallsAI() {
         var loader = mock(ProjectDiagramContextService.class);
         var client = mock(AiServiceClient.class);

@@ -133,8 +133,8 @@ export function ProjectsPage() {
 
     if (!file) return;
 
-    if (!file.name.toLowerCase().endsWith(".xmi")) {
-      setImportError("Selecciona un archivo con extensión .xmi.");
+    if (!/\.(xmi|xml)$/i.test(file.name)) {
+      setImportError("Selecciona un archivo con extensión .xmi o .xml.");
       return;
     }
 
@@ -163,7 +163,6 @@ export function ProjectsPage() {
       workspaceId === null ||
       !importFile ||
       !importPreview ||
-      importPreview.warnings.length > 0 ||
       importing
     ) {
       return;
@@ -240,7 +239,7 @@ export function ProjectsPage() {
           <input
             id="enterprise-architect-file"
             type="file"
-            accept=".xmi"
+            accept=".xmi,.xml"
             disabled={previewLoading || importing}
             onChange={(event) => {
               void handleImportFile(event.target.files?.[0] ?? null);
@@ -296,8 +295,8 @@ export function ProjectsPage() {
                   </ul>
 
                   <p>
-                    La importación no se puede confirmar mientras existan
-                    advertencias.
+                    Puedes continuar; revisa estas conversiones después de
+                    importar.
                   </p>
                 </div>
               )}
@@ -305,9 +304,7 @@ export function ProjectsPage() {
               <button
                 className="project-button primary"
                 type="button"
-                disabled={
-                  !importFile || importing || importPreview.warnings.length > 0
-                }
+                disabled={!importFile || importing}
                 onClick={() => void handleConfirmImport()}
               >
                 {importing ? "Importando..." : "Confirmar importación"}

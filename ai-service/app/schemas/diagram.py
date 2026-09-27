@@ -14,6 +14,7 @@ DataType = Literal["String", "Long", "Integer", "Double", "Boolean", "Date", "Da
 class InterpretRequest(Contract):
     prompt: str = Field(min_length=1, max_length=10000)
     diagram: "DiagramContext | None" = None
+    selection: "DiagramSelection | None" = None
 
     @field_validator("prompt")
     @classmethod
@@ -72,6 +73,100 @@ class AddRelationship(Contract):
     relationship: RelationshipDefinition
 
 
+class DeleteEntity(Contract):
+    type: Literal["DELETE_ENTITY"]
+    entityName: Name
+
+
+class RenameEntity(Contract):
+    type: Literal["RENAME_ENTITY"]
+    entityName: Name
+    newName: Name
+
+
+class AttributeReferenceOperation(Contract):
+    entityName: Name
+    attributeName: Name
+
+
+class DeleteAttribute(AttributeReferenceOperation):
+    type: Literal["DELETE_ATTRIBUTE"]
+
+
+class RenameAttribute(AttributeReferenceOperation):
+    type: Literal["RENAME_ATTRIBUTE"]
+    newName: Name
+
+
+class ChangeAttributeType(AttributeReferenceOperation):
+    type: Literal["CHANGE_ATTRIBUTE_TYPE"]
+    dataType: DataType
+
+    @field_validator("dataType", mode="before")
+    @classmethod
+    def normalize(cls, value: object) -> object:
+        return normalize_data_type(value)
+
+
+class SetAttributePrimaryKey(AttributeReferenceOperation):
+    type: Literal["SET_ATTRIBUTE_PRIMARY_KEY"]
+    value: bool
+
+
+class SetAttributeNullable(AttributeReferenceOperation):
+    type: Literal["SET_ATTRIBUTE_NULLABLE"]
+    value: bool
+
+
+class RelationshipReference(Contract):
+    sourceEntity: Name
+    targetEntity: Name
+    name: Name | None = None
+
+    @model_serializer(mode="wrap")
+    def omit_absent_name(self, serializer):
+        return {key: value for key, value in serializer(self).items() if value is not None}
+
+
+class DeleteRelationship(Contract):
+    type: Literal["DELETE_RELATIONSHIP"]
+    relationship: RelationshipReference
+
+
+class RelationshipUpdate(RelationshipReference):
+    sourceCardinality: DiagramCardinality
+    targetCardinality: DiagramCardinality
+
+
+class UpdateRelationship(Contract):
+    type: Literal["UPDATE_RELATIONSHIP"]
+    relationship: RelationshipUpdate
+
+
+class AssociationCreationDefinition(Contract):
+    sourceEntity: Name
+    targetEntity: Name
+    associationEntityName: Name
+    attributes: list[AttributeDefinition] = Field(max_length=100)
+
+    @field_validator("attributes")
+    @classmethod
+    def own_attributes(cls, value: list[AttributeDefinition]) -> list[AttributeDefinition]:
+        if any(attribute.primaryKey for attribute in value):
+            raise ValueError("association attributes cannot replace the generated primary key")
+        return value
+
+
+class CreateAssociation(Contract):
+    type: Literal["CREATE_ASSOCIATION"]
+    association: AssociationCreationDefinition
+
+
+class DeleteAssociation(Contract):
+    type: Literal["DELETE_ASSOCIATION"]
+    associationEntityName: Name
+
+
 class AssociationConversionDefinition(Contract):
     relationshipId: Name
     sourceEntity: Name
@@ -95,7 +190,10 @@ class ConvertManyToManyAssociation(Contract):
     conversion: AssociationConversionDefinition
 
 
-Operation = Annotated[AddEntity | AddAttribute | AddRelationship | ConvertManyToManyAssociation,
+Operation = Annotated[AddEntity | DeleteEntity | RenameEntity | AddAttribute | DeleteAttribute |
+                      RenameAttribute | ChangeAttributeType | SetAttributePrimaryKey | SetAttributeNullable |
+                      AddRelationship | DeleteRelationship | UpdateRelationship | CreateAssociation |
+                      DeleteAssociation | ConvertManyToManyAssociation,
                       Field(discriminator="type")]
 
 
@@ -138,6 +236,14 @@ class AssociationContext(Contract):
     tableName: Name
     endpointEntityNames: list[Name] = Field(min_length=2, max_length=2)
     structuralRelationshipIds: list[Name] = Field(min_length=2, max_length=2)
+
+
+class DiagramSelection(Contract):
+    kind: Literal["ENTITY", "RELATIONSHIP"]
+    entityName: Name | None = None
+    sourceEntity: Name | None = None
+    targetEntity: Name | None = None
+    relationshipName: Name | None = None
 
 
 InterpretRequest.model_rebuild()

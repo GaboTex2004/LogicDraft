@@ -24,9 +24,10 @@ function many(value: string): boolean {
 }
 
 function structuralRelationship(edge: DiagramEdge, endpointId: string, associationId: string): boolean {
-  const cards = cardinalities(edge.data)
   return edge.source === endpointId && edge.target === associationId
-    && cards.sourceCardinality === 'ONE_ONE' && many(cards.targetCardinality)
+    // Manual conversions are N:M, but an imported UML AssociationClass may
+    // contain a valid 1:1 fallback after reporting a malformed EA value.
+    && cardinalities(edge.data).sourceCardinality === 'ONE_ONE'
 }
 
 /** Validates only the optional association extension, leaving legacy diagrams unchanged. */

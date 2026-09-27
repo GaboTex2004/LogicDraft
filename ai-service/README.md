@@ -99,6 +99,8 @@ OLLAMA_MODEL=
 AI_REQUEST_TIMEOUT=60
 AI_SERVICE_HOST=0.0.0.0
 AI_SERVICE_PORT=8000
+GROQ_API_KEY=tu_clave_real_aqui
+GROQ_WHISPER_MODEL=whisper-large-v3-turbo
 ```
 
 - `AI_PROVIDER`: proveedor activo; actualmente solo admite `ollama`.
@@ -106,6 +108,8 @@ AI_SERVICE_PORT=8000
 - `OLLAMA_MODEL`: nombre exacto del modelo instalado en esta computadora.
 - `AI_REQUEST_TIMEOUT`: timeout en segundos para Ollama.
 - `AI_SERVICE_HOST` y `AI_SERVICE_PORT`: interfaz y puerto configurables.
+- `GROQ_API_KEY`: secreto usado únicamente por el ai-service para transcribir audio.
+- `GROQ_WHISPER_MODEL`: modelo de transcripción; por defecto `whisper-large-v3-turbo`.
 
 Para seleccionar un modelo, se instala manualmente y luego se configura el mismo nombre:
 
@@ -288,11 +292,28 @@ Y responde:
 { "content": "..." }
 ```
 
-## Planificado, no implementado
+## CRUD estructurado del editor
 
-- Integración Spring Boot → FastAPI.
-- Operaciones estructuradas sobre diagramas.
-- `DiagramAIService`, agentes, contexto y herramientas.
-- Voz, visión, RAG, embeddings y proveedores remotos.
+La IA conversacional inferior usa `POST /api/ai/diagram/interpret` como intérprete. Devuelve exclusivamente
+un plan JSON tipado; no genera JavaScript, no escribe PostgreSQL y no modifica React Flow. El contrato admite
+crear, renombrar y eliminar entidades; CRUD de atributos; creación, actualización y eliminación de relaciones;
+y creación, conversión o eliminación de entidades asociativas. Spring vuelve a validar el plan con el contexto
+persistido y React lo aplica sobre una copia antes de confirmar un único `DIAGRAM_BATCH_APPLIED`.
 
-Cuando se implemente la integración, Spring Boot deberá validar permisos y cualquier operación propuesta por la IA. Este servicio no escribe directamente en PostgreSQL.
+La selección opcional del editor contiene únicamente nombres semánticos de una entidad o de los extremos de una
+relación. Sirve para resolver expresiones como “agrégale stock” o “cámbiala a uno a muchos”; nunca permite que el
+modelo invente IDs internos. Las coincidencias ausentes o ambiguas se rechazan.
+
+El micrófono de la barra inferior usa `MediaRecorder` y envía segmentos completos al proxy autenticado de
+Spring; el navegador nunca recibe `GROQ_API_KEY` ni llama directamente a Groq. `POST /api/audio/transcribe`
+acepta el campo multipart `audio`, valida formato y tamaño, y usa `GROQ_WHISPER_MODEL` (por defecto
+`whisper-large-v3-turbo`) en español. La detección de silencio ocurre localmente y solo después de detectar voz.
+Detener manualmente conserva el texto y no envía el comando; un error parcial desactiva el autoenvío para que
+el usuario revise el texto editable.
+
+Limitaciones: la segmentación puede repetir palabras en los límites, por lo que el frontend combina únicamente
+solapamientos textuales comprobables. No corrige ni inventa contenido. La transcripción con Groq requiere red;
+el flujo escrito de Gemini sigue disponible si el micrófono, MediaRecorder o Groq no están disponibles.
+
+El agente contextual sigue siendo un componente consultivo separado. Este servicio no escribe directamente en
+PostgreSQL y las pruebas usan proveedores simulados, sin consumir cuota ni requerir una API key real.

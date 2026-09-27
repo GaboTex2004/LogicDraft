@@ -42,6 +42,7 @@ import {
   guardarDiagrama,
   obtenerDiagrama,
   descargarEnterpriseArchitectXmi,
+  previewEnterpriseArchitectImport,
 } from "../api/diagramApi";
 import {
   descargarProyectoGenerado,
@@ -56,6 +57,7 @@ import {
 import { AiPromptBar } from "../components/AiPromptBar";
 import { DiagramAiProposalDialog } from "../components/DiagramAiProposalDialog";
 import { AssociationConversionDialog } from "../components/AssociationConversionDialog";
+import { DiagramImportDialog } from "../components/DiagramImportDialog";
 import { DiagramPropertiesPanel } from "../components/DiagramPropertiesPanel";
 import { DiagramSidebar } from "../components/DiagramSidebar";
 import {
@@ -88,10 +90,21 @@ import type {
   DiagramEdge,
   EntityAttribute,
   EntityFlowNode,
+  ExternalMetadata,
 } from "../types/diagram.types";
 import type { DiagramAiOperation } from "../types/diagramAi.types";
 import "../diagram.css";
 import { interpretDiagramImage } from "../api/diagramImageApi";
+import { destructivePlanImpact } from "../services/diagramActionPresentation";
+import { validateDiagramDocument } from "../services/diagramDocumentValidation";
+import {
+  applyDiagramImport,
+  computeDiagramImportDiff,
+  defaultImportSelection,
+  DiagramImportError,
+  type DiagramImportDiff,
+  type EntityImportChange,
+} from "../services/diagramImportDiff";
 
 const EMPTY_DOCUMENT: DiagramDocument = { version: 1, nodes: [], edges: [] };
 const nodeTypes = { entity: EntityNode };
@@ -109,6 +122,9 @@ function serializeNode(node: EntityFlowNode): EntityFlowNode {
       ...(node.data.association
         ? { association: cloneAssociationMetadata(node.data.association) }
         : {}),
+      ...(node.data.externalMetadata
+        ? { externalMetadata: { ...node.data.externalMetadata } }
+        : {}),
     },
   };
 }
@@ -123,7 +139,7 @@ function serializeEdge(edge: DiagramEdge): DiagramEdge {
     ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
     ...(edge.type ? { type: edge.type } : {}),
     ...(edge.markerEnd ? { markerEnd: edge.markerEnd } : {}),
-    ...(edge.data ? { data: edge.data } : {}),
+    ...(edge.data ? { data: { ...edge.data } } : {}),
   };
 }
 
@@ -150,6 +166,14 @@ function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function externalMetadata(value: unknown): ExternalMetadata | undefined {
+  const metadata = record(value);
+  return metadata?.source === "enterprise-architect" &&
+    typeof metadata.externalId === "string" && metadata.externalId.length > 0
+    ? { source: "enterprise-architect", externalId: metadata.externalId }
+    : undefined;
 }
 
 function remoteNode(payload: unknown): EntityFlowNode | null {
@@ -180,6 +204,7 @@ function remoteNode(payload: unknown): EntityFlowNode | null {
       typeof attribute.primaryKey !== "boolean"
     )
       return null;
+    const attributeExternalMetadata = externalMetadata(attribute.externalMetadata);
     attributes.push({
       id: attribute.id,
       name: attribute.name,
@@ -188,6 +213,9 @@ function remoteNode(payload: unknown): EntityFlowNode | null {
       ...(typeof attribute.nullable === "boolean"
         ? { nullable: attribute.nullable }
         : {}),
+      ...(attributeExternalMetadata
+        ? { externalMetadata: attributeExternalMetadata }
+        : {}),
     });
   }
   const association =
@@ -195,6 +223,7 @@ function remoteNode(payload: unknown): EntityFlowNode | null {
       ? undefined
       : parseAssociationMetadata(data.association);
   if (data.association !== undefined && !association) return null;
+  const nodeExternalMetadata = externalMetadata(data.externalMetadata);
   return {
     id: node.id,
     type: "entity",
@@ -204,6 +233,9 @@ function remoteNode(payload: unknown): EntityFlowNode | null {
       name: data.name,
       attributes,
       ...(association ? { association } : {}),
+      ...(nodeExternalMetadata
+        ? { externalMetadata: nodeExternalMetadata }
+        : {}),
     },
   };
 }
@@ -230,7 +262,7 @@ function remoteEdge(payload: unknown): DiagramEdge | null {
       : {}),
     ...(typeof edge.type === "string" ? { type: edge.type } : {}),
     markerEnd: { type: MarkerType.ArrowClosed },
-    ...(record(edge.data) ? { data: record(edge.data)! } : {}),
+    ...(record(edge.data) ? { data: { ...record(edge.data)! } } : {}),
   };
 }
 
@@ -289,10 +321,19 @@ function DiagramEditorCanvas({
   const [exportMessage, setExportMessage] = useState("");
   const [conversionOpen, setConversionOpen] = useState(false);
   const [conversionError, setConversionError] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [pendingImport, setPendingImport] = useState<{
+    document: DiagramDocument;
+    diff: DiagramImportDiff;
+    selected: Set<string>;
+    revision: number;
+  } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [pendingProposal, setPendingProposal] = useState<{
     operations: DiagramAiOperation[];
+    impact: string[];
     revision: number;
     source: "editor" | "agent";
   } | null>(null);
@@ -300,6 +341,7 @@ function DiagramEditorCanvas({
     () => new AgentSession(project.id, initialDiagramId),
   );
   const aiRequest = useRef<AbortController | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const nextEntityNumber = useRef(1);
   const nextAttributeNumber = useRef(1);
   const nodesRef = useRef(nodes);
@@ -479,6 +521,7 @@ function DiagramEditorCanvas({
   );
 
   function commitDiagramOperations(operations: DiagramAiOperation[]) {
+    const previousNodeCount = nodesRef.current.length;
     const result = applyDiagramOperations(
       nodesRef.current,
       edgesRef.current,
@@ -490,29 +533,11 @@ function DiagramEditorCanvas({
     setNodes(result.nodes);
     setEdges(result.edges);
     markDirty();
-    for (const event of result.events) {
-      if (event.type === "DIAGRAM_BATCH_APPLIED") {
-        publishEvent(event.type, {
-          document: serializeDocument(
-            event.document.nodes,
-            event.document.edges,
-          ),
-        });
-      } else if (event.type === "EDGE_CREATED") {
-        publishEvent(event.type, { edge: serializeEdge(event.edge) });
-        agentSession.record("EDGE_CREATED", { edgeId: event.edge.id });
-      } else {
-        publishEvent(event.type, { node: serializeNode(event.node) });
-        agentSession.record(event.type, { nodeId: event.node.id });
-      }
-    }
-    if (
-      result.events.some(
-        (event) =>
-          event.type === "NODE_CREATED" ||
-          event.type === "DIAGRAM_BATCH_APPLIED",
-      )
-    ) {
+    const event = result.events[0];
+    publishEvent(event.type, {
+      document: serializeDocument(event.document.nodes, event.document.edges),
+    });
+    if (result.nodes.length > previousNodeCount) {
       window.requestAnimationFrame(() => {
         void fitView({ padding: 0.2, duration: 350 });
       });
@@ -592,9 +617,27 @@ function DiagramEditorCanvas({
     setAiMessage("");
     agentSession.record("AI_REQUESTED");
     try {
+      const selectedSource = selectedEdge
+        ? nodesRef.current.find((node) => node.id === selectedEdge.source)
+        : null;
+      const selectedTarget = selectedEdge
+        ? nodesRef.current.find((node) => node.id === selectedEdge.target)
+        : null;
+      const selection = selectedNode
+        ? { kind: "ENTITY" as const, entityName: selectedNode.data.name }
+        : selectedEdge && selectedSource && selectedTarget
+          ? {
+              kind: "RELATIONSHIP" as const,
+              sourceEntity: selectedSource.data.name,
+              targetEntity: selectedTarget.data.name,
+              ...(typeof selectedEdge.data?.name === "string"
+                ? { relationshipName: selectedEdge.data.name }
+                : {}),
+            }
+          : undefined;
       const response = image
         ? await interpretDiagramImage(project.id, image, prompt, request.signal)
-        : await interpretDiagramWithAi(project.id, prompt, request.signal);
+        : await interpretDiagramWithAi(project.id, prompt, selection, request.signal);
       if (request.signal.aborted) return;
       const { operations, preview: result } = prepareDiagramAiProposal(
         response,
@@ -620,6 +663,7 @@ function DiagramEditorCanvas({
       }
       setPendingProposal({
         operations,
+        impact: destructivePlanImpact(operations, nodesRef.current, edgesRef.current),
         revision: revisionRef.current,
         source: "editor",
       });
@@ -651,8 +695,9 @@ function DiagramEditorCanvas({
               ? data.mensaje
               : "La IA devolvió un lote incompleto; no se aplicaron cambios.",
           );
+        else if (code === 502)
+          setAiError("No se pudo interpretar la instrucción.");
         else if (
-          code === 502 ||
           code === 503 ||
           code === 504 ||
           error.code === "ECONNABORTED"
@@ -941,6 +986,7 @@ function DiagramEditorCanvas({
       if (prepared.proposal?.preview.events.length) {
         setPendingProposal({
           operations: prepared.proposal.operations,
+          impact: destructivePlanImpact(prepared.proposal.operations, nodesRef.current, edgesRef.current),
           revision: revisionRef.current,
           source: "agent",
         });
@@ -977,6 +1023,116 @@ function DiagramEditorCanvas({
       });
     }
   }
+
+  async function handleEnterpriseArchitectImport(file: File) {
+    setImportError("");
+    if (!/\.(xmi|xml)$/i.test(file.name)) {
+      setImportError("Selecciona un archivo con extensión .xmi o .xml.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setImportError("El archivo supera el límite de 5 MB.");
+      return;
+    }
+    setImportLoading(true);
+    try {
+      const preview = await previewEnterpriseArchitectImport(file);
+      const imported: DiagramDocument = {
+        version: 1,
+        nodes: preview.nodes.map(normalizeStoredNode),
+        edges: preview.edges.map(normalizeRelationshipEdge),
+      };
+      validateDiagramDocument(imported);
+      const diff = computeDiagramImportDiff(
+        serializeDocument(nodesRef.current, edgesRef.current),
+        imported,
+        preview.warnings,
+      );
+      setPendingImport({
+        document: imported,
+        diff,
+        selected: defaultImportSelection(diff),
+        revision: revisionRef.current,
+      });
+    } catch (requestError: unknown) {
+      if (isUnauthorizedError(requestError)) {
+        localStorage.removeItem("token");
+        window.location.assign("/login");
+      } else if (isForbiddenError(requestError)) {
+        setImportError("No tienes permisos para importar en este proyecto.");
+      } else if (axios.isAxiosError(requestError)) {
+        const data = record(requestError.response?.data);
+        setImportError(
+          typeof data?.mensaje === "string"
+            ? data.mensaje
+            : "No se pudo interpretar el archivo XMI/XML.",
+        );
+      } else {
+        setImportError(
+          requestError instanceof Error
+            ? requestError.message
+            : "No se pudo preparar la importación.",
+        );
+      }
+    } finally {
+      setImportLoading(false);
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  }
+
+  function toggleImportChange(id: string, entity?: EntityImportChange) {
+    setPendingImport((current) => {
+      if (!current) return current;
+      const selected = new Set(current.selected);
+      const enable = !selected.has(id);
+      if (enable) selected.add(id);
+      else selected.delete(id);
+      if (entity) {
+        for (const attribute of entity.attributes.filter(item => item.status !== "unchanged")) {
+          if (enable && attribute.status !== "missing") selected.add(attribute.id);
+          else selected.delete(attribute.id);
+        }
+      }
+      return { ...current, selected };
+    });
+  }
+
+  function applyPendingImport() {
+    if (!pendingImport) return;
+    if (pendingImport.revision !== revisionRef.current) {
+      setImportError(
+        "El diagrama cambió después de generar la vista previa. Vuelve a seleccionar el archivo.",
+      );
+      setPendingImport(null);
+      return;
+    }
+    try {
+      const document = applyDiagramImport(
+        serializeDocument(nodesRef.current, edgesRef.current),
+        pendingImport.document,
+        pendingImport.selected,
+      );
+      nodesRef.current = document.nodes;
+      edgesRef.current = document.edges;
+      setNodes(document.nodes);
+      setEdges(document.edges);
+      setSelectedNodeId(null);
+      setSelectedEdgeIds([]);
+      setPendingImport(null);
+      setImportError("");
+      markDirty();
+      publishEvent("DIAGRAM_BATCH_APPLIED", {
+        document: serializeDocument(document.nodes, document.edges),
+      });
+    } catch (error: unknown) {
+      setImportError(
+        error instanceof DiagramImportError || error instanceof Error
+          ? error.message
+          : "No se pudo aplicar la importación.",
+      );
+    }
+  }
+
   async function handleEnterpriseArchitectExport() {
     if (exportStatus !== null) return;
 
@@ -1140,6 +1296,16 @@ function DiagramEditorCanvas({
         onAddEntity={addEntity}
         onClose={() => setSidebarOpen(false)}
       />
+      <input
+        ref={importInputRef}
+        className="diagram-import-input"
+        type="file"
+        accept=".xmi,.xml"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void handleEnterpriseArchitectImport(file);
+        }}
+      />
       <DiagramToolbar
         projectName={project.nombre}
         hasSelection={selectedNodeId !== null || selectedEdgeIds.length > 0}
@@ -1147,6 +1313,8 @@ function DiagramEditorCanvas({
         onSave={() => void handleSave()}
         onDeleteSelection={deleteSelection}
         onFitView={() => void fitView({ padding: 0.2, duration: 350 })}
+        onImport={() => importInputRef.current?.click()}
+        importDisabled={importLoading || saveStatus === "saving" || saveStatus === "forbidden"}
         exportStatus={exportStatus}
         exportMessage={exportMessage}
         exportDisabled={
@@ -1171,6 +1339,11 @@ function DiagramEditorCanvas({
           setPropertiesOpen((open) => !open);
         }}
       />
+      {(importLoading || importError) && (
+        <div className={`diagram-import-status${importError ? " is-error" : ""}`} role={importError ? "alert" : "status"}>
+          {importError || "Analizando XMI/XML..."}
+        </div>
+      )}
       <ProjectPresence status={status} collaborators={collaborators} />
       <section className="diagram-canvas" aria-label="Canvas del diagrama">
         <ReactFlow<EntityFlowNode, DiagramEdge>
@@ -1387,12 +1560,25 @@ function DiagramEditorCanvas({
       />
       <DiagramAiProposalDialog
         operations={pendingProposal?.operations ?? []}
+        impact={pendingProposal?.impact ?? []}
         onCancel={() => {
           setPendingProposal(null);
           setAiMessage("Propuesta cancelada; no se realizaron cambios");
         }}
         onAccept={acceptAiProposal}
       />
+      {pendingImport && (
+        <DiagramImportDialog
+          diff={pendingImport.diff}
+          selected={pendingImport.selected}
+          onToggle={toggleImportChange}
+          onCancel={() => {
+            setPendingImport(null);
+            setImportError("");
+          }}
+          onApply={applyPendingImport}
+        />
+      )}
     </div>
   );
 }

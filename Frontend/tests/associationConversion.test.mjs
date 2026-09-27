@@ -74,6 +74,14 @@ test('legacy 1:1, 1:N and N:M documents remain unchanged', () => {
   assert.deepEqual({ nodes, relationships }, before)
 })
 
+test('an imported AssociationClass keeps a warned neutral structural multiplicity editable', () => {
+  const document = convertManyToManyAssociation([node('student', 'Alumno'), node('subject', 'Materia')], [manyToMany()],
+    'student-subject', 'Inscripcion', ids(['a', 'pk', 'se', 'te'])).document
+  document.edges[0].data.targetCardinality = 'ONE_ONE'
+  assert.doesNotThrow(() => validateAssociationDocument(document.nodes, document.edges))
+  assert.deepEqual([...structuralRelationshipIds(document.nodes)].sort(), ['relationship-se', 'relationship-te'])
+})
+
 test('dialog cancellation and collaboration use explicit non-mutating UI paths and one batch event', () => {
   const dialog = readFileSync(new URL('../src/features/diagram/components/AssociationConversionDialog.tsx', import.meta.url), 'utf8')
   const editor = readFileSync(new URL('../src/features/diagram/pages/DiagramEditorPage.tsx', import.meta.url), 'utf8')

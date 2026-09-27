@@ -13,6 +13,29 @@ este guardado para que el contexto persistido que consulta Spring sea correcto.
 - Integracion de estado/autosave/eventos: DiagramEditorPage.tsx.
 - UI: components/AiPromptBar.tsx.
 
+## Voz en la barra inferior
+
+La voz no depende de Web Speech API. `AiPromptBar` captura audio con
+`MediaRecorder`, prioriza `audio/webm;codecs=opus` y usa los formatos soportados
+por el navegador como fallback. Cada 2000 ms cierra un segmento y abre el
+siguiente sobre el mismo stream; así cada archivo enviado es un contenedor
+completo que Whisper puede decodificar. Los resultados se ordenan por índice y
+se unen eliminando solamente el solapamiento textual entre segmentos.
+
+Un `AnalyserNode` calcula el nivel RMS en el navegador. El silencio de 1500 ms
+solo finaliza la captura después de haber detectado voz. La finalización natural
+espera todas las transcripciones y reutiliza exactamente el mismo `onSubmit` del
+texto escrito. Detener con el botón conserva el texto editable y no lo envía.
+
+El recorrido autenticado es:
+
+`MediaRecorder -> POST /proyectos/{id}/ai/audio/transcribe -> Spring -> POST
+/api/audio/transcribe -> Groq Whisper -> {"text":"..."}`.
+
+La clave de Groq permanece exclusivamente en el ai-service. Si un segmento falla,
+no hay autoenvío: se conserva lo ya transcrito para revisión manual. Sin voz o
+sin APIs multimedia compatibles, el input escrito continúa funcionando.
+
 El aplicador reutiliza EntityFlowNode, EntityAttribute y DiagramEdge. Valida la
 respuesta recibida como unknown, ejecuta sobre copias, y devuelve nodes, edges y
 los eventos normales a emitir solo cuando todo el lote termina correctamente.

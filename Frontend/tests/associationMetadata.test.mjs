@@ -38,4 +38,6 @@ test('editor serialization and collaborative reconstruction preserve optional me
   assert.match(editor, /parseAssociationMetadata\(data\.association\)/)
   assert.match(editor, /data\.association !== undefined && !association/)
   assert.match(editor, /nodes: content\.nodes\.map\(normalizeStoredNode\)/)
+  assert.match(editor, /externalMetadata: \{ \.\.\.node\.data\.externalMetadata \}/)
+  assert.match(editor, /externalMetadata\(data\.externalMetadata\)/)
 })

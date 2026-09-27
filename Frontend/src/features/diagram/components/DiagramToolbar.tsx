@@ -19,6 +19,8 @@ interface DiagramToolbarProps {
   onSave: () => void;
   onDeleteSelection: () => void;
   onFitView: () => void;
+  onImport: () => void;
+  importDisabled: boolean;
   exportStatus: ExportStatus;
   exportMessage: string;
   exportDisabled: boolean;
@@ -47,6 +49,8 @@ export function DiagramToolbar({
   onSave,
   onDeleteSelection,
   onFitView,
+  onImport,
+  importDisabled,
   exportStatus,
   exportMessage,
   exportDisabled,
@@ -59,17 +63,21 @@ export function DiagramToolbar({
   propertiesOpen,
 }: DiagramToolbarProps) {
   const [exportOpen, setExportOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!exportOpen) return;
+    if (!exportOpen && !moreOpen) return;
     const close = (event: MouseEvent) => {
       if (!exportMenuRef.current?.contains(event.target as Node))
         setExportOpen(false);
+      if (!moreMenuRef.current?.contains(event.target as Node))
+        setMoreOpen(false);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
-  }, [exportOpen]);
+  }, [exportOpen, moreOpen]);
 
   return (
     <header className="diagram-toolbar">
@@ -87,11 +95,14 @@ export function DiagramToolbar({
         <button className="diagram-panel-toggle" type="button" aria-pressed={propertiesOpen} onClick={onToggleProperties}>
           Propiedades
         </button>
-        <button type="button" onClick={onFitView}>
+        <button className="toolbar-fit-action" type="button" onClick={onFitView}>
           Ajustar vista
         </button>
+        <button className="toolbar-import-action" type="button" disabled={importDisabled} onClick={onImport}>
+          Importar
+        </button>
         <div
-          className="project-export-menu"
+          className="project-export-menu toolbar-export-action"
           ref={exportMenuRef}
           onKeyDown={(event) => {
             if (event.key === "Escape") setExportOpen(false);
@@ -152,7 +163,7 @@ export function DiagramToolbar({
           )}
         </div>
         <button
-          className="danger-action"
+          className="danger-action toolbar-delete-action"
           type="button"
           disabled={!hasSelection}
           onClick={onDeleteSelection}
@@ -167,6 +178,24 @@ export function DiagramToolbar({
         >
           {saveStatus === "saving" ? "Guardando..." : "Guardar"}
         </button>
+        <div className="diagram-more-menu" ref={moreMenuRef}>
+          <button type="button" aria-haspopup="menu" aria-expanded={moreOpen}
+            onClick={() => setMoreOpen(open => !open)}>Más</button>
+          {moreOpen && <div className="diagram-more-options" role="menu" aria-label="Más acciones">
+            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); onFitView() }}>Ajustar vista</button>
+            <button type="button" role="menuitem" disabled={importDisabled}
+              onClick={() => { setMoreOpen(false); onImport() }}>Importar XMI/XML</button>
+            <button type="button" role="menuitem" disabled={exportDisabled || exportStatus !== null}
+              onClick={() => { setMoreOpen(false); onExportBackend() }}>Exportar backend</button>
+            <button type="button" role="menuitem" disabled={exportDisabled || exportStatus !== null}
+              onClick={() => { setMoreOpen(false); onExportFullStack() }}>Exportar proyecto completo</button>
+            {onExportEnterpriseArchitect && <button type="button" role="menuitem"
+              disabled={exportDisabled || exportStatus !== null}
+              onClick={() => { setMoreOpen(false); onExportEnterpriseArchitect() }}>Exportar XMI</button>}
+            <button type="button" role="menuitem" disabled={!hasSelection}
+              onClick={() => { setMoreOpen(false); onDeleteSelection() }}>Eliminar selección</button>
+          </div>}
+        </div>
         <span className={`persistence-badge is-${saveStatus}`}>
           {statusLabels[saveStatus]}
         </span>

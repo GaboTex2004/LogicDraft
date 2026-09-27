@@ -25,9 +25,39 @@ public final class DiagramOperationValidator {
                         operations.add(new DiagramOperation(type,
                             new EntityDefinition(text(entity.get("name")), List.copyOf(attributes)), null, null, null));
                     }
+                    case DELETE_ENTITY -> {
+                        object(op, "type", "entityName");
+                        operations.add(operation(type, text(op.get("entityName")), null, null, null, null, null, null));
+                    }
+                    case RENAME_ENTITY -> {
+                        object(op, "type", "entityName", "newName");
+                        operations.add(operation(type, text(op.get("entityName")), null, null,
+                                text(op.get("newName")), null, null, null));
+                    }
                     case ADD_ATTRIBUTE -> {
                         object(op, "type", "entityName", "attribute");
                         operations.add(new DiagramOperation(type, null, text(op.get("entityName")), attribute(op.get("attribute")), null));
+                    }
+                    case DELETE_ATTRIBUTE -> {
+                        object(op, "type", "entityName", "attributeName");
+                        operations.add(operation(type, text(op.get("entityName")), text(op.get("attributeName")),
+                                null, null, null, null, null));
+                    }
+                    case RENAME_ATTRIBUTE -> {
+                        object(op, "type", "entityName", "attributeName", "newName");
+                        operations.add(operation(type, text(op.get("entityName")), text(op.get("attributeName")),
+                                null, text(op.get("newName")), null, null, null));
+                    }
+                    case CHANGE_ATTRIBUTE_TYPE -> {
+                        object(op, "type", "entityName", "attributeName", "dataType");
+                        operations.add(operation(type, text(op.get("entityName")), text(op.get("attributeName")),
+                                DiagramDataType.valueOf(text(op.get("dataType"))), null, null, null, null));
+                    }
+                    case SET_ATTRIBUTE_PRIMARY_KEY, SET_ATTRIBUTE_NULLABLE -> {
+                        object(op, "type", "entityName", "attributeName", "value");
+                        if (!(op.get("value") instanceof Boolean value)) throw new IllegalArgumentException();
+                        operations.add(operation(type, text(op.get("entityName")), text(op.get("attributeName")),
+                                null, null, value, null, null));
                     }
                     case ADD_RELATIONSHIP -> {
                         object(op, "type", "relationship");
@@ -39,6 +69,46 @@ public final class DiagramOperationValidator {
                             DiagramCardinality.valueOf(text(rel.get("sourceCardinality"))),
                             DiagramCardinality.valueOf(text(rel.get("targetCardinality"))),
                             optionalText(rel.get("name")), optionalText(rel.get("joinTableName")))));
+                    }
+                    case DELETE_RELATIONSHIP -> {
+                        object(op, "type", "relationship");
+                        Map<?, ?> rel = objectWithOptional(op.get("relationship"),
+                                Set.of("sourceEntity", "targetEntity"), Set.of("name"));
+                        var reference = new RelationshipDefinition(text(rel.get("sourceEntity")),
+                                text(rel.get("targetEntity")), null, null, optionalText(rel.get("name")), null);
+                        operations.add(operation(type, null, null, null, null, null, reference, null));
+                    }
+                    case UPDATE_RELATIONSHIP -> {
+                        object(op, "type", "relationship");
+                        Map<?, ?> rel = objectWithOptional(op.get("relationship"),
+                                Set.of("sourceEntity", "targetEntity", "sourceCardinality", "targetCardinality"),
+                                Set.of("name"));
+                        var update = new RelationshipDefinition(text(rel.get("sourceEntity")),
+                                text(rel.get("targetEntity")),
+                                DiagramCardinality.valueOf(text(rel.get("sourceCardinality"))),
+                                DiagramCardinality.valueOf(text(rel.get("targetCardinality"))),
+                                optionalText(rel.get("name")), null);
+                        operations.add(operation(type, null, null, null, null, null, update, null));
+                    }
+                    case CREATE_ASSOCIATION -> {
+                        object(op, "type", "association");
+                        Map<?, ?> association = object(op.get("association"), "sourceEntity", "targetEntity",
+                                "associationEntityName", "attributes");
+                        List<AttributeDefinition> attributes = new ArrayList<>();
+                        for (Object value : list(association.get("attributes"), 100)) {
+                            AttributeDefinition attribute = attribute(value);
+                            if (attribute.primaryKey()) throw new IllegalArgumentException();
+                            attributes.add(attribute);
+                        }
+                        var definition = new AssociationCreationDefinition(text(association.get("sourceEntity")),
+                                text(association.get("targetEntity")), text(association.get("associationEntityName")),
+                                List.copyOf(attributes));
+                        operations.add(operation(type, null, null, null, null, null, null, definition));
+                    }
+                    case DELETE_ASSOCIATION -> {
+                        object(op, "type", "associationEntityName");
+                        operations.add(new DiagramOperation(type, null, null, null, null, null, null, null,
+                                null, null, null, text(op.get("associationEntityName"))));
                     }
                     case CONVERT_MANY_TO_MANY_ASSOCIATION -> {
                         object(op, "type", "conversion");
@@ -68,6 +138,14 @@ public final class DiagramOperationValidator {
         if (!(a.get("primaryKey") instanceof Boolean pk) || !(a.get("nullable") instanceof Boolean nullable))
             throw new IllegalArgumentException();
         return new AttributeDefinition(text(a.get("name")), DiagramDataType.valueOf(text(a.get("dataType"))), pk, nullable);
+    }
+
+    private static DiagramOperation operation(DiagramOperationType type, String entityName, String attributeName,
+            DiagramDataType dataType, String newName, Boolean value,
+            RelationshipDefinition relationship,
+            AssociationCreationDefinition association) {
+        return new DiagramOperation(type, null, entityName, null, relationship, null, attributeName, newName, dataType,
+                value, association, null);
     }
 
     private static Map<?, ?> object(Object raw, String... keys) {

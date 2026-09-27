@@ -24,4 +24,18 @@ test('tablet y movil convierten los paneles en superficies superpuestas', () => 
   assert.match(styles, /\.diagram-editor\.is-properties-open \.diagram-properties\s*\{\s*transform: translate(?:X|Y)\(0\)/)
   assert.match(styles, /height: min\(72vh, 620px\)/)
   assert.match(styles, /min-height: 40px/)
+  assert.match(toolbar, />Más</)
+  assert.match(styles, /\.diagram-more-menu \{ display: block; \}/)
+  assert.match(styles, /overflow: visible/)
+  assert.doesNotMatch(styles, /\.diagram-toolbar-actions\s*\{[^}]*overflow-x:\s*auto/s)
+})
+
+test('la importación incremental usa preview, confirmación y un lote colaborativo atómico', () => {
+  assert.match(toolbar, />\s*Importar\s*</)
+  assert.match(page, /previewEnterpriseArchitectImport\(file\)/)
+  assert.match(page, /computeDiagramImportDiff/)
+  assert.match(page, /applyDiagramImport/)
+  assert.match(page, /setPendingImport\(null\)/)
+  assert.match(page, /publishEvent\(["']DIAGRAM_BATCH_APPLIED["']/)
+  assert.doesNotMatch(page, /crearProyecto\(/)
 })

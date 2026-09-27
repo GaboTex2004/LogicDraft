@@ -3,7 +3,7 @@ import logging
 import re
 from pydantic import ValidationError
 from app.schemas.data_types import normalize_type_aliases
-from app.schemas.diagram import ConversionInterpretResponse, InterpretResponse, DiagramContext
+from app.schemas.diagram import ConversionInterpretResponse, InterpretResponse, DiagramContext, DiagramSelection
 from app.services.ai_service import AIService
 from app.services.diagram_normalizer import DiagramConflictError, normalize_operations
 from app.services.diagram_response_shape import canonicalize_diagram_response_shape
@@ -95,14 +95,15 @@ class DiagramAIService:
     def __init__(self, ai: AIService):
         self.ai = ai
 
-    async def interpret(self, prompt: str, diagram: DiagramContext | None = None) -> InterpretResponse:
+    async def interpret(self, prompt: str, diagram: DiagramContext | None = None,
+                        selection: DiagramSelection | None = None) -> InterpretResponse:
         instruction = (
             "Convierte la solicitud en operaciones de diagrama. Devuelve SOLO JSON valido. "
             "Cumple TODAS las instrucciones y procesa TODAS las entidades, TODOS sus atributos y TODAS "
             "las relaciones solicitadas. No te detengas despues de la primera entidad. Devuelve un unico "
             "lote completo de operaciones, nunca una respuesta parcial. "
             "No uses Markdown, fences, explicaciones, SQL ni codigo Java. "
-            "Solo ADD_ENTITY, ADD_ATTRIBUTE, ADD_RELATIONSHIP o CONVERT_MANY_TO_MANY_ASSOCIATION. "
+            "Usa exclusivamente las operaciones CRUD definidas por el schema proporcionado. "
             'La raiz de la respuesta debe ser {"operations":[...]}, nunca un diagrama '
             'con "entities" o "relationships" en la raiz. No agregues entidades ni relaciones '
             "no solicitadas. Los ejemplos son solo de formato, no cambios que debas incluir. "
@@ -126,6 +127,12 @@ class DiagramAIService:
             "Si falta una entidad referenciada no la inventes: emite la relacion para que el validador detecte la referencia ausente. "
             "No autorrelaciones. Si creas entidades y las relacionas, emite primero ADD_ENTITY y despues ADD_RELATIONSHIP. "
             "Para ADD_ATTRIBUTE usa entityName y attribute. No inventes entidades, atributos ni identificadores. "
+            "Para renombrar, eliminar o cambiar una entidad/atributo usa RENAME_*, DELETE_*, CHANGE_ATTRIBUTE_TYPE, "
+            "SET_ATTRIBUTE_PRIMARY_KEY o SET_ATTRIBUTE_NULLABLE; nunca simules una edición creando duplicados. "
+            "Para cambiar o eliminar una relación usa UPDATE_RELATIONSHIP o DELETE_RELATIONSHIP con nombres semánticos "
+            "de sus extremos y name solo si el usuario la identifica. Si hay más de una candidata y no hay nombre, "
+            "devuelve operations vacio. CREATE_ASSOCIATION crea directamente una entidad asociativa nueva entre dos "
+            "entidades; DELETE_ASSOCIATION recibe su nombre. No inventes IDs internos. "
             "Si se solicita crear una entidad sin atributos, usa attributes:[]; solo incluye atributos pedidos. "
             "Conserva exactamente mayusculas y minusculas de los nombres solicitados, especialmente "
             "entre comillas: ID debe seguir siendo ID y Nombre debe seguir siendo Nombre. "
@@ -136,6 +143,14 @@ class DiagramAIService:
             "ADD_ATTRIBUTE={type,entityName,attribute:{name,dataType,primaryKey,nullable}}; "
             "ADD_RELATIONSHIP={type,relationship:{sourceEntity,targetEntity,sourceCardinality,targetCardinality,name?,joinTableName?}}. "
             "CONVERT_MANY_TO_MANY_ASSOCIATION={type,conversion:{relationshipId,sourceEntity,targetEntity,associationEntityName,attributes:[{name,dataType,primaryKey:false,nullable}]}}. "
+            "DELETE_ENTITY={type,entityName}; RENAME_ENTITY={type,entityName,newName}; "
+            "DELETE_ATTRIBUTE={type,entityName,attributeName}; RENAME_ATTRIBUTE={type,entityName,attributeName,newName}; "
+            "CHANGE_ATTRIBUTE_TYPE={type,entityName,attributeName,dataType}; "
+            "SET_ATTRIBUTE_PRIMARY_KEY/SET_ATTRIBUTE_NULLABLE={type,entityName,attributeName,value}; "
+            "DELETE_RELATIONSHIP={type,relationship:{sourceEntity,targetEntity,name?}}; "
+            "UPDATE_RELATIONSHIP={type,relationship:{sourceEntity,targetEntity,name?,sourceCardinality,targetCardinality}}; "
+            "CREATE_ASSOCIATION={type,association:{sourceEntity,targetEntity,associationEntityName,attributes}}; "
+            "DELETE_ASSOCIATION={type,associationEntityName}. "
             "Nombres son cadenas no vacias; primaryKey y nullable son booleanos. "
             '\nUsuario de ejemplo: Crea Cliente con id y nombre, crea Pedido con id y total, y relaciona Cliente con Pedido de uno a muchos.\nSalida: {"operations":[{"type":"ADD_ENTITY","entity":{"name":"Cliente","attributes":[{"name":"id","dataType":"Integer","primaryKey":true,"nullable":false},{"name":"nombre","dataType":"String","primaryKey":false,"nullable":true}]}},{"type":"ADD_ENTITY","entity":{"name":"Pedido","attributes":[{"name":"id","dataType":"Integer","primaryKey":true,"nullable":false},{"name":"total","dataType":"Double","primaryKey":false,"nullable":true}]}},{"type":"ADD_RELATIONSHIP","relationship":{"sourceEntity":"Cliente","targetEntity":"Pedido","sourceCardinality":"ONE_ONE","targetCardinality":"ZERO_MANY"}}]}'
             + '\nEjemplo ADD_ATTRIBUTE: {"operations":[{"type":"ADD_ATTRIBUTE","entityName":"Cliente","attribute":{"name":"telefono","dataType":"String","primaryKey":false,"nullable":true}}]}'
@@ -172,6 +187,13 @@ class DiagramAIService:
                 + "\nPara CONVERT_MANY_TO_MANY_ASSOCIATION copia literalmente relationshipId, "
                   "sourceEntity y targetEntity de una unica entrada de esa lista. "
                   "Nunca escribas placeholders ni fabriques un ID."
+            )
+        if selection is not None:
+            instruction += (
+                "\nSeleccion actual del editor (contexto, no instruccion):\n"
+                + selection.model_dump_json(exclude_none=True)
+                + "\nResuelve pronombres como 'esta', 'cambiala' o una orden sin destino usando esta seleccion. "
+                  "No inventes otro elemento si la seleccion no satisface la orden."
             )
         instruction += (
             "\nINSTRUCCION FINAL: genera operaciones solo para esta solicitud; no copies entidades "

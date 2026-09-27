@@ -192,8 +192,42 @@
   color: var(--de-muted);
   font-size: 10px;
 }
+.diagram-import-input { display: none; }
+.diagram-import-status {
+  position: fixed;
+  z-index: 35;
+  top: 68px;
+  left: 50%;
+  max-width: min(520px, calc(100vw - 24px));
+  padding: 9px 12px;
+  border: 1px solid var(--de-border);
+  color: var(--de-accent);
+  background: #17171b;
+  transform: translateX(-50%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+.diagram-import-status.is-error { color: #fca5a5; border-color: #b91c1c; }
 .project-export-menu {
   position: relative;
+}
+.diagram-more-menu { position: relative; display: none; }
+.diagram-more-options {
+  position: absolute;
+  z-index: 45;
+  top: calc(100% + 7px);
+  right: 0;
+  width: min(250px, calc(100vw - 20px));
+  padding: 5px;
+  border: 1px solid var(--de-border);
+  background: #17171b;
+  box-shadow: 0 14px 30px rgb(0 0 0 / 35%);
+}
+.diagram-toolbar-actions .diagram-more-options button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  text-align: left;
 }
 .project-export-options {
   position: absolute;
@@ -789,6 +823,22 @@
 .association-dialog button.primary { border-color: #7c6ee6; background: #6d5bd0; }
 .association-dialog button:disabled { opacity: .45; cursor: not-allowed; }
 .association-dialog .association-dialog-error { color: #fca5a5; }
+.diagram-ai-impact { margin: 10px 0; padding: 10px 12px; border: 1px solid #b45309; color: #fed7aa; background: rgb(180 83 9 / 12%); }
+.diagram-ai-impact ul { margin: 7px 0 0; padding-left: 18px; }
+.diagram-import-dialog { width: min(680px, calc(100vw - 28px)); max-height: min(84vh, 760px); overflow: auto; }
+.diagram-import-warnings { margin: 12px 0; padding: 10px 12px; border: 1px solid #a16207; color: #fde68a; background: rgb(161 98 7 / 12%); font-size: 11px; }
+.diagram-import-warnings ul { margin: 7px 0 0; padding-left: 18px; }
+.diagram-import-groups { display: grid; gap: 12px; }
+.diagram-import-group { padding: 10px; border: 1px solid var(--de-border); background: #111115; }
+.diagram-import-group h3 { margin: 0 0 8px; color: var(--de-accent); font-size: 12px; }
+.diagram-import-change { padding: 7px 0; border-top: 1px solid rgb(69 70 80 / 55%); }
+.diagram-import-change:first-of-type { border-top: 0; }
+.diagram-import-change > label { display: flex; grid-template-columns: none; align-items: flex-start; gap: 8px; margin: 0; }
+.diagram-import-change ul { margin: 6px 0 0 25px; padding-left: 12px; color: var(--de-muted); font-size: 11px; }
+.diagram-import-change li label { display: flex; grid-template-columns: none; align-items: center; gap: 7px; margin: 0; }
+.diagram-import-change input { width: 15px; height: 15px; padding: 0; accent-color: #8b7bea; }
+.diagram-import-unchanged { color: #86efac; }
+.diagram-import-empty { margin: 4px 0; padding: 14px; border: 1px dashed var(--de-border); }
 
 .agent-panel {
   position: fixed;
@@ -960,18 +1010,22 @@
   .diagram-toolbar-actions {
     width: 100%;
     padding-bottom: 2px;
-    overflow-x: auto;
-    scrollbar-width: thin;
+    justify-content: flex-end;
+    overflow: visible;
   }
   .diagram-toolbar-actions > button,
   .diagram-toolbar-actions > .project-export-menu > button {
     min-height: 40px;
     white-space: nowrap;
   }
-  .diagram-toolbar-actions .danger-action,
+  .diagram-toolbar-actions .toolbar-fit-action,
+  .diagram-toolbar-actions .toolbar-import-action,
+  .diagram-toolbar-actions .toolbar-export-action,
+  .diagram-toolbar-actions .toolbar-delete-action,
   .persistence-badge {
     display: none;
   }
+  .diagram-more-menu { display: block; }
   .diagram-canvas {
     top: 98px;
     bottom: 0;

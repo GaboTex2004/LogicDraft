@@ -13,7 +13,10 @@ def build_repair_prompt(
         "Devuelve SOLO JSON válido que cumpla el schema proporcionado.",
         'La raiz debe ser exactamente {"operations":[...]}. '
         'Cada operacion necesita obligatoriamente un campo "type" con uno de estos valores: '
-        'ADD_ENTITY, ADD_ATTRIBUTE, ADD_RELATIONSHIP o CONVERT_MANY_TO_MANY_ASSOCIATION.',
+        'ADD_ENTITY, DELETE_ENTITY, RENAME_ENTITY, ADD_ATTRIBUTE, DELETE_ATTRIBUTE, '
+        'RENAME_ATTRIBUTE, CHANGE_ATTRIBUTE_TYPE, SET_ATTRIBUTE_PRIMARY_KEY, SET_ATTRIBUTE_NULLABLE, '
+        'ADD_RELATIONSHIP, DELETE_RELATIONSHIP, UPDATE_RELATIONSHIP, CREATE_ASSOCIATION, '
+        'DELETE_ASSOCIATION o CONVERT_MANY_TO_MANY_ASSOCIATION.',
         'Formato ADD_ENTITY: {"type":"ADD_ENTITY","entity":{"name":"Cliente",'
         '"attributes":[{"name":"id","dataType":"Integer","primaryKey":true,"nullable":false}]}}.',
         'Formato ADD_ATTRIBUTE: {"type":"ADD_ATTRIBUTE","entityName":"Cliente",'

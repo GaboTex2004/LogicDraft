@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from app.schemas.diagram import (
     AddAttribute, AddEntity, AddRelationship, ConvertManyToManyAssociation,
-    DiagramContext, InterpretResponse,
+    CreateAssociation, DiagramContext, InterpretResponse,
 )
 from app.services.providers.base import ProviderResponseError
 
@@ -572,6 +572,10 @@ def validate_completeness(
             attributes[_key(operation.conversion.associationEntityName)] = {
                 _key(attribute.name): attribute for attribute in operation.conversion.attributes
             }
+        elif isinstance(operation, CreateAssociation):
+            attributes[_key(operation.association.associationEntityName)] = {
+                _key(attribute.name): attribute for attribute in operation.association.attributes
+            }
 
     missing_attributes = [
         f"{entity}.{attribute}"
@@ -600,6 +604,8 @@ def validate_completeness(
         relations.extend((_key(item.sourceEntity), _key(item.targetEntity)) for item in diagram.relationships)
     relations.extend((_key(operation.relationship.sourceEntity), _key(operation.relationship.targetEntity))
                      for operation in response.operations if isinstance(operation, AddRelationship))
+    relations.extend((_key(operation.association.sourceEntity), _key(operation.association.targetEntity))
+                     for operation in response.operations if isinstance(operation, CreateAssociation))
     for source, target in expected.relationship_pairs:
         pair = {_key(source), _key(target)}
         if not any({_source, _target} == pair for _source, _target in relations):
@@ -621,12 +627,17 @@ def validate_completeness(
             if isinstance(operation, AddRelationship)
         )
 
+        association_pairs = [
+            {_key(operation.association.sourceEntity), _key(operation.association.targetEntity)}
+            for operation in response.operations if isinstance(operation, CreateAssociation)
+        ]
+
         many_cardinalities = {"ZERO_MANY", "ONE_MANY"}
 
         for source, target in expected.relationship_pairs:
             requested_pair = {_key(source), _key(target)}
 
-            correct_relationship = any(
+            correct_relationship = requested_pair in association_pairs or any(
                 {
                     _key(relationship.sourceEntity),
                     _key(relationship.targetEntity),

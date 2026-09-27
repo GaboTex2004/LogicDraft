@@ -91,7 +91,7 @@ test('AI batch creates entities then relates them transactionally', () => {
   const r = apply([], [], [entity('Categoria'), entity('Producto'), relation('CATEGORIA', 'producto')])
   assert.equal(r.edges.length, 1)
   assert.equal(r.edges[0].data.targetCardinality, 'ZERO_MANY')
-  assert.deepEqual(r.events.map(e => e.type), ['NODE_CREATED', 'NODE_CREATED', 'EDGE_CREATED'])
+  assert.deepEqual(r.events.map(e => e.type), ['DIAGRAM_BATCH_APPLIED'])
 })
 test('equivalent reversed relationship is not duplicated; minima remain distinct', () => {
   const r = apply([], [], [entity('Categoria'), entity('Producto'), relation(), relation('Producto', 'Categoria', 'ZERO_MANY', 'ONE_ONE'), relation('Categoria', 'Producto', 'ONE_ONE', 'ONE_MANY')])

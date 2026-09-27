@@ -18,7 +18,8 @@ router = APIRouter(prefix="/ai/diagram", tags=["ai"])
 @router.post("/interpret", response_model=InterpretResponse)
 async def interpret(request: InterpretRequest) -> InterpretResponse:
     try:
-        return await DiagramAIService(AIService.from_settings(get_settings())).interpret(request.prompt, request.diagram)
+        return await DiagramAIService(AIService.from_settings(get_settings())).interpret(
+            request.prompt, request.diagram, request.selection)
     except (ProviderConfigurationError, ProviderConnectionError, ProviderModelNotFoundError):
         raise HTTPException(503, "El proveedor de IA no esta disponible.") from None
     except ProviderTimeoutError:

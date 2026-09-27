@@ -1,6 +1,14 @@
 import { api } from "../../../shared/api/api";
 import type { DiagramaResponse, DiagramDocument } from "../types/diagram.types";
 
+export interface EnterpriseArchitectImportPreview {
+  projectName: string;
+  version: 1;
+  nodes: DiagramDocument["nodes"];
+  edges: DiagramDocument["edges"];
+  warnings: string[];
+}
+
 export async function obtenerDiagrama(
   projectId: number,
 ): Promise<DiagramaResponse> {
@@ -17,6 +25,18 @@ export async function guardarDiagrama(
   const response = await api.put<DiagramaResponse>(
     `/proyectos/${projectId}/diagrama`,
     document,
+  );
+  return response.data;
+}
+
+export async function previewEnterpriseArchitectImport(
+  file: File,
+): Promise<EnterpriseArchitectImportPreview> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await api.post<EnterpriseArchitectImportPreview>(
+    "/import/enterprise-architect/preview",
+    form,
   );
   return response.data;
 }

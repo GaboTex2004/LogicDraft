@@ -13,12 +13,18 @@ export const ATTRIBUTE_TYPES = [
 
 export type AttributeType = (typeof ATTRIBUTE_TYPES)[number]
 
+export interface ExternalMetadata {
+  source: 'enterprise-architect'
+  externalId: string
+}
+
 export interface EntityAttribute {
   id: string
   name: string
   type: AttributeType
   primaryKey: boolean
   nullable?: boolean
+  externalMetadata?: ExternalMetadata
 }
 
 export type AssociationEndpointRole = 'SOURCE' | 'TARGET'
@@ -42,6 +48,7 @@ export interface DiagramEntity {
   name: string
   attributes: EntityAttribute[]
   association?: AssociativeEntityMetadata
+  externalMetadata?: ExternalMetadata
 }
 
 export type EntityNodeData = DiagramEntity & Record<string, unknown>
@@ -53,6 +60,7 @@ export type RelationshipData = Record<string, unknown> & {
   targetCardinality?: DiagramCardinality
   name?: string
   joinTableName?: string
+  externalMetadata?: ExternalMetadata
 }
 export type DiagramEdge = Edge<RelationshipData>
 
