@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from app.schemas.diagram import (
     AddAttribute, AddEntity, AddRelationship, ConvertManyToManyAssociation,
-    CreateAssociation, DiagramContext, InterpretResponse,
+    CreateAssociation, DeleteEntity, DeleteRelationship, DiagramContext, InterpretResponse,
 )
 from app.services.providers.base import ProviderResponseError
 
@@ -81,20 +81,36 @@ class DiagramIncompleteError(ProviderResponseError):
         self.previous = previous
 
 
+_CREATE_VERB = (
+    r"\b(?:crea|crear|creame|cree|crees|agrega|agregar|agregame|agregue|agregues|"
+    r"anade|anadir|anademe|anada|anadas|genera|generar|generame|genere|generes|"
+    r"incluye|incluir|incluya)"
+)
+_NUMBER_WORDS = {
+    "un": 1, "una": 1, "uno": 1,
+    "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
+    "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
+}
+_COUNT_TOKEN = r"(?:\d{1,2}|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)"
+
+
 def _requested_entity_names(plain_prompt: str) -> list[str]:
     names: list[str] = []
     plural = re.search(
-        r"\b(?:crea|crear|creame|agrega|anade|genera)\s+(?:las?\s+)?(?:entidades|clases)\s+"
-        r"(.+?)(?=\s+y\s+(?:una\s+)?relacion\b|[.;]|$)",
+        rf"{_CREATE_VERB}\s+(?:exactamente\s+)?(?:(?:las?|los?|{_COUNT_TOKEN})\s+)*(?:entidades|clases)\s*:?\s*"
+        r"(.+?)(?=\s+(?:y|con)\s+(?:una\s+)?relacion\b|\s+relacionad[ao]s?\b|\s+conectad[ao]s?\b|[.;]|$)",
         plain_prompt,
     )
     if plural:
-        for candidate in re.split(r"\s*(?:,|\by\b)\s*", plural.group(1)):
+        for candidate in re.split(r"\s*(?:,|;|\by\b)\s*", plural.group(1)):
             candidate = candidate.strip(" '\"")
-            if re.fullmatch(r"[a-z][\w-]{0,99}", candidate) and candidate not in names:
+            if (re.fullmatch(r"[a-z][\w-]{0,99}", candidate)
+                    and candidate not in _NUMBER_WORDS
+                    and candidate not in {"entidad", "entidades", "clase", "clases"}
+                    and candidate not in names):
                 names.append(candidate)
     for match in re.finditer(
-            r"\b(?:crea|crear|creame|agrega|anade|genera)\s+(?:(?:una?|la)\s+)?(?:entidad|clase)\s+"
+            rf"{_CREATE_VERB}\s+(?:(?:una?|la|otra|otro|nueva|nuevo)\s+)*(?:entidad|clase)\s+"
             r"(?:(?:llamad[ao]|denominad[ao]|con\s+nombre|named|called)\s+)?"
             r"[\"']?([a-z][\w-]{0,99})",
             plain_prompt):
@@ -107,6 +123,15 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
     requests: list[tuple[str, str]] = []
     starts = list(re.finditer(r"\b(?:atributo|attribute)\b", plain_prompt))
     for index, start in enumerate(starts):
+        prefix = plain_prompt[max(0, start.start() - 45):start.start()]
+        if re.search(
+            r"(?:\b(?:renombra\w*|cambia\w*|elimina\w*|borra\w*|quita\w*|modifica\w*|"
+            r"edita\w*|actualiza\w*|suprime\w*|delete\w*|remove\w*|rename\w*|update\w*|edit\w*|change\w*)\s+"
+            r"(?:el\s+|la\s+|un\s+|una\s+|los\s+|las\s+)?$"
+            r"|\bcon\s+(?:un\s+|una\s+|los\s+|las\s+)?$)",
+            prefix,
+        ):
+            continue
         end = starts[index + 1].start() if index + 1 < len(starts) else len(plain_prompt)
         clause = plain_prompt[start.start():end]
         attribute = re.match(
@@ -118,14 +143,16 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
             r"[\"']?([a-z_][\w-]{0,99})",
             clause,
         )
-        if attribute and target:
+        if attribute and target and target.group(1) not in {
+            "muchos", "uno", "una", "cero", "ambas", "ambos", "si", "n", "m",
+        }:
             request = (target.group(1), attribute.group(1))
             if request not in requests:
                 requests.append(request)
     creation_starts = list(re.finditer(
-        r"\b(?:crea|crear|creame|agrega|anade|genera)\s+(?:(?:una?|la)\s+)?(?:entidad|clase)\s+"
+        rf"{_CREATE_VERB}\s+(?:(?:una?|la|otra|otro|nueva|nuevo)\s+)*(?:entidad|clase)\s+"
         r"(?:(?:llamad[ao]|denominad[ao]|con\s+nombre|named|called)\s+)?"
-        r"[\"']?([a-z][\w-]{0,99})",
+        r"[\"']?([a-z][\w-]{0,99})[\"']?",
         plain_prompt,
     ))
     for index, creation in enumerate(creation_starts):
@@ -135,16 +162,17 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
         for attribute in re.finditer(
                 r"\b(?:atributo|attribute)\s+(?:(?:llamado|named)\s+)?[\"']?([a-z_][\w-]{0,99})",
                 clause):
-            request = (entity, attribute.group(1))
-            if request not in requests:
-                requests.append(request)
+            if attribute.group(1) not in {"de", "tipo", "con"}:
+                request = (entity, attribute.group(1))
+                if request not in requests:
+                    requests.append(request)
 
     # Detectar varios atributos tipados en una misma entidad.
     # Ejemplo: Agrega dos atributos en la entidad Auto:
     # "Placa" VARCHAR "año" INTEGER
     multiple_attributes = re.finditer(
-        r"\b(?:agrega|anade|crea|incluye)\s+"
-        r"(?:exactamente\s+)?(?:\d{1,2}|dos|tres|cuatro|cinco)\s+atributos?\s+"
+        rf"{_CREATE_VERB}\s+"
+        rf"(?:exactamente\s+)?(?:{_COUNT_TOKEN})\s+atributos?\s+"
         r"(?:en|a)\s+(?:la\s+)?entidad\s+"
         r"[\"']?([a-z_][\w-]{0,99})[\"']?\s*:?\s*"
         r"(.+?)(?=[.;]|$)",
@@ -157,7 +185,7 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
 
         typed_attributes = re.finditer(
             r"""(?<!\w)(?:"([^"]+)"|'([^']+)'|([a-z_][\w-]{0,99}))\s+"""
-            r"(?:de\s+tipo\s+)?"
+            r"(?:de\s+tipo\s+|tipo\s+)?"
             r"(string|varchar|long|bigint|integer|int|double|decimal|"
             r"boolean|bool|date|datetime|timestamp)\b",
             attributes_text,
@@ -199,8 +227,8 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
 
         section = plain_prompt[entity_match.end():end]
 
-        # Solo analizar secciones que declaran atributos.
-        attribute_marker = re.search(r"\batributos?\s*:", section)
+        # Analizar secciones que declaran atributos con ':' o 'con atributo(s)'.
+        attribute_marker = re.search(r"\b(?:con\s+(?:los?\s+)?)?atributos?\s*:?\s+", section)
         if attribute_marker is None:
             continue
 
@@ -208,7 +236,7 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
 
         typed_attributes = re.finditer(
             rf"""(?<!\w)(?:"([^"]+)"|'([^']+)'|([a-z_][\w-]{{0,99}}))"""
-            rf"\s+(?:de\s+tipo\s+)?({type_pattern})\b",
+            rf"\s+(?:de\s+tipo\s+|tipo\s+)?({type_pattern})\b",
             section,
         )
 
@@ -226,11 +254,24 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
     return requests
 
 
+def _requested_deleted_entities(plain_prompt: str) -> list[str]:
+    deleted: list[str] = []
+    for match in re.finditer(
+        r"\b(?:elimina\w*|borra\w*|quita\w*|suprime\w*|delete\w*|remove\w*)\s+"
+        r"(?:la\s+|una\s+|el\s+)?(?:entidad|clase)\s+[\"']?([a-z][\w-]{0,99})",
+        plain_prompt,
+    ):
+        name = match.group(1)
+        if name not in deleted:
+            deleted.append(name)
+    return deleted
+
+
 def _non_mutating_request(plain_prompt: str) -> bool:
     stripped = plain_prompt.strip().lstrip("¿¡").strip()
-    if re.match(r"^no\s+(?:crea|crear|crees|agrega|anade|genera|conecta|relaciona)\b", stripped):
+    if re.match(r"^no\s+(?:crea|crear|crees|cree|agrega|anade|genera|conecta|relaciona|elimina|borra|edita|modifica)\b", stripped):
         return True
-    return bool(re.match(r"^(?:que|cual|cuales|como|por que|explica|describe|dime|muestra)\b", stripped))
+    return bool(re.match(r"^(?:que|cual|cuales|como|por que|explica|describe|dime|muestra|lee|leer|lista|listar)\b", stripped))
 
 
 def extract_expectation(prompt: str, diagram: DiagramContext | None) -> CompletenessExpectation:
@@ -238,80 +279,55 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
     if _non_mutating_request(plain_prompt):
         return CompletenessExpectation(None, (), (), ())
     count_match = re.search(
-        r"\b(?:crea|crear|creame|agrega|anade|genera)\s+(?:exactamente\s+)?(\d{1,2})\s+"
+        rf"{_CREATE_VERB}\s+(?:exactamente\s+)?({_COUNT_TOKEN})\s+"
         r"(?:clases?|entidades?)\b",
         plain_prompt,
     )
-    requested_count = int(count_match.group(1)) if count_match else None
+    if count_match:
+        token = count_match.group(1)
+        requested_count = int(token) if token.isdigit() else _NUMBER_WORDS[token]
+    else:
+        requested_count = None
     names: list[str] = []
     for match in re.finditer(
             r"\b(?:nombre|llamad[ao]|denominad[ao])\s+[\"']?"
             r"([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ-]{0,99})",
             prompt):
-        if match.group(1) not in names:
+        if match.group(1) not in names and match.group(1).casefold() not in _TYPE_ALIASES:
             names.append(match.group(1))
-    if requested_count and not names:
-        # Primero identificar los nombres explícitos entre comillas.
-        # Ejemplo: crea 2 entidades "Mecanico" ... entidad "Especialidad"
-        quoted_entities = re.findall(
-            r"""\bentidad(?:es)?\s+["']([a-z][\w-]{0,99})["']""",
-            plain_prompt,
-        )
-
-        if len(quoted_entities) >= requested_count:
-            names = quoted_entities[:requested_count]
-        else:
-            # Mantener compatibilidad con instrucciones sin comillas.
-            tail_match = re.search(
-                r"\b(?:clases?|entidades?)\s+(.+)",
-                plain_prompt,
-            )
-
-            if tail_match:
-                ignored = {
-                    "id", "pk", "integer", "varchar",
-                    "string", "decimal", "double",
-                    "atributo", "atributos",
-                }
-
-                candidates = re.findall(
-                    r"\b[a-z][\w-]{0,99}\b",
-                    tail_match.group(1),
-                )
-
-                names = [
-                    name
-                    for name in candidates
-                    if name not in ignored and name != "y"
-                ][:requested_count]
     for name in _requested_entity_names(plain_prompt):
         if _key(name) not in {_key(item) for item in names}:
             names.append(name)
-    # Reconocer varias entidades con atributos en una misma oración.
+    # Reconocer una o varias entidades con atributos en una misma oración.
     # Ejemplo: Crea las entidades Autor con ID Integer y Nombre String,
     # y Libro con ID Integer y Titulo String.
     inline_attributes: list[tuple[str, str]] = []
 
     inline_match = re.search(
-        r"\b(?:crea|crear|creame|agrega|anade|genera)\s+las?\s+entidades\s+([^.;]+)",
+        rf"{_CREATE_VERB}\s+(?:exactamente\s+)?(?:(?:una?|las?|los?|otra|otro|nueva|nuevo|{_COUNT_TOKEN})\s+)*(?:entidad(?:es)?|clases?)\s*:?\s*(.+)",
         plain_prompt,
     )
 
     if inline_match:
         blocks = re.split(
-            r",\s*y\s+(?=[a-z][\w-]*\s+con\b)",
+            r"(?:\s*[;.]\s*|\s*,\s*(?:y\s+)?|\s+y\s+)(?=(?:(?:la|una|otra)\s+(?:entidad|clase)\s+)?[\"']?[a-z][\w-]*[\"']?\s+(?:con(?!\s+nombre\b)|atributos?\s*:)\b)",
             inline_match.group(1),
         )
 
         for block in blocks:
-            match = re.match(r"\s*([a-z][\w-]*)\s+con\s+(.+)", block)
+            match = re.match(
+                r"\s*(?:(?:la|una|otra)\s+(?:entidad|clase)\s+)?(?:(?:llamad[ao]|denominad[ao])\s+)?[\"']?([a-z][\w-]*)[\"']?\s+(?:con(?!\s+nombre\b)\s+(?:los?\s+|un\s+)?(?:atributos?\s*:?\s*)?|atributos?\s*:\s*)(.+)",
+                block,
+            )
 
             if not match:
                 continue
 
             entity_name, attributes_text = match.groups()
+            if entity_name in {"una", "un", "uno", "otra", "otro", "la", "el", "las", "los"}:
+                continue
 
-            if entity_name not in names:
+            if _key(entity_name) not in {_key(item) for item in names}:
                 names.append(entity_name)
 
             for attribute in _TYPED_ATTRIBUTE.finditer(attributes_text):
@@ -320,41 +336,125 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
                     or attribute.group("single")
                     or attribute.group("bare")
                 )
+                if attribute_name in {"con", "atributo", "atributos", "tipo", "de", "un", "una"}:
+                    continue
 
                 target = (entity_name, attribute_name)
 
                 if target not in inline_attributes:
                     inline_attributes.append(target)
+
+    if requested_count and len(names) < requested_count:
+        quoted_entities = re.findall(
+            r"""\bentidad(?:es)?\s+["']([a-z][\w-]{0,99})["']""",
+            plain_prompt,
+        )
+        if len(quoted_entities) < requested_count:
+            all_quoted = re.findall(r"""["']([a-z][\w-]{0,99})["']""", plain_prompt)
+            if len(all_quoted) >= requested_count:
+                quoted_entities = all_quoted
+
+        if len(quoted_entities) >= requested_count:
+            for q in quoted_entities[:requested_count]:
+                if _key(q) not in {_key(item) for item in names}:
+                    names.append(q)
+        else:
+            tail_match = re.search(
+                r"\b(?:clases?|entidades?)\s*:?\s*(.+)",
+                plain_prompt,
+            )
+
+            if tail_match:
+                ignored = {
+                    "id", "pk", "integer", "varchar", "int", "date", "datetime", "timestamp",
+                    "string", "decimal", "double", "boolean", "bool", "long", "bigint",
+                    "atributo", "atributos", "con", "una", "un", "la", "el", "las", "los",
+                    "relacion", "entre", "de", "tipo",
+                }
+
+                candidates = re.findall(
+                    r"\b[a-z][\w-]{0,99}\b",
+                    tail_match.group(1),
+                )
+
+                for name in candidates:
+                    if name not in ignored and name != "y" and name not in _NUMBER_WORDS:
+                        if _key(name) not in {_key(item) for item in names}:
+                            names.append(name)
+                        if len(names) >= requested_count:
+                            break
+    existing = {_key(entity.name) for entity in diagram.entities} if diagram else set()
+    deleted_keys = {_key(name) for name in _requested_deleted_entities(plain_prompt)}
+    all_attributes = list(dict.fromkeys(_requested_attributes(plain_prompt, names) + inline_attributes))
+    if re.search(_CREATE_VERB, plain_prompt):
+        for ent_name, _ in all_attributes:
+            if _key(ent_name) not in existing and _key(ent_name) not in deleted_keys and _key(ent_name) not in {_key(item) for item in names}:
+                names.append(ent_name)
+
     pairs: list[tuple[str, str]] = []
     direct_patterns = [
-        r"\b(?:conecta|relaciona)\s+([a-z][\w-]*)\s+con\s+([a-z][\w-]*)",
-        r"\bnombre\s+([a-z][\w-]*).{0,180}?\b(?:conecte|relacione)\s+con\s+([a-z][\w-]*)",
-        r"\brelacion(?:\s+n\s*:\s*m)?\s+entre\s+([a-z][\w-]*)\s+y\s+([a-z][\w-]*)",
+        r"\b(?:conecta|relaciona|conecte|relacione)\s+[\"']?([a-z][\w-]*)[\"']?\s+con\s+[\"']?([a-z][\w-]*)[\"']?",
+        r"\bnombre\s+[\"']?([a-z][\w-]*)[\"']?.{0,180}?\b(?:conecte|relacione)\s+con\s+[\"']?([a-z][\w-]*)[\"']?",
+        r"\brelacion(?:\s+n\s*:\s*m|\s+1\s*:\s*n|\s+1\s*:\s*1)?\s+entre\s+[\"']?([a-z][\w-]*)[\"']?\s+y\s+[\"']?([a-z][\w-]*)[\"']?",
     ]
     for pattern in direct_patterns:
         for match in re.finditer(pattern, plain_prompt, re.DOTALL):
             pair = (match.group(1), match.group(2))
             if pair not in pairs:
                 pairs.append(pair)
-    if re.search(r"\brelacion(?:\s+n\s*:\s*m)?\s+entre\s+ambas\b", plain_prompt) and len(names) >= 2:
+    if names:
+        target_patterns = [
+            r"\brelacion(?:\s+de)?(?:\s+(?:n\s*:\s*m|1\s*:\s*n|1\s*:\s*m|1\s*:\s*1|muchos\s+a\s+muchos|uno\s+a\s+muchos|uno\s+a\s+uno))?\s+con\s+(?:la\s+(?:entidad|clase)\s+)?[\"']?([a-z][\w-]*)[\"']?",
+            r"\b(?:conectad[ao]s?|relacionad[ao]s?|unid[ao]s?)(?:\s+con\s+(?:una\s+)?relacion(?:\s+de)?(?:\s+(?:n\s*:\s*m|1\s*:\s*n|1\s*:\s*m|1\s*:\s*1|muchos\s+a\s+muchos|uno\s+a\s+muchos|uno\s+a\s+uno))?)?\s+con\s+(?:la\s+(?:entidad|clase)\s+)?[\"']?([a-z][\w-]*)[\"']?",
+        ]
+        ignored_targets = {
+            "una", "un", "uno", "la", "el", "los", "las", "ambas", "ambos",
+            "si", "atributo", "atributos", "nombre", "id", "tipo",
+        }
+        existing_pair_keys = [{_key(a), _key(b)} for a, b in pairs]
+        for pattern in target_patterns:
+            for match in re.finditer(pattern, plain_prompt):
+                target = match.group(1)
+                if target in ignored_targets or _key(target) in deleted_keys:
+                    continue
+                source = names[-1]
+                if diagram:
+                    for entity in diagram.entities:
+                        if _key(entity.name) == _key(target):
+                            target = entity.name
+                            break
+                pair_key = {_key(source), _key(target)}
+                if len(pair_key) == 2 and pair_key not in existing_pair_keys:
+                    pairs.append((source, target))
+                    existing_pair_keys.append(pair_key)
+    if re.search(r"\brelacion(?:\s+n\s*:\s*m|\s+1\s*:\s*n|\s+1\s*:\s*1)?\s+entre\s+ambas\b", plain_prompt) and len(names) >= 2:
         pair = (names[-2], names[-1])
-        if pair not in pairs:
+        if {_key(pair[0]), _key(pair[1])} not in [{_key(a), _key(b)} for a, b in pairs]:
             pairs.append(pair)
 
-    # Detectar relaciones expresadas mediante "ambas entidades".
-    if len(names) >= 2 and re.search(
-        r"\bambas\s+entidades\s+"
-        r"(?:conectadas|relacionadas|unidas)"
-        r"(?:\s+(?:con\s+una\s+)?relacion)?"
-        r"\s+n\s*:\s*m\b",
+    # Detectar relaciones expresadas mediante "ambas entidades" o "con una relacion de N:M / 1:N / 1:1".
+    implicit_relation = re.search(
+        r"(?:\bambas\s+entidades\s+(?:conectadas|relacionadas|unidas)(?:\s+(?:con\s+una\s+)?relacion)?\s+n\s*:\s*m\b"
+        r"|\b(?:con|y)\s+(?:que\s+tenga\s+)?(?:una\s+)?relacion(?:\s+de)?\s+(?:n\s*:\s*m|1\s*:\s*n|1\s*:\s*m|1\s*:\s*1|muchos\s+a\s+muchos|uno\s+a\s+muchos|uno\s+a\s+uno)\b"
+        r"|\bque\s+tenga\s+(?:una\s+)?relacion(?:\s+de)?\s+(?:n\s*:\s*m|1\s*:\s*n|1\s*:\s*m|1\s*:\s*1|muchos\s+a\s+muchos|uno\s+a\s+muchos|uno\s+a\s+uno)\b"
+        r"|\brelaciona(?:l[ao]s|d[ao]s)?\s+(?:entre\s+si|de\s+uno\s+a\s+muchos|uno\s+a\s+muchos|muchos\s+a\s+muchos|n\s*:\s*m)\b)",
         plain_prompt,
-    ):
-        pair = (names[-2], names[-1])
+    )
+    if implicit_relation and not pairs:
+        if len(names) >= 2:
+            pair = (names[-2], names[-1])
+            if pair not in pairs:
+                pairs.append(pair)
+        elif len(names) == 1 and diagram:
+            surviving = [
+                entity.name for entity in diagram.entities
+                if _key(entity.name) not in deleted_keys and _key(entity.name) != _key(names[0])
+            ]
+            if len(surviving) == 1:
+                pair = (surviving[0], names[0])
+                if pair not in pairs:
+                    pairs.append(pair)
 
-        if pair not in pairs:
-            pairs.append(pair)
-
-    existing = {_key(entity.name) for entity in diagram.entities} if diagram else set()
     if names:
         considered = names[:requested_count] if requested_count is not None else names
         unique_considered = dict.fromkeys(_key(name) for name in considered)
@@ -365,9 +465,7 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
         new_count,
         tuple(names),
         tuple(pairs),
-        tuple(dict.fromkeys(
-            _requested_attributes(plain_prompt, names) + inline_attributes
-        )),
+        tuple(all_attributes),
     )
 
 
@@ -382,6 +480,17 @@ def _sanitize_requested_operations(
     entity_keys = {_key(name) for name in expected.entity_names}
     attribute_keys = {(_key(entity), _key(attribute)) for entity, attribute in expected.attribute_targets}
     relationship_keys = [{_key(source), _key(target)} for source, target in expected.relationship_pairs]
+    requested_delete_keys = {_key(name) for name in _requested_deleted_entities(plain_prompt)}
+    mentions_delete = bool(requested_delete_keys) or re.search(
+        r"\b(?:elimina\w*|borra\w*|quita\w*|suprime\w*|delete\w*|remove\w*)\b",
+        plain_prompt,
+    ) is not None
+    deleted_entity_keys = set(requested_delete_keys)
+    if not requested_delete_keys and mentions_delete:
+        deleted_entity_keys.update(
+            _key(op.entityName) for op in response.operations
+            if isinstance(op, DeleteEntity) and _key(op.entityName) not in entity_keys
+        )
     mentions_attributes = bool(attribute_keys) or re.search(
         r"\b(?:atributos?|attributes?|campos?|fields?)\b",
         plain_prompt,
@@ -390,14 +499,22 @@ def _sanitize_requested_operations(
         r"\b(?:relacion|relaciones|relaciona|relacionar|relacione|conecta|conectar|conecte|pertenece)\b",
         plain_prompt,
     ) is not None
-    confident = bool(entity_keys or attribute_keys or relationship_keys)
+    confident = bool(entity_keys or attribute_keys or relationship_keys or deleted_entity_keys)
     if not confident:
         return response
 
     sanitized = []
     removed = 0
     for operation in response.operations:
-        if isinstance(operation, AddEntity):
+        if isinstance(operation, DeleteEntity):
+            entity_key = _key(operation.entityName)
+            if requested_delete_keys and entity_key not in requested_delete_keys:
+                removed += 1
+                continue
+            if not mentions_delete or entity_key in entity_keys:
+                removed += 1
+                continue
+        elif isinstance(operation, AddEntity):
             # La solicitud pide atributos para entidades existentes,
             # no crear una entidad nueva.
             if attribute_keys and not entity_keys:
@@ -431,10 +548,18 @@ def _sanitize_requested_operations(
                 continue
         elif isinstance(operation, AddRelationship):
             pair = {_key(operation.relationship.sourceEntity), _key(operation.relationship.targetEntity)}
+            if pair & deleted_entity_keys:
+                removed += 1
+                continue
             if relationship_keys and pair not in relationship_keys:
                 removed += 1
                 continue
             if not mentions_relationship:
+                removed += 1
+                continue
+        elif isinstance(operation, DeleteRelationship):
+            pair = {_key(operation.relationship.sourceEntity), _key(operation.relationship.targetEntity)}
+            if pair & deleted_entity_keys:
                 removed += 1
                 continue
         sanitized.append(operation)
@@ -452,13 +577,13 @@ _TYPE_ALIASES = {
 }
 _TYPED_ATTRIBUTE = re.compile(
     r'''(?<!\w)(?:"(?P<double>[^"\n]+)"|'(?P<single>[^'\n]+)'|'''
-    r'''(?P<bare>[a-z_][\w-]{0,99}))\s+(?:de\s+tipo\s+)?'''
+    r'''(?P<bare>[a-z_][\w-]{0,99}))\s+(?:de\s+tipo\s+|tipo\s+)?'''
     r'''(?P<type>datetime|timestamp|string|varchar|bigint|integer|double|decimal|'''
     r'''boolean|long|int|bool|date)\b'''
-    r'''(?P<pk>\s*(?:\(\s*pk\s*\)|\bpk\b|\bclave\s+primaria\b|\bprimary\s+key\b))?'''
+    r'''(?P<pk>\s*(?:\(\s*pk\s*\)|\bpk\b|\b(?:como\s+)?clave\s+primaria\b|\b(?:como\s+)?primary\s+key\b))?'''
 )
 _ENTITY_HEADER = re.compile(
-    r'''\bentidad(?:es)?\s+(?:"(?P<double>[^"\n]+)"|'''
+    r'''\b(?:entidad(?:es)?|clases?)\s+(?:(?:llamad[ao]|denominad[ao])\s+)?(?:"(?P<double>[^"\n]+)"|'''
     r''''(?P<single>[^'\n]+)'|(?P<bare>[a-z][\w-]{0,99}))'''
 )
 
@@ -479,10 +604,10 @@ def _typed_attribute_expectations(
     for index, (header, entity) in enumerate(headers):
         end = headers[index + 1][0].start() if index + 1 < len(headers) else len(plain)
         section = plain[header.end():end]
-        marker = re.search(r"\batributos?\s*:", section)
+        marker = re.search(r"\b(?:con\s+(?:los?\s+)?)?atributos?\s*:?", section)
         if marker:
             section = section[marker.end():]
-        elif not re.search(r"\b(?:agrega|anade|crea|incluye)\s+", plain[:header.start()]):
+        elif not re.search(rf"{_CREATE_VERB}\s+", plain[:header.start()]):
             continue
         for match in _TYPED_ATTRIBUTE.finditer(section):
             name = match.group("double") or match.group("single") or match.group("bare")
@@ -547,6 +672,15 @@ def validate_completeness(
         missing = [name for name in expected.entity_names if _key(name) not in available]
         if missing:
             raise DiagramIncompleteError("faltan entidades solicitadas: " + ", ".join(missing), response)
+
+    requested_deletes = [
+        name for name in _requested_deleted_entities(_plain(prompt))
+        if not diagram or _key(name) in existing_entities
+    ]
+    deleted_in_ops = {_key(op.entityName) for op in response.operations if isinstance(op, DeleteEntity)}
+    missing_deletes = [name for name in requested_deletes if _key(name) not in deleted_in_ops]
+    if missing_deletes:
+        raise DiagramIncompleteError("falta eliminar entidades solicitadas: " + ", ".join(missing_deletes), response)
 
     # Keep full definitions rather than only names: completeness includes
     # explicitly requested data types and primary-key properties.
@@ -613,7 +747,7 @@ def validate_completeness(
 
     # Verificar la cardinalidad cuando el usuario solicita N:M.
     if conversion_expected is None and re.search(
-        r"\bn\s*:\s*m\b",
+        r"\bn\s*:\s*m\b|\bmuchos\s+a\s+muchos\b",
         _plain(prompt),
     ):
         all_relationships = []

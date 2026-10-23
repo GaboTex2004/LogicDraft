@@ -19,7 +19,9 @@ def classify_agent_intent(message: str) -> AgentIntent:
     """Classify edit authorization from user text, never from model output."""
     plain = _plain(message).strip()
     interrogative = bool(re.match(
-        r"^(?:que|cual|cuales|como|por que|explica(?:me)?|describe|dime|muestra|opinas)\b", plain,
+        r"^(?:que|cual|cuales|cuanto|cuantos|cuanta|cuantas|como|por que|explica(?:me)?|"
+        r"describe|dime|muestra(?:me)?|opinas|lee|leer|lista|listar|enumera|analiza|revisa)\b",
+        plain,
     )) or "?" in plain
     if interrogative:
         return AgentIntent.INFORMATIONAL
@@ -28,10 +30,32 @@ def classify_agent_intent(message: str) -> AgentIntent:
     if re.search(r"\b(?:que tal si|seria bueno|convendria)\b", plain):
         return AgentIntent.AMBIGUOUS
     explicit = re.match(
-        r"^(?:(?:por favor)\s+)?(?:agrega|anade|crea|conecta|relaciona|convierte|transforma)\b",
+        r"^(?:(?:por favor)\s+)?(?:"
+        r"agrega|agregar|agregame|agregue|"
+        r"anade|anadir|anademe|anada|"
+        r"crea|crear|creame|cree|"
+        r"genera|generar|generame|genere|"
+        r"incluye|incluir|incluya|"
+        r"conecta|conectar|conecte|"
+        r"relaciona|relacionar|relacione|une|unir|"
+        r"convierte|convertir|convierta|"
+        r"transforma|transformar|transforme|"
+        r"edita|editar|edite|"
+        r"modifica|modificar|modifique|"
+        r"actualiza|actualizar|actualice|"
+        r"cambia|cambiar|cambie|"
+        r"renombra|renombrar|renombre|"
+        r"elimina|eliminar|elimine|"
+        r"borra|borrar|borre|"
+        r"quita|quitar|quite|suprime|suprimir"
+        r")\b",
         plain,
     ) or re.match(
-        r"^(?:quiero|necesito)\s+que\s+(?:agregues|anadas|crees|conectes|relaciones|conviertas|transformes)\b",
+        r"^(?:quiero|necesito)\s+que\s+(?:"
+        r"agregues|anadas|crees|generes|incluyas|conectes|relaciones|unas|"
+        r"conviertas|transformes|edites|modifiques|actualices|cambies|renombres|"
+        r"elimines|borres|quites|suprimas"
+        r")\b",
         plain,
     )
     return AgentIntent.MODIFICATION if explicit else AgentIntent.AMBIGUOUS

@@ -98,6 +98,17 @@ def build_agent_prompt(request: AgentAskRequest) -> str:
         "a Libro a menos que el usuario lo solicite. "
         "Si solicitan agregar entidades, atributos o relaciones, usa ADD_ENTITY, ADD_ATTRIBUTE y "
         "ADD_RELATIONSHIP con el contrato del editor. Para N:M nueva usa cardinalidad many en ambos extremos. "
+        "Para editar o eliminar elementos del contexto usa las operaciones CRUD exactas: "
+        'RENAME_ENTITY: {"type":"RENAME_ENTITY","entityName":"Actual","newName":"Nuevo"}, '
+        'DELETE_ENTITY: {"type":"DELETE_ENTITY","entityName":"Actual"}, '
+        'RENAME_ATTRIBUTE: {"type":"RENAME_ATTRIBUTE","entityName":"Entidad","attributeName":"Actual","newName":"Nuevo"}, '
+        'CHANGE_ATTRIBUTE_TYPE: {"type":"CHANGE_ATTRIBUTE_TYPE","entityName":"Entidad","attributeName":"Atrib","dataType":"String"}, '
+        'SET_ATTRIBUTE_PRIMARY_KEY: {"type":"SET_ATTRIBUTE_PRIMARY_KEY","entityName":"Entidad","attributeName":"Atrib","value":true}, '
+        'SET_ATTRIBUTE_NULLABLE: {"type":"SET_ATTRIBUTE_NULLABLE","entityName":"Entidad","attributeName":"Atrib","value":false}, '
+        'DELETE_ATTRIBUTE: {"type":"DELETE_ATTRIBUTE","entityName":"Entidad","attributeName":"Atrib"}, '
+        'UPDATE_RELATIONSHIP: {"type":"UPDATE_RELATIONSHIP","relationship":{"sourceEntity":"A","targetEntity":"B","sourceCardinality":"ONE_ONE","targetCardinality":"ZERO_MANY"}}, '
+        'DELETE_RELATIONSHIP: {"type":"DELETE_RELATIONSHIP","relationship":{"sourceEntity":"A","targetEntity":"B"}}, '
+        'DELETE_ASSOCIATION: {"type":"DELETE_ASSOCIATION","associationEntityName":"Asociacion"}. '
         "Para convertir una N:M existente usa exclusivamente "
         "CONVERT_MANY_TO_MANY_ASSOCIATION con relationshipId real del contexto, extremos, nombre y solo los "
         "atributos propios solicitados. Nunca simules la conversion con tres operaciones ni inventes IDs. "
@@ -108,3 +119,4 @@ def build_agent_prompt(request: AgentAskRequest) -> str:
         + json.dumps(relevant, ensure_ascii=False, separators=(",", ":"))
         + "\nPREGUNTA JSON:\n" + json.dumps(request.message, ensure_ascii=False)
     )
+

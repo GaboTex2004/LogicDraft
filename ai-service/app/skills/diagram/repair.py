@@ -17,6 +17,7 @@ def build_repair_prompt(
         'RENAME_ATTRIBUTE, CHANGE_ATTRIBUTE_TYPE, SET_ATTRIBUTE_PRIMARY_KEY, SET_ATTRIBUTE_NULLABLE, '
         'ADD_RELATIONSHIP, DELETE_RELATIONSHIP, UPDATE_RELATIONSHIP, CREATE_ASSOCIATION, '
         'DELETE_ASSOCIATION o CONVERT_MANY_TO_MANY_ASSOCIATION.',
+        'Formato DELETE_ENTITY: {"type":"DELETE_ENTITY","entityName":"Temporal"}.',
         'Formato ADD_ENTITY: {"type":"ADD_ENTITY","entity":{"name":"Cliente",'
         '"attributes":[{"name":"id","dataType":"Integer","primaryKey":true,"nullable":false}]}}.',
         'Formato ADD_ATTRIBUTE: {"type":"ADD_ATTRIBUTE","entityName":"Cliente",'
@@ -27,6 +28,8 @@ def build_repair_prompt(
         'Los ejemplos indican el FORMATO, no son operaciones solicitadas. '
         'No copies sus entidades ni atributos.',
         "Devuelve el lote COMPLETO de operaciones, no solamente las operaciones faltantes.",
+        "Conserva las operaciones correctas del lote anterior y agrega las operaciones faltantes indicadas en Error detectado. "
+        "No elimines entidades que no se haya pedido eliminar.",
         "Incluye todas las entidades, todos sus atributos y todas las relaciones solicitadas.",
         "No uses Markdown, explicaciones, SQL ni campos adicionales.",
         "Tipos permitidos: String, Long, Integer, Double, Boolean, Date, DateTime.",

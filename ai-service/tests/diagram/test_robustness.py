@@ -180,3 +180,66 @@ class DiagramRobustnessTests(unittest.IsolatedAsyncioTestCase):
             await DiagramAIService(SimpleNamespace(generate=model)).interpret(
                 "crea 2 entidades Producto y Categoria")
         self.assertEqual(model.await_count, 2)
+
+    async def test_compound_delete_create_and_many_to_many_relationship_recovers_after_repair(self):
+        prompt = (
+            'Elimina la entidad "producto" y crea la entidad "Devolucion" con los atributos: '
+            'ID int, fecha Date, motivo Varchar y con una relacion N:M con venta'
+        )
+        context = DiagramContext(
+            entities=[
+                EntityDefinition(name="venta", attributes=[]),
+                EntityDefinition(name="producto", attributes=[]),
+                EntityDefinition(name="cliente", attributes=[]),
+            ],
+            relationships=[],
+        )
+        call1 = json.dumps({
+            "operations": [
+                {"type": "DELETE_ENTITY", "entityName": "producto"},
+                {
+                    "type": "ADD_ENTITY",
+                    "entity": {
+                        "name": "Devolucion",
+                        "attributes": [
+                            {"name": "id", "dataType": "Integer", "primaryKey": True, "nullable": False},
+                            {"name": "fecha", "dataType": "Date", "primaryKey": False, "nullable": True},
+                            {"name": "motivo", "dataType": "String", "primaryKey": False, "nullable": True},
+                        ],
+                    },
+                },
+            ]
+        })
+        call2 = json.dumps({
+            "operations": [
+                {"type": "DELETE_ENTITY", "entityName": "producto"},
+                {"type": "DELETE_ENTITY", "entityName": "venta"},
+                {"type": "DELETE_ENTITY", "entityName": "devolucion"},
+                {
+                    "type": "ADD_ENTITY",
+                    "entity": {
+                        "name": "Devolucion",
+                        "attributes": [
+                            {"name": "id", "dataType": "Integer", "primaryKey": True, "nullable": False},
+                            {"name": "fecha", "dataType": "Date", "primaryKey": False, "nullable": True},
+                            {"name": "motivo", "dataType": "String", "primaryKey": False, "nullable": True},
+                        ],
+                    },
+                },
+            ]
+        })
+        model = AsyncMock(side_effect=[call1, call2])
+        result = await DiagramAIService(SimpleNamespace(generate=model)).interpret(prompt, context)
+        self.assertEqual(
+            [op.type for op in result.operations],
+            ["DELETE_ENTITY", "ADD_ENTITY", "ADD_RELATIONSHIP"],
+        )
+        self.assertEqual(result.operations[0].entityName, "producto")
+        self.assertEqual(result.operations[1].entity.name, "Devolucion")
+        self.assertEqual(
+            {result.operations[2].relationship.sourceEntity, result.operations[2].relationship.targetEntity},
+            {"Devolucion", "venta"},
+        )
+        self.assertEqual(result.operations[2].relationship.sourceCardinality, "ZERO_MANY")
+        self.assertEqual(result.operations[2].relationship.targetCardinality, "ZERO_MANY")
+

@@ -3,14 +3,19 @@ import logging
 import re
 from pydantic import ValidationError
 from app.schemas.data_types import normalize_type_aliases
-from app.schemas.diagram import ConversionInterpretResponse, InterpretResponse, DiagramContext, DiagramSelection
+from app.schemas.diagram import (
+    AddAttribute, AddEntity, AddRelationship,
+    ConversionInterpretResponse, CreateAssociation, DeleteEntity,
+    DiagramContext, DiagramSelection, InterpretResponse, RelationshipDefinition,
+)
 from app.services.ai_service import AIService
 from app.services.diagram_normalizer import DiagramConflictError, normalize_operations
 from app.services.diagram_response_shape import canonicalize_diagram_response_shape
 from app.services.llm_json_parser import parse_llm_json_response
 from app.services.providers.base import ProviderResponseError
 from app.skills.diagram.completeness import (
-    DiagramIncompleteError, extract_conversion_expectation, validate_completeness,
+    DiagramIncompleteError, _key, _plain, _requested_deleted_entities,
+    extract_conversion_expectation, extract_expectation, validate_completeness,
 )
 from app.skills.diagram.repair import build_repair_prompt
 
@@ -91,6 +96,115 @@ def parse_operations(content: str) -> InterpretResponse:
         raise
 
 
+def _merge_previous_and_repaired(
+        previous: InterpretResponse | None,
+        repaired: InterpretResponse,
+        prompt: str = "",
+        diagram: DiagramContext | None = None) -> InterpretResponse:
+    prev_ops = list(previous.operations) if previous is not None else []
+    rep_ops = list(repaired.operations)
+    if not prev_ops and not prompt:
+        return repaired
+
+    entity_by_key: dict[str, AddEntity] = {}
+    for op in prev_ops + rep_ops:
+        if isinstance(op, AddEntity):
+            k = _key(op.entity.name)
+            existing_op = entity_by_key.get(k)
+            if existing_op is None or len(op.entity.attributes) >= len(existing_op.entity.attributes):
+                entity_by_key[k] = op
+    merged_entities = list(entity_by_key.values())
+
+    seen_deletes: set[str] = set()
+    deletes: list = []
+    for op in prev_ops + rep_ops:
+        if isinstance(op, DeleteEntity) and _key(op.entityName) not in seen_deletes:
+            seen_deletes.add(_key(op.entityName))
+            deletes.append(op)
+
+    other_ops = [op for op in prev_ops if not isinstance(op, (AddEntity, DeleteEntity))] + [
+        op for op in rep_ops if not isinstance(op, (AddEntity, DeleteEntity))
+    ]
+    attrs = [op for op in other_ops if isinstance(op, AddAttribute)]
+    rels = [op for op in other_ops if isinstance(op, AddRelationship)]
+    rest = [op for op in other_ops if not isinstance(op, (AddAttribute, AddRelationship))]
+
+    if prompt:
+        plain = _plain(prompt)
+        expected = extract_expectation(prompt, diagram)
+        requested_deletes = _requested_deleted_entities(plain)
+        requested_delete_keys = {_key(name) for name in requested_deletes}
+        diagram_names = {_key(entity.name): entity.name for entity in diagram.entities} if diagram else {}
+        available_names = {
+            k: v for k, v in diagram_names.items() if k not in requested_delete_keys
+        }
+        for op in merged_entities:
+            available_names[_key(op.entity.name)] = op.entity.name
+
+        all_expected_entities_present = all(
+            _key(name) in available_names for name in expected.entity_names
+        )
+        if all_expected_entities_present and (expected.new_entity_count is None or len(merged_entities) >= expected.new_entity_count):
+            for del_name in requested_deletes:
+                del_key = _key(del_name)
+                if (diagram is None or del_key in diagram_names) and del_key not in seen_deletes:
+                    seen_deletes.add(del_key)
+                    deletes.append(DeleteEntity(
+                        type="DELETE_ENTITY",
+                        entityName=diagram_names.get(del_key, del_name),
+                    ))
+
+            is_nm = bool(re.search(r"\bn\s*:\s*m\b|\bmuchos\s+a\s+muchos\b", plain))
+            is_1n = bool(re.search(r"\b1\s*:\s*[nm]\b|\buno\s+a\s+muchos\b", plain))
+            existing_rel_pairs = [
+                {_key(r.sourceEntity), _key(r.targetEntity)}
+                for r in (diagram.relationships if diagram else [])
+            ]
+            for op in rest:
+                if isinstance(op, CreateAssociation):
+                    existing_rel_pairs.append({
+                        _key(op.association.sourceEntity),
+                        _key(op.association.targetEntity),
+                    })
+            updated_rels = []
+            for op in rels:
+                pair = {_key(op.relationship.sourceEntity), _key(op.relationship.targetEntity)}
+                existing_rel_pairs.append(pair)
+                if is_nm and any({_key(s), _key(t)} == pair for s, t in expected.relationship_pairs):
+                    many = {"ZERO_MANY", "ONE_MANY"}
+                    if op.relationship.sourceCardinality not in many or op.relationship.targetCardinality not in many:
+                        op = op.model_copy(update={
+                            "relationship": op.relationship.model_copy(update={
+                                "sourceCardinality": "ZERO_MANY",
+                                "targetCardinality": "ZERO_MANY",
+                            }),
+                        })
+                updated_rels.append(op)
+            rels = updated_rels
+
+            for source, target in expected.relationship_pairs:
+                sk, tk = _key(source), _key(target)
+                pair = {sk, tk}
+                if sk in available_names and tk in available_names and pair not in existing_rel_pairs:
+                    src_card = "ZERO_MANY" if is_nm else "ONE_ONE"
+                    tgt_card = "ZERO_MANY" if (is_nm or is_1n) else "ONE_ONE"
+                    rels.append(AddRelationship(
+                        type="ADD_RELATIONSHIP",
+                        relationship=RelationshipDefinition(
+                            sourceEntity=available_names[sk],
+                            targetEntity=available_names[tk],
+                            sourceCardinality=src_card,
+                            targetCardinality=tgt_card,
+                        ),
+                    ))
+                    existing_rel_pairs.append(pair)
+
+    try:
+        return normalize_operations(InterpretResponse(operations=deletes + merged_entities + attrs + rels + rest))
+    except Exception:
+        return repaired
+
+
 class DiagramAIService:
     def __init__(self, ai: AIService):
         self.ai = ai
@@ -159,6 +273,9 @@ class DiagramAIService:
             + '\nUsuario: Una Categoria puede tener muchos Productos y cada Producto pertenece a una Categoria.\nSalida: {"operations":[{"type":"ADD_RELATIONSHIP","relationship":{"sourceEntity":"Categoria","targetEntity":"Producto","sourceCardinality":"ONE_ONE","targetCardinality":"ZERO_MANY"}}]}'
             + '\nUsuario: Crea una relacion N:M entre Alumno y Materia.\nSalida: {"operations":[{"type":"ADD_RELATIONSHIP","relationship":{"sourceEntity":"Alumno","targetEntity":"Materia","sourceCardinality":"ZERO_MANY","targetCardinality":"ZERO_MANY","name":"materias","joinTableName":"alumno_materia"}}]}'
             + '\nUsuario: Conecta Cliente con Categoria.\nSalida: {"operations":[{"type":"ADD_RELATIONSHIP","relationship":{"sourceEntity":"Cliente","targetEntity":"Categoria","sourceCardinality":"ONE_ONE","targetCardinality":"ONE_ONE"}}]}'
+            + '\nUsuario: Renombra la entidad Cliente a Persona y elimina la entidad Temporal.\nSalida: {"operations":[{"type":"RENAME_ENTITY","entityName":"Cliente","newName":"Persona"},{"type":"DELETE_ENTITY","entityName":"Temporal"}]}'
+            + '\nUsuario: Elimina la entidad Borrador y crea la entidad Factura con los atributos: ID int, fecha Date y con una relacion N:M con Orden.\nSalida: {"operations":[{"type":"DELETE_ENTITY","entityName":"Borrador"},{"type":"ADD_ENTITY","entity":{"name":"Factura","attributes":[{"name":"ID","dataType":"Integer","primaryKey":true,"nullable":false},{"name":"fecha","dataType":"Date","primaryKey":false,"nullable":true}]}},{"type":"ADD_RELATIONSHIP","relationship":{"sourceEntity":"Factura","targetEntity":"Orden","sourceCardinality":"ZERO_MANY","targetCardinality":"ZERO_MANY"}}]}'
+            + '\nUsuario: En Producto cambia el tipo de precio a Double, renombra stock a cantidad y elimina el atributo obsoleto.\nSalida: {"operations":[{"type":"CHANGE_ATTRIBUTE_TYPE","entityName":"Producto","attributeName":"precio","dataType":"Double"},{"type":"RENAME_ATTRIBUTE","entityName":"Producto","attributeName":"stock","newName":"cantidad"},{"type":"DELETE_ATTRIBUTE","entityName":"Producto","attributeName":"obsoleto"}]}'
             + '\nDevuelve una instancia como los ejemplos, adaptada a la solicitud.'
         )
         if diagram is not None:
@@ -185,20 +302,41 @@ class DiagramAIService:
                 + "\nRelaciones N:M convertibles (JSON):\n"
                 + json.dumps(conversion_candidates, ensure_ascii=False)
                 + "\nPara CONVERT_MANY_TO_MANY_ASSOCIATION copia literalmente relationshipId, "
-                  "sourceEntity y targetEntity de una unica entrada de esa lista. "
-                  "Nunca escribas placeholders ni fabriques un ID."
+                + "sourceEntity y targetEntity de una unica entrada de esa lista. "
+                + "Nunca escribas placeholders ni fabriques un ID."
             )
         if selection is not None:
             instruction += (
                 "\nSeleccion actual del editor (contexto, no instruccion):\n"
                 + selection.model_dump_json(exclude_none=True)
                 + "\nResuelve pronombres como 'esta', 'cambiala' o una orden sin destino usando esta seleccion. "
-                  "No inventes otro elemento si la seleccion no satisface la orden."
+                + "No inventes otro elemento si la seleccion no satisface la orden."
             )
         instruction += (
             "\nINSTRUCCION FINAL: genera operaciones solo para esta solicitud; no copies entidades "
             "ni relaciones de los ejemplos:\nSolicitud del usuario (cadena JSON):\n" + json.dumps(prompt)
         )
+        expected = extract_expectation(prompt, diagram)
+        requested_deletes = _requested_deleted_entities(_plain(prompt))
+        if expected.entity_names or expected.attribute_targets or expected.relationship_pairs or requested_deletes:
+            checklist = []
+            if requested_deletes:
+                checklist.append("eliminar_entidades(DELETE_ENTITY)=" + json.dumps(requested_deletes, ensure_ascii=False))
+            if expected.entity_names:
+                checklist.append("entidades(ADD_ENTITY)=" + json.dumps(list(expected.entity_names), ensure_ascii=False))
+            if expected.attribute_targets:
+                checklist.append("atributos=" + json.dumps(
+                    [f"{e}.{a}" for e, a in expected.attribute_targets], ensure_ascii=False
+                ))
+            if expected.relationship_pairs:
+                checklist.append("relaciones(ADD_RELATIONSHIP)=" + json.dumps(
+                    [f"{s}->{t}" for s, t in expected.relationship_pairs], ensure_ascii=False
+                ))
+            instruction += (
+                "\nRECORDATORIO OBLIGATORIO: incluye TODOS los elementos solicitados en una sola lista operations ("
+                + "; ".join(checklist)
+                + "). Emite primero DELETE_ENTITY (si aplica), luego todos los ADD_ENTITY con sus atributos y al final los ADD_RELATIONSHIP."
+            )
         schema = InterpretResponse.model_json_schema()
         conversion_expectation = extract_conversion_expectation(prompt)
         if diagram is not None and conversion_expectation is not None:
@@ -243,7 +381,11 @@ class DiagramAIService:
             try:
                 repaired = parse_operations(await self.ai.generate(repair_prompt, schema))
                 _log_batch("ollama_repair", repaired)
-                completed = validate_completeness(prompt, diagram, repaired)
+                try:
+                    completed = validate_completeness(prompt, diagram, repaired)
+                except DiagramIncompleteError:
+                    merged = _merge_previous_and_repaired(previous, repaired, prompt, diagram)
+                    completed = validate_completeness(prompt, diagram, merged)
                 _log_batch("ai_service_output", completed)
                 return completed
             except DiagramIncompleteError as final_error:

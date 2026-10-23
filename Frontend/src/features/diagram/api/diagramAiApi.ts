@@ -8,6 +8,6 @@ export type DiagramAiSelection =
 export async function interpretDiagramWithAi(projectId: number, prompt: string,
   selection?: DiagramAiSelection, signal?: AbortSignal): Promise<unknown> {
   const response = await api.post<unknown>(`/proyectos/${projectId}/ai/diagram/interpret`,
-    { prompt, ...(selection ? { selection } : {}) }, { signal, timeout: 100_000 })
+    { prompt, ...(selection ? { selection } : {}) }, { signal, timeout: 600_000 })
   return response.data
 }
