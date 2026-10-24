@@ -21,6 +21,9 @@ public class Diagrama {
     private Map<String, Object> contenido;
     @NotNull @Column(nullable = false)
     private Integer version;
+    @Version
+    @Column(nullable = false)
+    private Long revision;
     @Column(nullable = false, updatable = false)
     private LocalDateTime fechaCreacion;
     @Column(nullable = false)
@@ -35,6 +38,8 @@ public class Diagrama {
     public void setContenido(Map<String, Object> contenido) { this.contenido = contenido; }
     public Integer getVersion() { return version; }
     public void setVersion(Integer version) { this.version = version; }
+    public Long getRevision() { return revision; }
+    public void setRevision(Long revision) { this.revision = revision; }
     public LocalDateTime getFechaCreacion() { return fechaCreacion; }
     public void setFechaCreacion(LocalDateTime fechaCreacion) { this.fechaCreacion = fechaCreacion; }
     public LocalDateTime getFechaActualizacion() { return fechaActualizacion; }

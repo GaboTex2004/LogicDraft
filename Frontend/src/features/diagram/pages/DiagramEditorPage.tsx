@@ -299,10 +299,12 @@ function DiagramEditorCanvas({
   project,
   initialDocument,
   initialDiagramId,
+  initialServerRevision,
 }: {
   project: Proyecto;
   initialDocument: DiagramDocument;
   initialDiagramId: number | null;
+  initialServerRevision: number | null;
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<EntityFlowNode>(
     initialDocument.nodes,
@@ -348,6 +350,8 @@ function DiagramEditorCanvas({
   const edgesRef = useRef(edges);
   const revisionRef = useRef(0);
   const persistedRevisionRef = useRef(0);
+  const serverRevisionRef = useRef<number | null>(initialServerRevision);
+  const conflictRef = useRef(false);
   const saveInFlightRef = useRef<Promise<boolean> | null>(null);
   const { fitView } = useReactFlow();
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
@@ -394,10 +398,10 @@ function DiagramEditorCanvas({
   const markDirty = useCallback(() => {
     revisionRef.current += 1;
     setDocumentRevision(revisionRef.current);
-    setSaveStatus("dirty");
+    setSaveStatus(conflictRef.current ? "conflict" : "dirty");
   }, []);
 
-  // MVP conflict policy: events are applied in arrival order (last write wins).
+  // Transient events are applied in arrival order; confirmed saves are protected by server revisions.
   // Direct state updates here never call publishEvent, preventing echo loops.
   const applyRemoteEvent = useCallback(
     (event: CollaborationEvent) => {
@@ -934,12 +938,15 @@ function DiagramEditorCanvas({
       const request = guardarDiagrama(
         project.id,
         serializeDocument(nodesRef.current, edgesRef.current),
+        serverRevisionRef.current,
       )
         .then((saved) => {
+          serverRevisionRef.current = saved.revision;
+          conflictRef.current = false;
           agentSession.setDiagramId(saved.id);
           agentSession.record("DIAGRAM_SAVED");
           persistedRevisionRef.current = savedRevision;
-          publishEvent("DIAGRAM_SAVED", { savedAt: saved.fechaActualizacion });
+          publishEvent("DIAGRAM_SAVED", { savedAt: saved.fechaActualizacion, revision: saved.revision });
           setSaveStatus(
             revisionRef.current === savedRevision ? "saved" : "dirty",
           );
@@ -951,7 +958,17 @@ function DiagramEditorCanvas({
             localStorage.removeItem("token");
             window.location.assign("/login");
           } else if (isForbiddenError(requestError)) setSaveStatus("forbidden");
-          else setSaveStatus("error");
+          else if (axios.isAxiosError(requestError) && requestError.response?.status === 409) {
+            conflictRef.current = true;
+            setSaveStatus("conflict");
+            setAiError("Otro usuario guardÃ³ una versiÃ³n mÃ¡s reciente. Tus cambios locales se conservaron; recarga para resincronizar.");
+          } else if (axios.isAxiosError(requestError) && requestError.response?.status === 422) {
+            const response = record(requestError.response.data);
+            setSaveStatus("error");
+            setAiError(typeof response?.mensaje === "string"
+              ? response.mensaje
+              : "El diagrama contiene una estructura invÃ¡lida y no fue guardado.");
+          } else setSaveStatus("error");
           return false;
         })
         .finally(() => {
@@ -1314,13 +1331,14 @@ function DiagramEditorCanvas({
         onDeleteSelection={deleteSelection}
         onFitView={() => void fitView({ padding: 0.2, duration: 350 })}
         onImport={() => importInputRef.current?.click()}
-        importDisabled={importLoading || saveStatus === "saving" || saveStatus === "forbidden"}
+        importDisabled={importLoading || saveStatus === "saving" || saveStatus === "conflict" || saveStatus === "forbidden"}
         exportStatus={exportStatus}
         exportMessage={exportMessage}
         exportDisabled={
           saveStatus === "dirty" ||
           saveStatus === "saving" ||
           saveStatus === "error" ||
+          saveStatus === "conflict" ||
           saveStatus === "forbidden"
         }
         onExportBackend={() => void handleExport("backend")}
@@ -1339,6 +1357,15 @@ function DiagramEditorCanvas({
           setPropertiesOpen((open) => !open);
         }}
       />
+      {saveStatus === "conflict" && (
+        <div className="diagram-import-status is-error" role="alert">
+          <span>Existe una versiÃ³n confirmada mÃ¡s reciente. Tus cambios locales siguen en este navegador.</span>
+          <button type="button" onClick={() => {
+            if (window.confirm("Recargar reemplazarÃ¡ los cambios locales no guardados por la versiÃ³n confirmada. Â¿Continuar?"))
+              window.location.reload();
+          }}>Recargar versiÃ³n del servidor</button>
+        </div>
+      )}
       {(importLoading || importError) && (
         <div className={`diagram-import-status${importError ? " is-error" : ""}`} role={importError ? "alert" : "status"}>
           {importError || "Analizando XMI/XML..."}
@@ -1532,7 +1559,8 @@ function DiagramEditorCanvas({
             ? "No tienes permisos para modificar este proyecto"
             : saveStatus === "dirty" ||
                 saveStatus === "saving" ||
-                saveStatus === "error"
+                saveStatus === "error" ||
+                saveStatus === "conflict"
               ? "Espera a que el diagrama esté guardado para usar IA."
               : undefined
         }
@@ -1542,7 +1570,8 @@ function DiagramEditorCanvas({
         disabledReason={
           saveStatus === "dirty" ||
           saveStatus === "saving" ||
-          saveStatus === "error"
+          saveStatus === "error" ||
+          saveStatus === "conflict"
             ? "Espera a que el diagrama se guarde para consultar su estado actual."
             : undefined
         }
@@ -1591,6 +1620,7 @@ export function DiagramEditorPage() {
   const [project, setProject] = useState<Proyecto | null>(null);
   const [document, setDocument] = useState<DiagramDocument | null>(null);
   const [diagramId, setDiagramId] = useState<number | null>(null);
+  const [serverRevision, setServerRevision] = useState<number | null>(null);
   const [loading, setLoading] = useState(validProjectId);
   const [error, setError] = useState(
     validProjectId ? "" : "El proyecto indicado no es válido.",
@@ -1604,9 +1634,11 @@ export function DiagramEditorPage() {
         const loadedProject = await obtenerProyecto(projectId);
         let loadedDocument = EMPTY_DOCUMENT;
         let loadedDiagramId: number | null = null;
+        let loadedServerRevision: number | null = null;
         try {
           const loadedDiagram = await obtenerDiagrama(projectId);
           loadedDiagramId = loadedDiagram.id;
+          loadedServerRevision = loadedDiagram.revision;
           const content = loadedDiagram.contenido;
           loadedDocument = {
             ...content,
@@ -1620,6 +1652,7 @@ export function DiagramEditorPage() {
           setProject(loadedProject);
           setDocument(loadedDocument);
           setDiagramId(loadedDiagramId);
+          setServerRevision(loadedServerRevision);
         }
       } catch (requestError: unknown) {
         if (isUnauthorizedError(requestError)) {
@@ -1654,6 +1687,7 @@ export function DiagramEditorPage() {
         project={project}
         initialDocument={document}
         initialDiagramId={diagramId}
+        initialServerRevision={serverRevision}
       />
     </ReactFlowProvider>
   );

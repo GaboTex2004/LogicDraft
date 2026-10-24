@@ -4,6 +4,7 @@ import com.sw1.backend.common.exception.AccesoDenegadoException;
 import com.sw1.backend.diagrama.dto.request.GuardarDiagramaRequest;
 import com.sw1.backend.diagrama.model.Diagrama;
 import com.sw1.backend.diagrama.repository.DiagramaRepository;
+import com.sw1.backend.diagrama.validation.DiagramValidationException;
 import com.sw1.backend.proyecto.model.Proyecto;
 import com.sw1.backend.proyecto.repository.ProyectoRepository;
 import com.sw1.backend.workspace.model.RolWorkspace;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -51,14 +53,14 @@ class DiagramaServiceTest {
     void ownerPuedeGuardarYCargarContenidoEquivalente() {
         GuardarDiagramaRequest request = requestValido();
         when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.empty());
-        when(diagramaRepository.save(any(Diagrama.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(diagramaRepository.saveAndFlush(any(Diagrama.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.guardar(10L, request);
 
         ArgumentCaptor<Diagrama> captor = ArgumentCaptor.forClass(Diagrama.class);
-        verify(diagramaRepository).save(captor.capture());
+        verify(diagramaRepository).saveAndFlush(captor.capture());
         Diagrama guardado = captor.getValue();
-        assertEquals(Map.of("version", 1, "nodes", List.of(Map.of("id", "cliente")), "edges", List.of()), guardado.getContenido());
+        assertEquals(Map.of("version", 1, "nodes", List.of(node("cliente", "Cliente")), "edges", List.of()), guardado.getContenido());
         verify(workspaceAccessService).verificarRol(20L, RolWorkspace.OWNER, RolWorkspace.EDITOR);
 
         when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.of(guardado));
@@ -77,19 +79,19 @@ class DiagramaServiceTest {
     void guardaYRecuperaRelacionManyToManySinPerderMetadatos() {
         GuardarDiagramaRequest request = new GuardarDiagramaRequest();
         request.setVersion(1);
-        request.setNodes(List.of(Map.of("id", "alumno"), Map.of("id", "materia")));
+        request.setNodes(List.of(node("alumno", "Alumno"), node("materia", "Materia")));
         Map<String, Object> relationData = Map.of(
                 "sourceCardinality", "ZERO_MANY", "targetCardinality", "ONE_MANY",
                 "name", "materias", "joinTableName", "alumno_materia");
         request.setEdges(List.of(Map.of("id", "alumno-materia", "source", "alumno",
                 "target", "materia", "type", "relationship", "data", relationData)));
         when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.empty());
-        when(diagramaRepository.save(any(Diagrama.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(diagramaRepository.saveAndFlush(any(Diagrama.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.guardar(10L, request);
 
         ArgumentCaptor<Diagrama> captor = ArgumentCaptor.forClass(Diagrama.class);
-        verify(diagramaRepository).save(captor.capture());
+        verify(diagramaRepository).saveAndFlush(captor.capture());
         Diagrama saved = captor.getValue();
         when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.of(saved));
         Map<?, ?> restoredEdge = (Map<?, ?>) ((List<?>) service.obtenerPorProyecto(10L)
@@ -108,21 +110,23 @@ class DiagramaServiceTest {
                                 "relationshipId", "alumno-inscripcion", "foreignKeyName", "alumno_id"),
                         Map.of("role", "TARGET", "entityId", "materia",
                                 "relationshipId", "materia-inscripcion", "foreignKeyName", "materia_id")));
-        request.setNodes(List.of(Map.of("id", "inscripcion", "data", Map.of(
-                "id", "inscripcion", "name", "Inscripcion", "attributes", List.of(),
-                "association", association))));
-        request.setEdges(List.of());
+        Map<String, Object> associationNode = node("inscripcion", "Inscripcion");
+        ((Map<String, Object>) associationNode.get("data")).put("association", association);
+        request.setNodes(List.of(node("alumno", "Alumno"), node("materia", "Materia"), associationNode));
+        request.setEdges(List.of(
+                relationship("alumno-inscripcion", "alumno", "inscripcion"),
+                relationship("materia-inscripcion", "materia", "inscripcion")));
         when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.empty());
-        when(diagramaRepository.save(any(Diagrama.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(diagramaRepository.saveAndFlush(any(Diagrama.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.guardar(10L, request);
 
         ArgumentCaptor<Diagrama> captor = ArgumentCaptor.forClass(Diagrama.class);
-        verify(diagramaRepository).save(captor.capture());
+        verify(diagramaRepository).saveAndFlush(captor.capture());
         Diagrama saved = captor.getValue();
         when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.of(saved));
-        Map<?, ?> node = (Map<?, ?>) ((List<?>) service.obtenerPorProyecto(10L).contenido().get("nodes")).getFirst();
-        Map<?, ?> restoredData = (Map<?, ?>) node.get("data");
+        Map<?, ?> restoredNode = (Map<?, ?>) ((List<?>) service.obtenerPorProyecto(10L).contenido().get("nodes")).get(2);
+        Map<?, ?> restoredData = (Map<?, ?>) restoredNode.get("data");
         assertEquals(association, restoredData.get("association"));
     }
 
@@ -139,14 +143,92 @@ class DiagramaServiceTest {
         doThrow(new AccesoDenegadoException("Rol insuficiente")).when(workspaceAccessService)
                 .verificarRol(20L, RolWorkspace.OWNER, RolWorkspace.EDITOR);
         assertThrows(AccesoDenegadoException.class, () -> service.guardar(10L, requestValido()));
-        verify(diagramaRepository, never()).save(any(Diagrama.class));
+        verify(diagramaRepository, never()).saveAndFlush(any(Diagrama.class));
     }
 
     private GuardarDiagramaRequest requestValido() {
         GuardarDiagramaRequest request = new GuardarDiagramaRequest();
         request.setVersion(1);
-        request.setNodes(List.of(Map.of("id", "cliente")));
+        request.setNodes(List.of(node("cliente", "Cliente")));
         request.setEdges(List.of());
         return request;
+    }
+
+    @Test
+    void rechazaDocumentoConReferenciasRotasAntesDePersistir() {
+        GuardarDiagramaRequest request = requestValido();
+        request.setEdges(List.of(relationship("r1", "cliente", "inexistente")));
+        assertThrows(DiagramValidationException.class, () -> service.guardar(10L, request));
+        verify(diagramaRepository, never()).saveAndFlush(any(Diagrama.class));
+    }
+
+    @Test
+    void rechazaRevisionObsoletaYConservaDocumentoConfirmado() {
+        Diagrama existing = new Diagrama();
+        existing.setProyecto(proyecto);
+        existing.setVersion(1);
+        existing.setRevision(4L);
+        existing.setContenido(Map.of("version", 1, "nodes", List.of(), "edges", List.of()));
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.of(existing));
+        GuardarDiagramaRequest request = requestValido();
+        request.setBaseRevision(3L);
+
+        DiagramConflictException conflict = assertThrows(DiagramConflictException.class,
+                () -> service.guardar(10L, request));
+
+        assertEquals(4L, conflict.getCurrentRevision());
+        assertEquals(List.of(), existing.getContenido().get("nodes"));
+        verify(diagramaRepository, never()).saveAndFlush(any(Diagrama.class));
+    }
+
+    @Test
+    void actualizaSoloConLaRevisionBaseConfirmada() {
+        Diagrama existing = new Diagrama();
+        existing.setProyecto(proyecto);
+        existing.setVersion(1);
+        existing.setRevision(4L);
+        existing.setContenido(Map.of("version", 1, "nodes", List.of(), "edges", List.of()));
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.of(existing));
+        when(diagramaRepository.saveAndFlush(existing)).thenReturn(existing);
+        GuardarDiagramaRequest request = requestValido();
+        request.setBaseRevision(4L);
+
+        service.guardar(10L, request);
+
+        verify(diagramaRepository).saveAndFlush(existing);
+    }
+
+    @Test
+    void traduceUnaColisionAtomicaDeDosGuardadosAConflicto() {
+        Diagrama existing = new Diagrama();
+        existing.setProyecto(proyecto);
+        existing.setVersion(1);
+        existing.setRevision(4L);
+        existing.setContenido(Map.of("version", 1, "nodes", List.of(), "edges", List.of()));
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.of(existing));
+        when(diagramaRepository.saveAndFlush(existing)).thenThrow(
+                new ObjectOptimisticLockingFailureException(Diagrama.class, 1L));
+        GuardarDiagramaRequest request = requestValido();
+        request.setBaseRevision(4L);
+
+        assertThrows(DiagramConflictException.class, () -> service.guardar(10L, request));
+    }
+
+    private static Map<String, Object> node(String id, String name) {
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("id", id);
+        data.put("name", name);
+        data.put("attributes", List.of());
+        Map<String, Object> node = new java.util.LinkedHashMap<>();
+        node.put("id", id);
+        node.put("type", "entity");
+        node.put("position", Map.of("x", 0, "y", 0));
+        node.put("data", data);
+        return node;
+    }
+
+    private static Map<String, Object> relationship(String id, String source, String target) {
+        return Map.of("id", id, "source", source, "target", target, "type", "relationship",
+                "data", Map.of("sourceCardinality", "ONE_ONE", "targetCardinality", "ZERO_MANY"));
     }
 }

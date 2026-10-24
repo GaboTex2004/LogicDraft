@@ -21,10 +21,11 @@ export async function obtenerDiagrama(
 export async function guardarDiagrama(
   projectId: number,
   document: DiagramDocument,
+  baseRevision: number | null,
 ): Promise<DiagramaResponse> {
   const response = await api.put<DiagramaResponse>(
     `/proyectos/${projectId}/diagrama`,
-    document,
+    { ...document, baseRevision },
   );
   return response.data;
 }

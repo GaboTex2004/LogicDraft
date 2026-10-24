@@ -29,6 +29,26 @@ public class GlobalExceptionHandler {
                 exception.getStatus(), exception.getMessage(), request.getRequestURI()));
     }
 
+    @ExceptionHandler(com.sw1.backend.diagrama.validation.DiagramValidationException.class)
+    public ResponseEntity<Map<String, Object>> manejarDiagramaInvalido(
+            com.sw1.backend.diagrama.validation.DiagramValidationException exception,
+            HttpServletRequest request) {
+        return ResponseEntity.unprocessableEntity().body(crearRespuestaBase(
+                HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage(), request.getRequestURI()));
+    }
+
+    @ExceptionHandler(com.sw1.backend.diagrama.service.DiagramConflictException.class)
+    public ResponseEntity<Map<String, Object>> manejarConflictoDeDiagrama(
+            com.sw1.backend.diagrama.service.DiagramConflictException exception,
+            HttpServletRequest request) {
+        Map<String, Object> body = crearRespuestaBase(
+                HttpStatus.CONFLICT, exception.getMessage(), request.getRequestURI());
+        if (exception.getCurrentRevision() != null)
+            body.put("revisionActual", exception.getCurrentRevision());
+        body.put("recargar", "/api/proyectos/" + exception.getProjectId() + "/diagrama");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     private static final Logger log =
         LoggerFactory.getLogger(GlobalExceptionHandler.class);
 

@@ -13,6 +13,7 @@ export function useProjectCollaboration(
     localStorage.getItem('token') ? 'connecting' : 'error')
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [lastPing, setLastPing] = useState<CollaborationEvent | null>(null)
+  const seenEventIds = useRef(new Set<string>())
 
   useEffect(() => {
     onDiagramEventRef.current = onDiagramEvent
@@ -30,6 +31,12 @@ export function useProjectCollaboration(
       onDisconnect: () => setStatus('disconnected'),
       onError: () => setStatus('error'),
       onEvent: (event) => {
+        if (seenEventIds.current.has(event.eventId)) return
+        seenEventIds.current.add(event.eventId)
+        if (seenEventIds.current.size > 1000) {
+          const oldest = seenEventIds.current.values().next().value
+          if (oldest) seenEventIds.current.delete(oldest)
+        }
         if (event.type === 'USER_JOINED') {
           setCollaborators((current) => {
             const withoutUser = current.filter((user) => user.userId !== event.userId)

@@ -20,11 +20,14 @@ def classify_agent_intent(message: str) -> AgentIntent:
     plain = _plain(message).strip()
     interrogative = bool(re.match(
         r"^(?:que|cual|cuales|cuanto|cuantos|cuanta|cuantas|como|por que|explica(?:me)?|"
-        r"describe|dime|muestra(?:me)?|opinas|lee|leer|lista|listar|enumera|analiza|revisa)\b",
+        r"describe|dime|muestra(?:me)?|opinas|lee|leer|lista|listar|enumera|sugiere|sugerir|"
+        r"recomienda|recomendar|analiza|analizar|revisa|revisar|evalua|evaluar|que pasaria si)\b",
         plain,
     )) or "?" in plain
     if interrogative:
         return AgentIntent.INFORMATIONAL
+    if re.match(r"^(?:no|nunca|jamas|evita|evitar)\b|^(?:no quiero|no necesito)\s+que\b", plain):
+        return AgentIntent.AMBIGUOUS
     if re.match(r"^(?:podriamos|podria(?:mos)?|tal vez|quizas|quiza)\b", plain):
         return AgentIntent.AMBIGUOUS
     if re.search(r"\b(?:que tal si|seria bueno|convendria)\b", plain):

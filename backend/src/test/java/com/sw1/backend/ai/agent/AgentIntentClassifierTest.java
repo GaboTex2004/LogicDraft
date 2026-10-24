@@ -21,4 +21,29 @@ class AgentIntentClassifierTest {
     void classifiesAuthorizationFromUserWords(String message, String expected) {
         assertEquals(AgentIntentClassifier.Intent.valueOf(expected), AgentIntentClassifier.classify(message));
     }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Modifica el atributo nombre | MODIFICATION
+            Renombra Cliente a Comprador | MODIFICATION
+            Elimina la clase Producto | MODIFICATION
+            Borra el atributo temporal | MODIFICATION
+            Quita la relacion duplicada | MODIFICATION
+            Suprime la entidad obsoleta | MODIFICATION
+            Como elimino una clase? | INFORMATIONAL
+            Que pasaria si elimino Producto? | INFORMATIONAL
+            Sugiere mejoras al diagrama | INFORMATIONAL
+            Analiza el diagrama | INFORMATIONAL
+            No elimines Cliente | AMBIGUOUS
+            Nunca borres Producto | AMBIGUOUS
+            """)
+    void classifiesEditsQuestionsAdviceAndNegations(String message, String expected) {
+        assertEquals(AgentIntentClassifier.Intent.valueOf(expected), AgentIntentClassifier.classify(message));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"DELETE_ENTITY", "RENAME_ATTRIBUTE", "UPDATE_RELATIONSHIP", "DELETE_ASSOCIATION"})
+    void detectsEveryTechnicalOperationInInformationalAnswers(String operation) {
+        assertEquals(true, AgentIntentClassifier.containsTechnicalOperation("Respuesta " + operation));
+    }
 }

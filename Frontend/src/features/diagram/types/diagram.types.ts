@@ -74,6 +74,7 @@ export interface DiagramaResponse {
   id: number
   proyectoId: number
   version: number
+  revision: number
   contenido: DiagramDocument
   fechaActualizacion: string
 }

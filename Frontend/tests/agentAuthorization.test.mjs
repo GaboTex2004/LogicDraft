@@ -79,3 +79,17 @@ test('el flujo React revalida permisos y solo publica después de aceptar', () =
   assert.match(editor, /handleAiPrompt[\s\S]*prepareDiagramAiProposal/,
     'la barra inferior conserva su flujo independiente')
 })
+
+test('clasifica ediciones consultas sugerencias y negaciones de forma segura', () => {
+  for (const message of ['Modifica el atributo nombre', 'Renombra Cliente a Comprador',
+    'Elimina la clase Producto', 'Borra temporal', 'Quita la relacion', 'Suprime Obsoleta']) {
+    assert.equal(classifyAgentIntent(message), 'MODIFICATION', message)
+  }
+  for (const message of ['Como elimino una clase?', 'Que pasaria si elimino Producto?',
+    'Sugiere mejoras al diagrama', 'Analiza el diagrama']) {
+    assert.equal(classifyAgentIntent(message), 'INFORMATIONAL', message)
+  }
+  for (const message of ['No elimines Cliente', 'Nunca borres Producto']) {
+    assert.equal(classifyAgentIntent(message), 'AMBIGUOUS', message)
+  }
+})

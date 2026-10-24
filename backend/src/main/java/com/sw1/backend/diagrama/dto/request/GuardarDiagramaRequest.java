@@ -9,6 +9,7 @@ public class GuardarDiagramaRequest {
     @NotNull(message = "La version del documento es obligatoria") private Integer version;
     @NotNull(message = "Los nodes son obligatorios") private List<Map<String, Object>> nodes;
     @NotNull(message = "Los edges son obligatorios") private List<Map<String, Object>> edges;
+    private Long baseRevision;
     public GuardarDiagramaRequest() { }
     public Integer getVersion() { return version; }
     public void setVersion(Integer version) { this.version = version; }
@@ -16,6 +17,8 @@ public class GuardarDiagramaRequest {
     public void setNodes(List<Map<String, Object>> nodes) { this.nodes = nodes; }
     public List<Map<String, Object>> getEdges() { return edges; }
     public void setEdges(List<Map<String, Object>> edges) { this.edges = edges; }
+    public Long getBaseRevision() { return baseRevision; }
+    public void setBaseRevision(Long baseRevision) { this.baseRevision = baseRevision; }
 
     @AssertTrue(message = "El documento debe usar version 1 y contener arreglos nodes y edges de hasta 1000000 bytes")
     public boolean isDocumentoValido() {

@@ -6,6 +6,7 @@ export type SaveStatus =
   | "saving"
   | "saved"
   | "error"
+  | "conflict"
   | "forbidden";
 export type ExportStatus =
   | "backend"
@@ -39,6 +40,7 @@ const statusLabels: Record<SaveStatus, string> = {
   saving: "Guardando...",
   saved: "Guardado",
   error: "Error al guardar",
+  conflict: "Conflicto de ediciÃ³n",
   forbidden: "Sin permiso para guardar",
 };
 
@@ -173,7 +175,7 @@ export function DiagramToolbar({
         <button
           className="save-diagram-button"
           type="button"
-          disabled={saveStatus === "saving" || saveStatus === "clean"}
+          disabled={saveStatus === "saving" || saveStatus === "clean" || saveStatus === "conflict"}
           onClick={onSave}
         >
           {saveStatus === "saving" ? "Guardando..." : "Guardar"}

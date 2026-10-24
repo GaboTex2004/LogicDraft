@@ -8,8 +8,11 @@ function plain(value: string) {
 /** An authorization decision derived from the user's words, never from model operations. */
 export function classifyAgentIntent(message: string): AgentIntent {
   const normalized = plain(String(message))
-  if (String(message).includes('?') || /^(que|cual|cuales|cuanto|cuantos|cuanta|cuantas|como|por que|explica(?:me)?|describe|dime|muestra(?:me)?|opinas|lee|leer|lista|listar|enumera|analiza|revisa)\b/.test(normalized)) {
+  if (String(message).includes('?') || /^(que|cual|cuales|cuanto|cuantos|cuanta|cuantas|como|por que|que pasaria si|explica(?:me)?|describe|dime|muestra(?:me)?|opinas|lee|leer|lista|listar|enumera|sugiere|sugerir|recomienda|recomendar|analiza|analizar|revisa|revisar|evalua|evaluar)\b/.test(normalized)) {
     return 'INFORMATIONAL'
+  }
+  if (/^(no|nunca|jamas|evita|evitar)\b|^(no quiero|no necesito)\s+que\b/.test(normalized)) {
+    return 'AMBIGUOUS'
   }
   if (/^(podriamos|podria(?:mos)?|tal vez|quizas|quiza)\b|\b(que tal si|seria bueno|convendria)\b/.test(normalized)) {
     return 'AMBIGUOUS'

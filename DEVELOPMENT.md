@@ -1,5 +1,39 @@
 # Desarrollo local de LogicDraft
 
+## Estrategia de esquema PostgreSQL
+
+LogicDraft conserva dos modos locales para evitar migrar silenciosamente una base anterior:
+
+- El perfil predeterminado mantiene temporalmente `Flyway` desactivado y usa `ddl-auto=validate`. Es un modo
+  seguro de transicion: nunca modifica una base local preexistente y falla de forma explicita si falta V2.
+- El perfil `migrated` usa exclusivamente las migraciones versionadas y configura Hibernate con
+  `ddl-auto=validate`. Es el modo obligatorio para bases nuevas y el objetivo para todo desarrollo futuro.
+
+### Base nueva o desechable
+
+Con una base vacia, iniciar Spring con `--spring.profiles.active=migrated`. Flyway aplicara
+`V1__initial_schema.sql` y luego `V2__diagram_revision.sql`. La segunda migracion agrega la revision de
+concurrencia sin modificar el JSON guardado.
+
+### Base local existente
+
+No activar el perfil `migrated` directamente sobre una base con tablas y sin historial Flyway: V1 intentaria
+crear objetos existentes. La transicion segura es manual y se realiza una sola vez:
+
+1. Crear un respaldo de PostgreSQL.
+2. Verificar que existen las tablas y restricciones descritas por V1 y que `diagramas` conserva su contenido.
+3. Detener todas las instancias de backend para evitar escrituras concurrentes.
+4. Aplicar manualmente el SQL aditivo de `V2__diagram_revision.sql` si se necesita arrancar en modo seguro antes
+   de adoptar Flyway. El script no elimina ni reescribe datos.
+5. Registrar V1 como baseline **solo en esa base verificada** mediante las propiedades temporales de baseline
+   de Spring/Flyway; no guardar `baselineOnMigrate=true` en ningun archivo del repositorio.
+6. Ejecutar Flyway con el perfil `migrated`; V2 es aditiva e idempotente respecto de la columna `revision`.
+7. Quitar inmediatamente las propiedades temporales de baseline y reiniciar siempre con el perfil `migrated`.
+8. Confirmar que Flyway queda en version 2 y que Hibernate inicia en modo `validate`.
+
+Esta fase no ejecuta esos pasos sobre la base local ni sobre AWS. Si el esquema real no coincide exactamente con
+V1, detener la transicion y preparar una migracion de reconciliacion especifica; no usar baseline para ocultarlo.
+
 Esta guía levanta LogicDraft completo en Windows PowerShell. `D:\Universidad\Sw1\Examen` se usa únicamente como ejemplo: sustituye esa ruta por la ubicación de tu clon.
 
 ## Servicios y puertos
