@@ -6,9 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.sw1.backend.ai.diagram.model.DiagramCardinality;
 import com.sw1.backend.ai.diagram.validation.DiagramContextMapper;
+import com.sw1.backend.diagrama.validation.DiagramDocumentValidator;
 import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedAssociation;
 import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedClass;
 import java.io.IOException;
@@ -23,6 +25,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assumptions;
+import org.springframework.web.server.ResponseStatusException;
 
 class EnterpriseArchitectXmiReaderTest {
     private byte[] xmi;
@@ -118,8 +121,119 @@ class EnterpriseArchitectXmiReaderTest {
         assertEquals("child", normalized.generalizations().getFirst().specificExternalId());
         assertEquals("base", normalized.generalizations().getFirst().generalExternalId());
         EnterpriseArchitectImportPreview preview = EnterpriseArchitectDiagramMapper.toPreview(normalized);
-        assertTrue(preview.warnings().stream().anyMatch(warning -> warning.contains("Hija → Base")
-                && warning.contains("fue omitida")));
+        assertEquals(2, preview.version());
+        assertTrue(preview.edges().stream().anyMatch(edge -> "GENERALIZATION".equals(
+                map(map(edge).get("data")).get("relationKind"))));
+    }
+
+    @Test
+    void importsUmlV2ClassifiersOperationsRelationsAndDiagramBounds() {
+        byte[] uml = """
+                <xmi:XMI xmi:version="2.1" xmlns:xmi="http://schema.omg.org/spec/XMI/2.1"
+                         xmlns:uml="http://schema.omg.org/spec/UML/2.1">
+                  <uml:Model xmi:type="uml:Model" xmi:id="model" name="Model">
+                    <packagedElement xmi:type="uml:Package" xmi:id="package" name="UML avanzado">
+                      <packagedElement xmi:type="uml:Interface" xmi:id="contract" name="Consultable"/>
+                      <packagedElement xmi:type="uml:Enumeration" xmi:id="status" name="Estado">
+                        <ownedLiteral xmi:type="uml:EnumerationLiteral" xmi:id="active" name="ACTIVO"/>
+                        <ownedLiteral xmi:type="uml:EnumerationLiteral" xmi:id="inactive" name="INACTIVO"/>
+                      </packagedElement>
+                      <packagedElement xmi:type="uml:Class" xmi:id="service" name="Servicio">
+                        <ownedAttribute xmi:type="uml:Property" xmi:id="code" name="codigo" visibility="protected">
+                          <type xmi:type="uml:PrimitiveType" href="http://schema.omg.org/spec/UML/2.1/uml.xml#String"/>
+                        </ownedAttribute>
+                        <ownedOperation xmi:type="uml:Operation" xmi:id="find" name="buscar" visibility="public">
+                          <ownedParameter xmi:type="uml:Parameter" xmi:id="query" name="consulta" type="EAJava_String" direction="in"/>
+                          <ownedParameter xmi:type="uml:Parameter" xmi:id="return" name="return" direction="return"><type xmi:idref="status"/></ownedParameter>
+                        </ownedOperation>
+                        <interfaceRealization xmi:type="uml:InterfaceRealization" xmi:id="realizes" supplier="contract"/>
+                      </packagedElement>
+                      <packagedElement xmi:type="uml:Class" xmi:id="part" name="Parte"/>
+                      <packagedElement xmi:type="uml:Association" xmi:id="composition">
+                        <ownedEnd xmi:type="uml:Property" xmi:id="whole" aggregation="composite"><type xmi:idref="service"/><lowerValue value="1"/><upperValue value="1"/></ownedEnd>
+                        <ownedEnd xmi:type="uml:Property" xmi:id="pieces"><type xmi:idref="part"/><lowerValue value="0"/><upperValue value="*"/></ownedEnd>
+                      </packagedElement>
+                      <packagedElement xmi:type="uml:Dependency" xmi:id="uses" name="consulta" client="service" supplier="status"/>
+                    </packagedElement>
+                  </uml:Model>
+                  <xmi:Extension extender="Enterprise Architect">
+                    <diagrams><diagram><model package="package"/><elements>
+                      <element subject="service" geometry="Left=40;Top=60;Right=340;Bottom=240;"/>
+                      <element subject="part" geometry="Left=420;Top=60;Right=620;Bottom=180;"/>
+                    </elements></diagram></diagrams>
+                  </xmi:Extension>
+                </xmi:XMI>
+                """.getBytes(StandardCharsets.UTF_8);
+
+        NormalizedDiagram normalized = parser.parse(uml);
+        assertEquals("INTERFACE", byName(normalized, "Consultable").kind());
+        assertEquals(List.of("ACTIVO", "INACTIVO"), byName(normalized, "Estado").literals());
+        assertEquals("Estado", byName(normalized, "Servicio").operations().getFirst().returnType());
+        assertEquals("VARCHAR", byName(normalized, "Servicio").operations().getFirst().parameters().getFirst().type());
+        assertEquals(300, byName(normalized, "Servicio").size().width());
+        assertEquals("COMPOSITION", normalized.associations().getFirst().relationKind());
+        assertEquals(1, normalized.realizations().size());
+        assertEquals(1, normalized.dependencies().size());
+
+        EnterpriseArchitectImportPreview preview = reader.read(uml);
+        assertDoesNotThrow(() -> DiagramDocumentValidator.validate(document(preview)));
+    }
+
+    @Test
+    void rejectsAssociationWithMissingEndpointUsingControlledError() {
+        byte[] invalid = """
+                <xmi:XMI xmi:version="2.1" xmlns:xmi="http://schema.omg.org/spec/XMI/2.1"
+                         xmlns:uml="http://schema.omg.org/spec/UML/2.1">
+                  <uml:Model xmi:id="model" name="Model"><packagedElement xmi:type="uml:Package" xmi:id="p" name="P">
+                    <packagedElement xmi:type="uml:Class" xmi:id="a" name="A"/>
+                    <packagedElement xmi:type="uml:Association" xmi:id="broken">
+                      <ownedEnd xmi:id="one"><type xmi:idref="a"/></ownedEnd>
+                      <ownedEnd xmi:id="two"><type xmi:idref="missing"/></ownedEnd>
+                    </packagedElement>
+                  </packagedElement></uml:Model>
+                </xmi:XMI>
+                """.getBytes(StandardCharsets.UTF_8);
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class, () -> parser.parse(invalid));
+        assertTrue(error.getReason().contains("extremos inexistentes"));
+    }
+
+    @Test
+    void parsesHistoricalEaSamplesWhenProvided() throws IOException {
+        String configured = System.getProperty("ea.samples.dir");
+        Assumptions.assumeTrue(configured != null && Files.isDirectory(Path.of(configured)),
+                "Set -Dea.samples.dir to execute checks against the historical EA exports.");
+        byte[] ea2Bytes = Files.readAllBytes(Path.of(configured, "exportacion de EA2.xmi"));
+        byte[] ea4Bytes = Files.readAllBytes(Path.of(configured, "exportacion de EA4.xmi"));
+        NormalizedDiagram ea2 = parser.parse(ea2Bytes);
+        NormalizedDiagram ea4 = parser.parse(ea4Bytes);
+
+        assertTrue(ea2.classes().stream().anyMatch(item -> "INTERFACE".equals(item.kind())));
+        assertTrue(ea2.classes().stream().anyMatch(item -> "ENUMERATION".equals(item.kind())));
+        assertTrue(ea2.classes().stream().anyMatch(item -> !item.operations().isEmpty()));
+        assertTrue(ea2.classes().stream().anyMatch(NormalizedClass::associationClass));
+        assertTrue(ea2.associations().stream().anyMatch(item -> "COMPOSITION".equals(item.relationKind())));
+        assertTrue(ea4.classes().stream().anyMatch(NormalizedClass::associationClass));
+        NormalizedAssociation aggregation = association(ea4, "devolucion", "ventas");
+        assertEquals("AGGREGATION", aggregation.relationKind());
+        assertEquals("TARGET", aggregation.aggregationEnd());
+        assertTrue(ea4.classes().stream().allMatch(item -> item.size().width() > 0 && item.size().height() > 0));
+        EnterpriseArchitectImportPreview ea2Preview = reader.read(ea2Bytes);
+        EnterpriseArchitectImportPreview ea4Preview = reader.read(ea4Bytes);
+        List<Map<String, Object>> class1Attributes = maps(map(node(ea4Preview, "Class1").get("data")).get("attributes"));
+        assertEquals(List.of("producto_id", "ventas_id"), class1Attributes.stream()
+                .map(attribute -> attribute.get("name")).toList());
+        assertTrue(class1Attributes.stream().noneMatch(attribute -> Boolean.TRUE.equals(attribute.get("primaryKey"))));
+        assertDoesNotThrow(() -> DiagramDocumentValidator.validate(document(ea2Preview)));
+        assertDoesNotThrow(() -> DiagramDocumentValidator.validate(document(ea4Preview)));
+        NormalizedDiagram ea4RoundTrip = parser.parse(UmlV2XmiGenerator.generate(
+                ea4Preview.projectName(), new LinkedHashMap<>(document(ea4Preview))));
+        assertEquals(ea4.classes().size(), ea4RoundTrip.classes().size());
+        assertTrue(ea4RoundTrip.classes().stream().anyMatch(NormalizedClass::associationClass));
+        assertEquals(List.of("producto_id:INTEGER", "ventas_id:INTEGER"), attributes(ea4RoundTrip, "Class1"));
+        NormalizedAssociation roundTripAggregation = association(ea4RoundTrip, "devolucion", "ventas");
+        assertEquals("AGGREGATION", roundTripAggregation.relationKind());
+        assertEquals("TARGET", roundTripAggregation.aggregationEnd());
     }
 
     @Test
@@ -130,13 +244,11 @@ class EnterpriseArchitectXmiReaderTest {
         assertEquals("EAID_9B66B216_BBBD_4fa2_878A_50FEDA87B097",
                 map(associationData.get("externalMetadata")).get("externalId"));
         List<Map<String, Object>> attributes = maps(associationData.get("attributes"));
-        assertEquals("id", attributes.getFirst().get("name"));
-        assertEquals("INTEGER", attributes.getFirst().get("type"));
-        assertEquals(true, attributes.getFirst().get("primaryKey"));
-        assertEquals(false, attributes.getFirst().get("nullable"));
-        assertEquals("cantidad", attributes.get(1).get("name"));
+        assertEquals(1, attributes.size());
+        assertEquals("cantidad", attributes.getFirst().get("name"));
+        assertEquals(false, attributes.getFirst().get("primaryKey"));
         assertEquals("EAID_F8312E5B_12F9_414d_9CCD_8F988C01D253",
-                map(attributes.get(1).get("externalMetadata")).get("externalId"));
+                map(attributes.getFirst().get("externalMetadata")).get("externalId"));
 
         Map<String, Object> association = map(associationData.get("association"));
         assertEquals("MANY_TO_MANY_ASSOCIATION", association.get("kind"));

@@ -61,8 +61,9 @@ export function validateAssociationDocument(nodes: readonly EntityFlowNode[], ed
     if (association.endpoints.length !== 2 || association.endpoints[0].role === association.endpoints[1].role) {
       fail(`La entidad asociativa ${node.data.name} no tiene dos extremos validos.`)
     }
+    const importedAssociation = association.externalMetadata?.source === 'enterprise-architect'
     const primaryKeys = node.data.attributes.filter(attribute => attribute.primaryKey)
-    if (primaryKeys.length !== 1 || !['INTEGER', 'BIGINT'].includes(primaryKeys[0].type) || primaryKeys[0].nullable === true) {
+    if (!importedAssociation && (primaryKeys.length !== 1 || !['INTEGER', 'BIGINT'].includes(primaryKeys[0].type) || primaryKeys[0].nullable === true)) {
       fail(`La entidad asociativa ${node.data.name} requiere una PK INTEGER o BIGINT generada.`)
     }
     const endpointIds = new Set<string>()
@@ -82,7 +83,8 @@ export function validateAssociationDocument(nodes: readonly EntityFlowNode[], ed
       usedStructuralEdges.add(endpoint.relationshipId)
     }
     for (const attribute of node.data.attributes) {
-      if (foreignKeys.has(sqlName(technicalName(attribute.name)).toLocaleLowerCase())) {
+      if (foreignKeys.has(sqlName(technicalName(attribute.name)).toLocaleLowerCase())
+          && !(importedAssociation && attribute.externalMetadata?.source === 'enterprise-architect')) {
         fail(`El atributo ${attribute.name} colisiona con una clave foranea estructural.`)
       }
     }
@@ -165,10 +167,14 @@ export function convertManyToManyAssociation(
           nullable: attribute.nullable,
         })),
       ],
+      kind: 'ASSOCIATION_CLASS',
+      methods: [],
       association: {
         kind: 'MANY_TO_MANY_ASSOCIATION',
         tableName: joinTable.name,
         uniquePair: true,
+        sourceMultiplicity: cards.sourceCardinality,
+        targetMultiplicity: cards.targetCardinality,
         endpoints: [
           { role: 'SOURCE', entityId: source.id, relationshipId: sourceRelationshipId, foreignKeyName: joinTable.columns[0].name },
           { role: 'TARGET', entityId: target.id, relationshipId: targetRelationshipId, foreignKeyName: joinTable.columns[1].name },
@@ -185,5 +191,5 @@ export function convertManyToManyAssociation(
   const nextNodes = [...nodes.map(node => ({ ...node, selected: false })), associationNode]
   const nextEdges = [...edges.filter(edge => edge.id !== relationshipId).map(edge => ({ ...edge, selected: false })), ...structuralEdges]
   validateAssociationDocument(nextNodes, nextEdges)
-  return { document: { version: 1, nodes: nextNodes, edges: nextEdges }, associationNodeId: associationId }
+  return { document: { version: 2, nodes: nextNodes, edges: nextEdges }, associationNodeId: associationId }
 }

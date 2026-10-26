@@ -5,6 +5,7 @@ import {
   AssociationConversionError, associationProtectedNodeIds, convertManyToManyAssociation,
   structuralRelationshipIds, validateAssociationDocument,
 } from '../src/features/diagram/services/associationConversion.ts'
+import { associationClassProjection } from '../src/features/diagram/services/associationClassProjection.ts'
 
 const node = (id, name, type = 'INTEGER') => ({
   id, type: 'entity', position: { x: id === 'student' ? 0 : 400, y: 0 },
@@ -20,14 +21,48 @@ test('conversion replaces one N:M with one editable association and two structur
   assert.equal(result.document.nodes.length, 3)
   assert.equal(result.document.edges.length, 2)
   assert.equal(result.document.edges.some(edge => edge.id === 'student-subject'), false)
+  assert.equal(result.document.version, 2)
   const association = result.document.nodes.find(item => item.id === result.associationNodeId)
   assert.equal(association.data.name, 'Inscripcion')
+  assert.equal(association.data.kind, 'ASSOCIATION_CLASS')
   assert.deepEqual(association.data.attributes, [{ id: 'attribute-pk', name: 'id', type: 'INTEGER', primaryKey: true, nullable: false }])
   assert.equal(association.data.association.tableName, 'alumno_materia')
   assert.deepEqual(association.data.association.endpoints.map(endpoint => endpoint.foreignKeyName), ['alumno_id', 'materia_id'])
+  assert.equal(association.data.association.sourceMultiplicity, 'ZERO_MANY')
+  assert.equal(association.data.association.targetMultiplicity, 'ONE_MANY')
   assert.deepEqual(result.document.edges.map(edge => [edge.data.sourceCardinality, edge.data.targetCardinality]),
     [['ONE_ONE', 'ONE_MANY'], ['ONE_ONE', 'ZERO_MANY']])
   validateAssociationDocument(result.document.nodes, result.document.edges)
+})
+
+test('AssociationClass projects one main association and hides its second structural edge', () => {
+  const document = convertManyToManyAssociation([node('student', 'Alumno'), node('subject', 'Materia')],
+    [manyToMany()], 'student-subject', 'Inscripcion', ids(['a', 'pk', 'se', 'te'])).document
+  const primary = associationClassProjection(document.edges[0], document.nodes, document.edges)
+  const secondary = associationClassProjection(document.edges[1], document.nodes, document.edges)
+  assert.deepEqual({ source: primary.sourceNodeId, target: primary.targetNodeId,
+    sourceMultiplicity: primary.sourceMultiplicity, targetMultiplicity: primary.targetMultiplicity },
+  { source: 'student', target: 'subject', sourceMultiplicity: 'ZERO_MANY', targetMultiplicity: 'ONE_MANY' })
+  assert.equal(primary.hidden, false)
+  assert.equal(secondary.hidden, true)
+  assert.equal(document.edges.length, 2)
+})
+
+test('an EA AssociationClass keeps structural FK attributes without requiring a synthetic PK', () => {
+  const document = convertManyToManyAssociation([node('student', 'Alumno'), node('subject', 'Materia')],
+    [manyToMany()], 'student-subject', 'Inscripcion', ids(['a', 'pk', 'se', 'te'])).document
+  const association = document.nodes.find(item => item.data.association)
+  association.data.association.externalMetadata = { source: 'enterprise-architect', externalId: 'EAID_connector' }
+  association.data.attributes = association.data.association.endpoints.map((endpoint, index) => ({
+    id: `EAID_fk_${index}`,
+    name: endpoint.foreignKeyName,
+    type: 'INTEGER',
+    primaryKey: false,
+    nullable: false,
+    externalMetadata: { source: 'enterprise-architect', externalId: `EAID_attribute_${index}` },
+  }))
+  assert.doesNotThrow(() => validateAssociationDocument(document.nodes, document.edges))
+  assert.deepEqual(association.data.attributes.map(attribute => attribute.name), ['alumno_id', 'materia_id'])
 })
 
 test('duplicate entity name and missing endpoint reject atomically', () => {

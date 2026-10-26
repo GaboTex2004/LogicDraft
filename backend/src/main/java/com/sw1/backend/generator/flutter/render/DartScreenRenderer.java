@@ -233,7 +233,11 @@ public final class DartScreenRenderer {
                 widgets.append(textWidget(field));
             }
         }
-
+        String requiredRelationBlock =
+        requiredRelationBlocked(
+                all.values(),
+                relationByField
+        );  
         return """
                 import 'package:flutter/material.dart';
 
@@ -317,7 +321,7 @@ public final class DartScreenRenderer {
                           ],
                           const SizedBox(height: 16),
                           FilledButton(
-                            onPressed: _saving ? null : _save,
+                            onPressed: (_saving%s) ? null : _save,
                             child: Text(_saving ? 'Guardando...' : 'Guardar'),
                           ),
                               ],
@@ -328,9 +332,79 @@ public final class DartScreenRenderer {
                     ),
                   );
                 }
-                """.formatted(fileName, fileName, String.join("\n", relatedImports), type, type, type, type, type, type, type, type,
-                declarations, initialization, disposal, loaders, requestEntries(create), requestEntries(update), pk,
-                entity.name(), entity.name(), widgets);
+                
+              """.formatted(
+                  fileName, fileName,
+                  String.join("\n", relatedImports),
+                  type, type, type, type, type, type, type, type,
+                  declarations,
+                  initialization,
+                  disposal,
+                  loaders,
+                  requestEntries(create),
+                  requestEntries(update),
+                  pk,
+                  entity.name(),
+                  entity.name(),
+                  widgets,
+                  requiredRelationBlock
+              );
+
+    }
+    
+    private static String requiredRelationBlocked(
+            Iterable<Field> fields,
+            Map<String, OwnedRelation> relationByField) {
+
+        java.util.StringJoiner conditions =
+                new java.util.StringJoiner(" || ");
+
+        for (Field field : fields) {
+
+            // Solo relaciones obligatorias de un elemento.
+            if (!field.relation()
+                    || field.collection()
+                    || field.nullable()) {
+                continue;
+            }
+
+            OwnedRelation relation =
+                    relationByField.get(field.name());
+
+            if (relation == null) {
+                continue;
+            }
+
+            String prefix = "_" + field.name();
+
+            String primaryKey = FlutterContract
+                    .primaryKey(relation.target())
+                    .technicalName();
+
+            // Bloquear mientras se cargan las opciones.
+            conditions.add(prefix + "Loading");
+
+            // Bloquear si falló la consulta.
+            conditions.add(prefix + "Error != null");
+
+            // Bloquear si no hay registros relacionados.
+            conditions.add(prefix + "Options.isEmpty");
+
+            // Bloquear si no se seleccionó un registro.
+            conditions.add(prefix + " == null");
+
+            // Evitar referencias a registros inexistentes.
+            conditions.add(
+                    "!" + prefix
+                    + "Options.any((item) => item."
+                    + primaryKey
+                    + " == " + prefix + ")"
+            );
+        }
+
+        return conditions.length() == 0
+                ? ""
+                : " || " + conditions;
     }
 
     private static String initialValue(Field field) {
@@ -547,36 +621,81 @@ public final class DartScreenRenderer {
     }
 
     private static String requestValue(Field field) {
-        if (field.relation() && field.collection()) return "_" + field.name() + ".toList()";
-        if (field.relation() && !field.collection()) {
-            return field.nullable() ? "_" + field.name() : "_" + field.name() + "!";
+
+        if (field.relation() && field.collection()) {
+            return "_" + field.name() + ".toList()";
         }
-        if ((field.type() == CanonicalType.BOOLEAN || field.type() == CanonicalType.DATE
-                || field.type() == CanonicalType.DATETIME) && !field.collection()) {
+
+        if (field.relation()) {
+            return field.nullable()
+                    ? "_" + field.name()
+                    : "_" + field.name() + "!";
+        }
+
+        if (field.type() == CanonicalType.BOOLEAN
+                && !field.collection()) {
+            return "_" + field.name();
+        }
+
+        if ((field.type() == CanonicalType.DATE
+                || field.type() == CanonicalType.DATETIME)
+                && !field.collection()) {
+
             String value = "_" + field.name();
-            if (field.type() == CanonicalType.BOOLEAN) return value;
-            return field.nullable() ? value + "?.toIso8601String()" : value + "!.toIso8601String()";
+
+            if (field.type() == CanonicalType.DATE) {
+                return field.nullable()
+                        ? value + " == null ? null : "
+                            + value + "!.toIso8601String().substring(0, 10)"
+                        : value + "!.toIso8601String().substring(0, 10)";
+            }
+
+            return field.nullable()
+                    ? value + "?.toIso8601String()"
+                    : value + "!.toIso8601String()";
         }
+
         String text = "_" + field.name() + "Controller.text.trim()";
         String parsed;
+
         if (field.collection()) {
+
             String parse = switch (field.type()) {
                 case STRING -> "value.trim()";
                 case INTEGER, LONG -> "int.parse(value.trim())";
                 case DECIMAL -> "double.parse(value.trim())";
                 case BOOLEAN -> "bool.parse(value.trim())";
-                case DATE, DATETIME -> "DateTime.parse(value.trim()).toIso8601String()";
+                case DATE ->
+                        "DateTime.parse(value.trim()).toIso8601String().substring(0, 10)";
+                case DATETIME ->
+                        "DateTime.parse(value.trim()).toIso8601String()";
             };
-            parsed = text + ".isEmpty ? <" + com.sw1.backend.generator.flutter.FlutterTypeMapper.dartType(field.type())
-                    + ">[] : " + text + ".split(',').map((value) => " + parse + ").toList()";
+
+            String itemType =
+                    field.type() == CanonicalType.DATE
+                    || field.type() == CanonicalType.DATETIME
+                    ? "String"
+                    : com.sw1.backend.generator.flutter
+                        .FlutterTypeMapper.dartType(field.type());
+
+            parsed = text + ".isEmpty ? <" + itemType
+                    + ">[] : " + text
+                    + ".split(',').map((value) => "
+                    + parse + ").toList()";
+
         } else {
+
             parsed = switch (field.type()) {
                 case STRING -> text;
                 case INTEGER, LONG -> "int.parse(" + text + ")";
                 case DECIMAL -> "double.parse(" + text + ")";
-                default -> throw new IllegalStateException("Tipo de formulario inesperado");
+                default -> throw new IllegalStateException(
+                        "Tipo de formulario inesperado");
             };
         }
-        return field.nullable() && !field.collection() ? text + ".isEmpty ? null : " + parsed : parsed;
+
+        return field.nullable() && !field.collection()
+                ? text + ".isEmpty ? null : " + parsed
+                : parsed;
     }
 }

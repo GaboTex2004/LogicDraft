@@ -5,6 +5,9 @@ import {
   type DiagramCardinality,
   type DiagramEntity,
   type EntityAttribute,
+  type UmlMethod,
+  type RelationshipData,
+  UML_RELATION_KINDS,
 } from "../types/diagram.types";
 import { cardinalities, CARDINALITY_LABELS } from '../services/relationshipCardinality';
 import type { DerivedJoinTable } from '../services/derivedJoinTable';
@@ -16,15 +19,19 @@ interface DiagramPropertiesPanelProps {
   onConvertAssociation?: () => void;
   associationColumns?: readonly { name: string; type: string }[];
   onChangeCardinality?: (end: 'sourceCardinality' | 'targetCardinality', value: DiagramCardinality) => void;
-  onChangeRelationshipData?: (changes: { name?: string; joinTableName?: string }) => void;
+  onChangeRelationshipData?: (changes: Partial<RelationshipData>) => void;
   entity: DiagramEntity | null;
   onChangeName: (name: string) => void;
+  onChangeGenerateCrud?: (enabled: boolean) => void;
   onAddAttribute: () => void;
   onChangeAttribute: (
     attributeId: string,
     changes: Partial<Omit<EntityAttribute, "id">>,
   ) => void;
   onDeleteAttribute: (attributeId: string) => void;
+  onAddMethod: () => void;
+  onChangeMethod: (methodId: string, changes: Partial<Omit<UmlMethod, 'id'>>) => void;
+  onDeleteMethod: (methodId: string) => void;
   onClose: () => void;
 }
 
@@ -38,9 +45,13 @@ export function DiagramPropertiesPanel({
   onChangeRelationshipData,
   entity,
   onChangeName,
+  onChangeGenerateCrud,
   onAddAttribute,
   onChangeAttribute,
   onDeleteAttribute,
+  onAddMethod,
+  onChangeMethod,
+  onDeleteMethod,
   onClose,
 }: DiagramPropertiesPanelProps) {
   if (edge) {
@@ -48,6 +59,12 @@ export function DiagramPropertiesPanel({
     return <aside className="diagram-properties">
       <header><span>Propiedades de relación</span><button className="diagram-panel-close" type="button" aria-label="Cerrar propiedades" onClick={onClose}>×</button></header>
       <div className="properties-content">
+        <label>Tipo UML
+          <select value={typeof edge.data?.relationKind === 'string' ? edge.data.relationKind : 'ASSOCIATION'} disabled={structuralRelationship}
+            onChange={event => onChangeRelationshipData?.({ relationKind: event.target.value as RelationshipData['relationKind'] })}>
+            {UML_RELATION_KINDS.map(kind => <option key={kind} value={kind}>{kind}</option>)}
+          </select>
+        </label>
         <label>Nombre de la relacion
           <input maxLength={100} value={typeof edge.data?.name === 'string' ? edge.data.name : ''}
             disabled={structuralRelationship}
@@ -81,7 +98,7 @@ export function DiagramPropertiesPanel({
   }
   return (
     <aside className="diagram-properties">
-      <header><span>Propiedades de entidad</span><button className="diagram-panel-close" type="button" aria-label="Cerrar propiedades" onClick={onClose}>×</button></header>
+      <header><span>Propiedades {entity?.kind && entity.kind !== 'ENTITY' ? 'UML' : 'de entidad'}</span><button className="diagram-panel-close" type="button" aria-label="Cerrar propiedades" onClick={onClose}>×</button></header>
       {!entity ? (
         <div className="properties-empty">
           <span aria-hidden="true">◇</span>
@@ -96,6 +113,18 @@ export function DiagramPropertiesPanel({
             value={entity.name}
             onChange={(event) => onChangeName(event.target.value)}
           />
+          {entity.kind === 'CLASS' && (
+            <label className="primary-key-control">
+              <input
+                type="checkbox"
+                checked={entity.generateCrud === true}
+                onChange={(event) => onChangeGenerateCrud?.(event.target.checked)}
+              />
+              Generar CRUD (Spring Boot + Flutter)
+              <small>Requiere exactamente una Primary Key, sin métodos ni herencia.
+                No modifica el tipo UML ni el XMI.</small>
+            </label>
+          )}
           <div className="attributes-heading">
             <span>Atributos</span>
             <button type="button" onClick={onAddAttribute}>
@@ -173,6 +202,17 @@ export function DiagramPropertiesPanel({
           >
             ＋ Agregar atributo
           </button>
+          {entity.kind && entity.kind !== 'ENTITY' && entity.kind !== 'ENUMERATION' && <>
+            <div className="attributes-heading"><span>Métodos</span><button type="button" onClick={onAddMethod}>＋ Agregar</button></div>
+            <div className="attribute-editor-list">{(entity.methods ?? []).map(method => <section className="attribute-editor" key={method.id}>
+              <div className="attribute-name-row"><input aria-label="Nombre del método" maxLength={100} value={method.name} onChange={event => onChangeMethod(method.id, { name: event.target.value })} />
+                <button type="button" aria-label={`Eliminar ${method.name}`} onClick={() => onDeleteMethod(method.id)}>×</button></div>
+              <select aria-label={`Visibilidad de ${method.name}`} value={method.visibility} onChange={event => onChangeMethod(method.id, { visibility: event.target.value as UmlMethod['visibility'] })}>
+                <option value="public">public</option><option value="private">private</option><option value="protected">protected</option><option value="package">package</option>
+              </select>
+              <input aria-label={`Retorno de ${method.name}`} maxLength={100} value={method.returnType} onChange={event => onChangeMethod(method.id, { returnType: event.target.value })} />
+            </section>)}</div>
+          </>}
         </div>
       )}
     </aside>

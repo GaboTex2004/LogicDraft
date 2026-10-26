@@ -4,8 +4,13 @@ import com.sw1.backend.ai.diagram.model.DiagramCardinality;
 import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedAssociation;
 import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedAttribute;
 import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedClass;
+import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedDependency;
 import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedGeneralization;
+import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedOperation;
+import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedParameter;
+import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedRealization;
 import com.sw1.backend.generator.ea.NormalizedDiagram.Position;
+import com.sw1.backend.generator.ea.NormalizedDiagram.Size;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -32,7 +37,10 @@ public class EnterpriseArchitectXmiParser {
     private static final DiagramCardinality DEFAULT_MULTIPLICITY = DiagramCardinality.ONE_ONE;
 
     private record Connector(String id, String sourceId, String targetId, Element source,
-                             Element target, Element labels, String associationClassId) {}
+                             Element target, Element labels, String associationClassId,
+                             String eaType, String subtype) {}
+    private record AggregationSemantics(String kind, String end) {}
+    private record Layout(Position position, Size size) {}
 
     public NormalizedDiagram parse(byte[] bytes) {
         if (bytes == null || bytes.length == 0) throw badRequest("El archivo XMI está vacío.");
@@ -60,17 +68,31 @@ public class EnterpriseArchitectXmiParser {
             Element extension = findEaExtension(root);
             if (extension == null) warnings.add("No existe metadata opcional de Enterprise Architect; se usará solamente UML estándar.");
             Map<String, Element> extensionElements = extensionElements(extension);
-            Map<String, Position> positions = positions(extension, packageId, warnings);
+            Map<String, Layout> layouts = layouts(extension, packageId, warnings);
             Map<String, String> primitiveTypes = primitiveTypes(xml);
 
             Map<String, Element> classElements = new LinkedHashMap<>();
             for (Element item : packaged) {
-                if ("uml:Class".equals(xmiType(item)) || "uml:AssociationClass".equals(xmiType(item))) {
+                if (Set.of("uml:Class", "uml:AssociationClass", "uml:Interface", "uml:Enumeration")
+                        .contains(xmiType(item))) {
                     String id = requiredId(item, "Clase UML sin xmi:id.");
                     if (classElements.putIfAbsent(id, item) != null) throw badRequest("ID de clase duplicado: " + id);
                 }
             }
-            if (classElements.isEmpty()) throw badRequest("El modelo no contiene clases UML reconocibles.");
+            if (classElements.isEmpty()) throw badRequest("El modelo no contiene clasificadores UML reconocibles.");
+            Map<String, String> classifierNames = new HashMap<>();
+            for (var entry : classElements.entrySet()) {
+                classifierNames.put(entry.getKey(), entry.getValue().getAttribute("name").strip());
+            }
+            boolean legacyEntityModel = true;
+            for (Element item : classElements.values()) {
+                if (Set.of("uml:Interface", "uml:Enumeration").contains(xmiType(item))
+                        || !children(item, "ownedOperation").isEmpty()
+                        || hasKindTag(extensionElements.get(xmiId(item)))) {
+                    legacyEntityModel = false;
+                    break;
+                }
+            }
 
             List<NormalizedClass> classes = new ArrayList<>();
             Set<String> names = new HashSet<>();
@@ -81,23 +103,33 @@ public class EnterpriseArchitectXmiParser {
                 if (name.isBlank() || name.length() > 100 || !names.add(name.toLowerCase(Locale.ROOT))) {
                     throw badRequest("Clase UML sin nombre válido o con nombre duplicado.");
                 }
-                Position position = positions.get(entry.getKey());
-                if (position == null) {
-                    position = new Position(180 + (fallbackIndex % 3) * 300, 180 + (fallbackIndex / 3) * 250);
+                Layout layout = layouts.get(entry.getKey());
+                if (layout == null) {
+                    layout = new Layout(new Position(180 + (fallbackIndex % 3) * 300,
+                            180 + (fallbackIndex / 3) * 250), new Size(220, 120));
                     warnings.add("La clase " + name + " no tiene posición; se asignó una posición provisional.");
                 }
                 fallbackIndex++;
+                Element extensionElement = extensionElements.get(entry.getKey());
+                String kind = classifierKind(item, extensionElement, legacyEntityModel);
                 classes.add(new NormalizedClass(entry.getKey(), name,
                         "uml:AssociationClass".equals(xmiType(item)),
-                        attributes(item, extensionElements.get(entry.getKey()), primitiveTypes, warnings), position));
+                        "ENUMERATION".equals(kind) ? List.of()
+                                : attributes(item, extensionElement, primitiveTypes, classifierNames, warnings),
+                        layout.position(), layout.size(), kind,
+                        "true".equalsIgnoreCase(item.getAttribute("isAbstract")),
+                        operations(item, primitiveTypes, classifierNames, warnings), literals(item)));
             }
 
             Map<String, Connector> connectors = connectors(extension, classElements, warnings);
             List<NormalizedAssociation> associations = associations(packaged, classElements, connectors, warnings);
             validateAssociationClasses(classes, associations);
-            List<NormalizedGeneralization> generalizations = generalizations(classElements, warnings);
+            List<NormalizedGeneralization> generalizations = generalizations(classElements, connectors, warnings);
+            List<NormalizedRealization> realizations = realizations(classElements, connectors, warnings);
+            List<NormalizedDependency> dependencies = dependencies(packaged, classElements, connectors, warnings);
             return new NormalizedDiagram(projectName, List.copyOf(classes), List.copyOf(associations),
-                    List.copyOf(generalizations), List.copyOf(warnings));
+                    List.copyOf(generalizations), List.copyOf(realizations), List.copyOf(dependencies),
+                    List.copyOf(warnings));
         } catch (ResponseStatusException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -120,13 +152,16 @@ public class EnterpriseArchitectXmiParser {
     }
 
     private static List<NormalizedAttribute> attributes(Element owner, Element extension,
-            Map<String, String> primitiveTypes, List<String> warnings) {
+            Map<String, String> primitiveTypes, Map<String, String> classifierNames, List<String> warnings) {
         Map<String, Element> extras = new HashMap<>();
         Element extraList = child(extension, "attributes");
         if (extraList != null) for (Element item : children(extraList, "attribute")) extras.put(xmiRef(item), item);
         List<NormalizedAttribute> result = new ArrayList<>();
         Set<String> names = new HashSet<>();
         for (Element property : children(owner, "ownedAttribute")) {
+            // EA may serialize one navigable association end as a class-owned Property.
+            // It is structural relationship metadata, not a classifier attribute.
+            if (!property.getAttribute("association").isBlank()) continue;
             String id = requiredId(property, "Atributo UML sin xmi:id.");
             String name = property.getAttribute("name").strip();
             if (name.isBlank() || name.length() > 100 || !names.add(name.toLowerCase(Locale.ROOT))) {
@@ -138,7 +173,7 @@ public class EnterpriseArchitectXmiParser {
             String reference = type == null ? "" : xmiRef(type);
             String eaType = extraProperties == null ? "" : extraProperties.getAttribute("type");
             String href = type == null ? "" : type.getAttribute("href");
-            String mappedType = resolveType(reference, eaType, href, primitiveTypes);
+            String mappedType = resolveType(reference, eaType, href, primitiveTypes, classifierNames);
             if (mappedType == null) {
                 mappedType = "VARCHAR";
                 warnings.add("Tipo desconocido en " + owner.getAttribute("name") + "." + name
@@ -161,6 +196,55 @@ public class EnterpriseArchitectXmiParser {
         return List.copyOf(result);
     }
 
+    private static List<NormalizedOperation> operations(Element owner, Map<String, String> primitiveTypes,
+            Map<String, String> classifierNames, List<String> warnings) {
+        List<NormalizedOperation> result = new ArrayList<>();
+        for (Element operation : children(owner, "ownedOperation")) {
+            String id = requiredId(operation, "Operación UML sin xmi:id.");
+            String name = operation.getAttribute("name").strip();
+            if (name.isBlank() || name.length() > 100) {
+                throw badRequest("Operación inválida en " + owner.getAttribute("name"));
+            }
+            List<NormalizedParameter> parameters = new ArrayList<>();
+            String returnType = "VOID";
+            for (Element parameter : children(operation, "ownedParameter")) {
+                String parameterId = requiredId(parameter, "Parámetro UML sin xmi:id.");
+                String type = declaredType(parameter, primitiveTypes, classifierNames);
+                if (type == null) {
+                    type = "VARCHAR";
+                    warnings.add("Tipo desconocido en " + owner.getAttribute("name") + "." + name
+                            + "; se usará VARCHAR.");
+                }
+                if ("return".equalsIgnoreCase(parameter.getAttribute("direction"))) {
+                    returnType = type;
+                    continue;
+                }
+                String parameterName = parameter.getAttribute("name").strip();
+                if (parameterName.isBlank()) throw badRequest("Parámetro sin nombre en " + name + ".");
+                parameters.add(new NormalizedParameter(parameterId, parameterName, type));
+            }
+            String visibility = blankToNull(operation.getAttribute("visibility"));
+            result.add(new NormalizedOperation(id, name, returnType,
+                    visibility == null ? "public" : visibility.toLowerCase(Locale.ROOT),
+                    "true".equalsIgnoreCase(operation.getAttribute("isStatic")),
+                    "true".equalsIgnoreCase(operation.getAttribute("isAbstract")), List.copyOf(parameters)));
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<String> literals(Element owner) {
+        List<String> result = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+        for (Element literal : children(owner, "ownedLiteral")) {
+            String name = literal.getAttribute("name").strip();
+            if (name.isBlank() || !names.add(name.toLowerCase(Locale.ROOT))) {
+                throw badRequest("La enumeración " + owner.getAttribute("name") + " contiene literales inválidos.");
+            }
+            result.add(name);
+        }
+        return List.copyOf(result);
+    }
+
     private static List<NormalizedAssociation> associations(List<Element> packaged,
             Map<String, Element> classes, Map<String, Connector> connectors, List<String> warnings) {
         List<NormalizedAssociation> result = new ArrayList<>();
@@ -173,6 +257,11 @@ public class EnterpriseArchitectXmiParser {
                     ? connectors.values().stream().filter(item -> associationId.equals(item.associationClassId())).findFirst().orElse(null)
                     : connectors.get(associationId);
             List<Element> ends = children(association, "ownedEnd");
+            if (!associationClass && connector == null && ends.isEmpty()) {
+                warnings.add("La asociación " + associationId
+                        + " no declara extremos y fue omitida sin inventar una relación.");
+                continue;
+            }
             String sourceId = connector == null ? endpointId(ends, 0) : connector.sourceId();
             String targetId = connector == null ? endpointId(ends, 1) : connector.targetId();
             if (!classes.containsKey(sourceId) || !classes.containsKey(targetId) || sourceId.equals(targetId)) {
@@ -187,13 +276,16 @@ public class EnterpriseArchitectXmiParser {
             DiagramCardinality targetCard = multiplicity(targetEnd, connector == null ? null : connector.target(),
                     connector == null || connector.labels() == null ? null : connector.labels().getAttribute("rt"),
                     relationName, warnings);
+            AggregationSemantics aggregation = associationAggregation(connector, sourceEnd, targetEnd);
             String externalId = connector == null ? associationId : connector.id();
             if (connector != null) usedConnectors.add(connector.id());
             result.add(new NormalizedAssociation(externalId, sourceId, targetId, sourceCard, targetCard,
-                    associationClass ? associationId : null, blankToNull(association.getAttribute("name"))));
+                    associationClass ? associationId : null, blankToNull(association.getAttribute("name")),
+                    aggregation.kind(), aggregation.end()));
         }
         for (Connector connector : connectors.values()) {
-            if (!usedConnectors.contains(connector.id())) {
+            if (Set.of("Association", "Aggregation").contains(connector.eaType())
+                    && !usedConnectors.contains(connector.id())) {
                 warnings.add("El conector EA " + connector.id() + " no tiene una asociación UML compatible y fue omitido.");
             }
         }
@@ -256,36 +348,123 @@ public class EnterpriseArchitectXmiParser {
             String id = xmiRef(connector);
             Element source = child(connector, "source"), target = child(connector, "target");
             Element properties = child(connector, "properties");
-            if (id.isBlank() || source == null || target == null || properties == null
-                    || !"Association".equalsIgnoreCase(properties.getAttribute("ea_type"))) continue;
+            if (id.isBlank() || source == null || target == null || properties == null) continue;
+            String eaType = properties.getAttribute("ea_type");
+            if (!Set.of("Association", "Aggregation", "Generalization", "Realisation", "Realization", "Dependency")
+                    .contains(eaType)) continue;
             String sourceId = xmiRef(source), targetId = xmiRef(target);
             if (!classes.containsKey(sourceId) || !classes.containsKey(targetId)) {
                 throw badRequest("El conector " + id + " referencia una clase inexistente.");
             }
             Element extended = child(connector, "extendedProperties");
             String associationClassId = extended == null ? null : blankToNull(extended.getAttribute("associationclass"));
-            Connector item = new Connector(id, sourceId, targetId, source, target, child(connector, "labels"), associationClassId);
+            Connector item = new Connector(id, sourceId, targetId, source, target, child(connector, "labels"),
+                    associationClassId, eaType, properties.getAttribute("subtype"));
             if (result.putIfAbsent(id, item) != null) throw badRequest("Conector EA duplicado: " + id);
         }
         return result;
     }
 
-    private static List<NormalizedGeneralization> generalizations(Map<String, Element> classes, List<String> warnings) {
+    private static List<NormalizedGeneralization> generalizations(Map<String, Element> classes,
+            Map<String, Connector> connectors, List<String> warnings) {
         List<NormalizedGeneralization> result = new ArrayList<>();
+        Set<String> ids = new HashSet<>();
         for (var entry : classes.entrySet()) for (Element generalization : children(entry.getValue(), "generalization")) {
             String id = xmiId(generalization);
             String generalId = blankToNull(generalization.getAttribute("general"));
             Element general = child(generalization, "general");
             if (generalId == null && general != null) generalId = blankToNull(xmiRef(general));
             if (generalId != null && classes.containsKey(generalId)) {
-                result.add(new NormalizedGeneralization(id.isBlank() ? entry.getKey() + ":generalization" : id,
-                        entry.getKey(), generalId));
+                String externalId = id.isBlank() ? entry.getKey() + ":generalization" : id;
+                if (ids.add(externalId)) result.add(new NormalizedGeneralization(externalId, entry.getKey(), generalId));
             } else {
                 warnings.add("Una generalización de " + entry.getValue().getAttribute("name")
                         + " no pudo resolverse y fue omitida.");
             }
         }
+        for (Connector connector : connectors.values()) if ("Generalization".equals(connector.eaType())
+                && ids.add(connector.id())) {
+            result.add(new NormalizedGeneralization(connector.id(), connector.sourceId(), connector.targetId()));
+        }
         return List.copyOf(result);
+    }
+
+    private static List<NormalizedRealization> realizations(Map<String, Element> classes,
+            Map<String, Connector> connectors, List<String> warnings) {
+        List<NormalizedRealization> result = new ArrayList<>();
+        Set<String> ids = new HashSet<>();
+        for (var entry : classes.entrySet()) {
+            for (Element realization : children(entry.getValue(), "interfaceRealization")) {
+                String id = xmiId(realization);
+                if (id.isBlank()) id = entry.getKey() + ":realization:" + result.size();
+                String supplier = blankToNull(realization.getAttribute("supplier"));
+                if (supplier == null) supplier = blankToNull(realization.getAttribute("contract"));
+                if (supplier != null && classes.containsKey(supplier)) {
+                    if (ids.add(id)) result.add(new NormalizedRealization(id, entry.getKey(), supplier));
+                } else {
+                    warnings.add("Una realización de " + entry.getValue().getAttribute("name")
+                            + " no pudo resolverse y fue omitida.");
+                }
+            }
+        }
+        for (Connector connector : connectors.values()) if (("Realisation".equals(connector.eaType())
+                || "Realization".equals(connector.eaType())) && ids.add(connector.id())) {
+            result.add(new NormalizedRealization(connector.id(), connector.sourceId(), connector.targetId()));
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<NormalizedDependency> dependencies(List<Element> packaged,
+            Map<String, Element> classes, Map<String, Connector> connectors, List<String> warnings) {
+        List<NormalizedDependency> result = new ArrayList<>();
+        Set<String> ids = new HashSet<>();
+        for (Element dependency : packaged) if ("uml:Dependency".equals(xmiType(dependency))) {
+            String id = requiredId(dependency, "Dependencia UML sin xmi:id.");
+            String client = blankToNull(dependency.getAttribute("client"));
+            String supplier = blankToNull(dependency.getAttribute("supplier"));
+            if (classes.containsKey(client) && classes.containsKey(supplier)) {
+                ids.add(id);
+                result.add(new NormalizedDependency(id, client, supplier,
+                        blankToNull(dependency.getAttribute("name"))));
+            } else {
+                warnings.add("La dependencia " + id + " no pudo resolverse y fue omitida.");
+            }
+        }
+        for (Connector connector : connectors.values()) if ("Dependency".equals(connector.eaType())
+                && ids.add(connector.id())) {
+            result.add(new NormalizedDependency(connector.id(), connector.sourceId(), connector.targetId(), null));
+        }
+        return List.copyOf(result);
+    }
+
+    private static AggregationSemantics associationAggregation(Connector connector,
+            Element sourceEnd, Element targetEnd) {
+        String sourceAggregation = connectorAggregation(connector == null ? null : connector.source());
+        String targetAggregation = connectorAggregation(connector == null ? null : connector.target());
+        if ("none".equals(sourceAggregation) && "none".equals(targetAggregation)) {
+            sourceAggregation = aggregation(sourceEnd);
+            targetAggregation = aggregation(targetEnd);
+        }
+        String aggregate = !"none".equals(sourceAggregation) ? sourceAggregation : targetAggregation;
+        String end = !"none".equals(sourceAggregation) ? "SOURCE"
+                : !"none".equals(targetAggregation) ? "TARGET" : null;
+        if ("composite".equals(aggregate) || connector != null && "Strong".equalsIgnoreCase(connector.subtype())) {
+            return new AggregationSemantics("COMPOSITION", end == null ? "SOURCE" : end);
+        }
+        if ("shared".equals(aggregate) || connector != null && "Aggregation".equals(connector.eaType())) {
+            return new AggregationSemantics("AGGREGATION", end == null ? "SOURCE" : end);
+        }
+        return new AggregationSemantics("ASSOCIATION", null);
+    }
+
+    private static String connectorAggregation(Element connectorEnd) {
+        Element type = child(connectorEnd, "type");
+        return aggregation(type);
+    }
+
+    private static String aggregation(Element end) {
+        String value = end == null ? "" : end.getAttribute("aggregation").toLowerCase(Locale.ROOT);
+        return Set.of("shared", "composite").contains(value) ? value : "none";
     }
 
     private static void validateAssociationClasses(List<NormalizedClass> classes,
@@ -308,7 +487,8 @@ public class EnterpriseArchitectXmiParser {
     }
 
     private static String resolveType(String reference, String eaType, String href,
-            Map<String, String> primitiveTypes) {
+            Map<String, String> primitiveTypes, Map<String, String> classifierNames) {
+        if (classifierNames.containsKey(reference)) return null;
         String local = primitiveTypes.get(reference);
         String raw = local != null ? local : !eaType.isBlank() ? eaType
                 : href.contains("#") ? href.substring(href.lastIndexOf('#') + 1)
@@ -322,8 +502,53 @@ public class EnterpriseArchitectXmiParser {
             case "bool", "boolean" -> "BOOLEAN";
             case "date" -> "DATE";
             case "datetime", "timestamp" -> "TIMESTAMP";
+            case "void" -> "VOID";
             default -> null;
         };
+    }
+
+    private static String declaredType(Element typedElement, Map<String, String> primitiveTypes,
+            Map<String, String> classifierNames) {
+        Element type = child(typedElement, "type");
+        String reference = type == null ? blankToNull(typedElement.getAttribute("type")) : xmiRef(type);
+        if (reference == null) reference = "";
+        String classifier = classifierNames.get(reference);
+        if (classifier != null && !classifier.isBlank()) return classifier;
+        String href = type == null ? "" : type.getAttribute("href");
+        String resolved = resolveType(reference, "", href, primitiveTypes, Map.of());
+        return resolved != null ? resolved : reference.startsWith("EAJava_")
+                ? reference.substring("EAJava_".length()).toUpperCase(Locale.ROOT) : null;
+    }
+
+    private static String classifierKind(Element classifier, Element extension, boolean legacyEntityModel) {
+        return switch (xmiType(classifier)) {
+            case "uml:AssociationClass" -> "ASSOCIATION_CLASS";
+            case "uml:Interface" -> "INTERFACE";
+            case "uml:Enumeration" -> "ENUMERATION";
+            default -> legacyEntityModel || explicitlyPersistent(classifier, extension) ? "ENTITY" : "CLASS";
+        };
+    }
+
+    private static boolean hasKindTag(Element extension) {
+        if (extension == null) return false;
+        return descendants(extension, "tag").stream().anyMatch(tag ->
+                "LogicDraft.Kind".equalsIgnoreCase(tag.getAttribute("name")));
+    }
+
+    private static boolean explicitlyPersistent(Element classifier, Element extension) {
+        for (Element attribute : children(classifier, "ownedAttribute")) {
+            if ("true".equalsIgnoreCase(attribute.getAttribute("isID"))) return true;
+        }
+        if (extension == null) return false;
+        for (Element tag : descendants(extension, "tag")) {
+            String name = tag.getAttribute("name");
+            String value = tag.getAttribute("value");
+            if ("LogicDraft.PrimaryKey".equalsIgnoreCase(name) && "true".equalsIgnoreCase(value)) return true;
+            if ("LogicDraft.Kind".equalsIgnoreCase(name) && "ENTITY".equalsIgnoreCase(value)) return true;
+        }
+        Element stereotype = child(extension, "stereotype");
+        String stereotypeName = stereotype == null ? "" : stereotype.getAttribute("name");
+        return "entity".equalsIgnoreCase(stereotypeName) || "table".equalsIgnoreCase(stereotypeName);
     }
 
     private static Map<String, Element> extensionElements(Element extension) {
@@ -336,8 +561,8 @@ public class EnterpriseArchitectXmiParser {
         return result;
     }
 
-    private static Map<String, Position> positions(Element extension, String packageId, List<String> warnings) {
-        Map<String, Position> result = new HashMap<>();
+    private static Map<String, Layout> layouts(Element extension, String packageId, List<String> warnings) {
+        Map<String, Layout> result = new HashMap<>();
         Element diagrams = child(extension, "diagrams");
         if (diagrams == null) return result;
         Element selected = null;
@@ -353,7 +578,14 @@ public class EnterpriseArchitectXmiParser {
         for (Element item : children(elements, "element")) {
             Integer left = geometry(item.getAttribute("geometry"), "Left");
             Integer top = geometry(item.getAttribute("geometry"), "Top");
-            if (left != null && top != null) result.putIfAbsent(item.getAttribute("subject"), new Position(left, top));
+            Integer right = geometry(item.getAttribute("geometry"), "Right");
+            Integer bottom = geometry(item.getAttribute("geometry"), "Bottom");
+            if (left != null && top != null) {
+                double width = right != null && right > left ? right - left : 220;
+                double height = bottom != null && bottom > top ? bottom - top : 120;
+                result.putIfAbsent(item.getAttribute("subject"),
+                        new Layout(new Position(left, top), new Size(width, height)));
+            }
         }
         return result;
     }

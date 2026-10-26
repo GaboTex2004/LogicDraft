@@ -11,7 +11,8 @@ public final class DiagramContextMapper {
 
     public static DiagramContext fromDocument(Map<String, Object> document) {
         try {
-            if (document == null || !Integer.valueOf(1).equals(document.get("version")))
+            if (document == null || !(Integer.valueOf(1).equals(document.get("version"))
+                    || Integer.valueOf(2).equals(document.get("version"))))
                 throw new IllegalArgumentException();
             Map<String, String> namesById = new HashMap<>();
             Set<String> entityNames = new HashSet<>();
@@ -20,6 +21,8 @@ public final class DiagramContextMapper {
                 Map<?, ?> node = map(raw);
                 String id = text(node.get("id"));
                 Map<?, ?> data = map(node.get("data"));
+                if (Integer.valueOf(2).equals(document.get("version")) && data.get("kind") != null
+                        && !"ENTITY".equals(data.get("kind")) && !"ASSOCIATION_CLASS".equals(data.get("kind"))) continue;
                 String name = text(data.get("name"));
                 if (namesById.putIfAbsent(id, name) != null || !entityNames.add(key(name)))
                     throw new IllegalArgumentException();
@@ -44,9 +47,14 @@ public final class DiagramContextMapper {
                 String relationshipId = optionalText(edge.get("id"));
                 String source = namesById.get(text(edge.get("source")));
                 String target = namesById.get(text(edge.get("target")));
-                if (source == null || target == null) throw new IllegalArgumentException();
+                if (source == null || target == null) {
+                    if (Integer.valueOf(2).equals(document.get("version"))) continue;
+                    throw new IllegalArgumentException();
+                }
                 // React Flow edge.type is a visual style, never a cardinality.
                 Map<?, ?> data = edge.get("data") == null ? Map.of() : map(edge.get("data"));
+                if (Integer.valueOf(2).equals(document.get("version")) && data.get("relationKind") != null
+                        && !"ASSOCIATION".equals(data.get("relationKind"))) continue;
                 if (data.containsKey("sourceCardinality") || data.containsKey("targetCardinality")) {
                     relationships.add(new RelationshipDefinition(source, target,
                         DiagramCardinality.valueOf(text(data.get("sourceCardinality"))),
@@ -65,6 +73,8 @@ public final class DiagramContextMapper {
             for (Object raw : list(document.get("nodes"))) {
                 Map<?, ?> node = map(raw);
                 Map<?, ?> data = map(node.get("data"));
+                if (Integer.valueOf(2).equals(document.get("version")) && data.get("kind") != null
+                        && !"ENTITY".equals(data.get("kind")) && !"ASSOCIATION_CLASS".equals(data.get("kind"))) continue;
                 if (data.get("association") == null) continue;
                 Map<?, ?> association = map(data.get("association"));
                 if (!"MANY_TO_MANY_ASSOCIATION".equals(text(association.get("kind")))

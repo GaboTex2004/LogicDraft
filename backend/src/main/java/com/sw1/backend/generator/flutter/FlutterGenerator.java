@@ -4,6 +4,7 @@ import com.sw1.backend.generator.flutter.render.DartModelRenderer;
 import com.sw1.backend.generator.flutter.render.DartScreenRenderer;
 import com.sw1.backend.generator.flutter.render.DartServiceRenderer;
 import com.sw1.backend.generator.flutter.render.FlutterStaticTemplates;
+import com.sw1.backend.generator.export.UmlStructuralGenerator;
 import com.sw1.backend.generator.schema.ApplicationEntity;
 import com.sw1.backend.generator.schema.ApplicationSchema;
 import com.sw1.backend.generator.spring.SpringGenerationValidator;
@@ -44,6 +45,7 @@ public class FlutterGenerator {
             files.put("lib/screens/" + fileName + "/" + fileName + "_form_screen.dart",
                     DartScreenRenderer.form(entity, owned, fileName));
         }
+        files.putAll(UmlStructuralGenerator.dartFiles(schema.uml()));
         return new FlutterProject(packageName, files);
     }
 }

@@ -3,6 +3,7 @@ import axios from "axios";
 import {
   Background,
   BackgroundVariant,
+  ConnectionMode,
   Controls,
   MarkerType,
   ReactFlow,
@@ -91,7 +92,11 @@ import type {
   EntityAttribute,
   EntityFlowNode,
   ExternalMetadata,
+  UmlNodeKind,
+  UmlMethod,
+  UmlRelationKind,
 } from "../types/diagram.types";
+import { UML_NODE_KINDS, UML_VISIBILITIES } from "../types/diagram.types";
 import type { DiagramAiOperation } from "../types/diagramAi.types";
 import "../diagram.css";
 import { interpretDiagramImage } from "../api/diagramImageApi";
@@ -119,6 +124,26 @@ function serializeNode(node: EntityFlowNode): EntityFlowNode {
       id: node.data.id,
       name: node.data.name,
       attributes: node.data.attributes.map((attribute) => ({ ...attribute })),
+      ...(node.data.kind ? { kind: node.data.kind } : {}),
+      ...(node.data.kind === "CLASS" && node.data.generateCrud === true
+        ? { generateCrud: true }
+        : {}),
+      ...(node.data.methods
+        ? {
+            methods: node.data.methods.map((method) => ({
+              ...method,
+              parameters: method.parameters.map((parameter) => ({
+                ...parameter,
+              })),
+            })),
+          }
+        : {}),
+      ...(node.data.literals ? { literals: [...node.data.literals] } : {}),
+      ...(node.data.abstract !== undefined
+        ? { abstract: node.data.abstract }
+        : {}),
+      ...(node.data.width !== undefined ? { width: node.data.width } : {}),
+      ...(node.data.height !== undefined ? { height: node.data.height } : {}),
       ...(node.data.association
         ? { association: cloneAssociationMetadata(node.data.association) }
         : {}),
@@ -147,8 +172,17 @@ function serializeDocument(
   nodes: EntityFlowNode[],
   edges: DiagramEdge[],
 ): DiagramDocument {
+  const version =
+    nodes.some(
+      (node) =>
+        (node.data.kind ?? "ENTITY") !== "ENTITY" ||
+        node.data.methods?.length ||
+        node.data.abstract,
+    ) || edges.some((edge) => edge.data?.relationKind)
+      ? 2
+      : 1;
   return {
-    version: 1,
+    version,
     nodes: nodes.map(serializeNode),
     edges: edges.map(serializeEdge),
   };
@@ -168,10 +202,26 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+async function responseMessage(error: unknown): Promise<string | null> {
+  if (!axios.isAxiosError(error)) return null;
+  const payload = error.response?.data;
+  if (payload instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await payload.text());
+      return typeof parsed?.mensaje === "string" ? parsed.mensaje : null;
+    } catch {
+      return null;
+    }
+  }
+  const body = record(payload);
+  return typeof body?.mensaje === "string" ? body.mensaje : null;
+}
+
 function externalMetadata(value: unknown): ExternalMetadata | undefined {
   const metadata = record(value);
   return metadata?.source === "enterprise-architect" &&
-    typeof metadata.externalId === "string" && metadata.externalId.length > 0
+    typeof metadata.externalId === "string" &&
+    metadata.externalId.length > 0
     ? { source: "enterprise-architect", externalId: metadata.externalId }
     : undefined;
 }
@@ -204,7 +254,9 @@ function remoteNode(payload: unknown): EntityFlowNode | null {
       typeof attribute.primaryKey !== "boolean"
     )
       return null;
-    const attributeExternalMetadata = externalMetadata(attribute.externalMetadata);
+    const attributeExternalMetadata = externalMetadata(
+      attribute.externalMetadata,
+    );
     attributes.push({
       id: attribute.id,
       name: attribute.name,
@@ -212,6 +264,18 @@ function remoteNode(payload: unknown): EntityFlowNode | null {
       primaryKey: attribute.primaryKey,
       ...(typeof attribute.nullable === "boolean"
         ? { nullable: attribute.nullable }
+        : {}),
+      ...(typeof attribute.visibility === "string" &&
+      UML_VISIBILITIES.includes(
+        attribute.visibility as (typeof UML_VISIBILITIES)[number],
+      )
+        ? {
+            visibility:
+              attribute.visibility as (typeof UML_VISIBILITIES)[number],
+          }
+        : {}),
+      ...(typeof attribute.static === "boolean"
+        ? { static: attribute.static }
         : {}),
       ...(attributeExternalMetadata
         ? { externalMetadata: attributeExternalMetadata }
@@ -224,6 +288,54 @@ function remoteNode(payload: unknown): EntityFlowNode | null {
       : parseAssociationMetadata(data.association);
   if (data.association !== undefined && !association) return null;
   const nodeExternalMetadata = externalMetadata(data.externalMetadata);
+  const kind =
+    typeof data.kind === "string" &&
+    UML_NODE_KINDS.includes(data.kind as UmlNodeKind)
+      ? (data.kind as UmlNodeKind)
+      : undefined;
+  const methods: UmlMethod[] = [];
+  if (data.methods !== undefined) {
+    if (!Array.isArray(data.methods)) return null;
+    for (const rawMethod of data.methods) {
+      const method = record(rawMethod);
+      if (
+        !method ||
+        typeof method.id !== "string" ||
+        typeof method.name !== "string" ||
+        typeof method.returnType !== "string" ||
+        typeof method.visibility !== "string" ||
+        !UML_VISIBILITIES.includes(
+          method.visibility as UmlMethod["visibility"],
+        ) ||
+        !Array.isArray(method.parameters)
+      )
+        return null;
+      const parameters = method.parameters
+        .map((raw) => record(raw))
+        .map((parameter) =>
+          parameter &&
+          typeof parameter.id === "string" &&
+          typeof parameter.name === "string" &&
+          typeof parameter.type === "string"
+            ? { id: parameter.id, name: parameter.name, type: parameter.type }
+            : null,
+        );
+      if (parameters.some((parameter) => parameter === null)) return null;
+      methods.push({
+        id: method.id,
+        name: method.name,
+        returnType: method.returnType,
+        visibility: method.visibility as UmlMethod["visibility"],
+        parameters: parameters as UmlMethod["parameters"],
+        ...(typeof method.static === "boolean"
+          ? { static: method.static }
+          : {}),
+        ...(typeof method.abstract === "boolean"
+          ? { abstract: method.abstract }
+          : {}),
+      });
+    }
+  }
   return {
     id: node.id,
     type: "entity",
@@ -232,6 +344,20 @@ function remoteNode(payload: unknown): EntityFlowNode | null {
       id: data.id,
       name: data.name,
       attributes,
+      ...(kind ? { kind } : {}),
+      ...(kind === "CLASS" && data.generateCrud === true
+        ? { generateCrud: true }
+        : {}),
+      ...(data.methods !== undefined ? { methods } : {}),
+      ...(Array.isArray(data.literals) &&
+      data.literals.every((item) => typeof item === "string")
+        ? { literals: data.literals as string[] }
+        : {}),
+      ...(typeof data.abstract === "boolean"
+        ? { abstract: data.abstract }
+        : {}),
+      ...(typeof data.width === "number" ? { width: data.width } : {}),
+      ...(typeof data.height === "number" ? { height: data.height } : {}),
       ...(association ? { association } : {}),
       ...(nodeExternalMetadata
         ? { externalMetadata: nodeExternalMetadata }
@@ -270,7 +396,7 @@ function remoteDocument(payload: unknown): DiagramDocument | null {
   const wrapper = record(payload);
   const document = record(wrapper?.document);
   if (
-    document?.version !== 1 ||
+    (document?.version !== 1 && document?.version !== 2) ||
     !Array.isArray(document.nodes) ||
     !Array.isArray(document.edges)
   )
@@ -283,7 +409,7 @@ function remoteDocument(payload: unknown): DiagramDocument | null {
   )
     return null;
   const result: DiagramDocument = {
-    version: 1,
+    version: document.version,
     nodes: nodes as EntityFlowNode[],
     edges: edges as DiagramEdge[],
   };
@@ -333,6 +459,8 @@ function DiagramEditorCanvas({
   } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const [selectedRelationKind, setSelectedRelationKind] =
+    useState<UmlRelationKind>("ASSOCIATION");
   const [pendingProposal, setPendingProposal] = useState<{
     operations: DiagramAiOperation[];
     impact: string[];
@@ -353,6 +481,7 @@ function DiagramEditorCanvas({
   const serverRevisionRef = useRef<number | null>(initialServerRevision);
   const conflictRef = useRef(false);
   const saveInFlightRef = useRef<Promise<boolean> | null>(null);
+  const rejectedDocumentRef = useRef<string | null>(null);
   const { fitView } = useReactFlow();
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
   const selectedEdge =
@@ -641,7 +770,12 @@ function DiagramEditorCanvas({
           : undefined;
       const response = image
         ? await interpretDiagramImage(project.id, image, prompt, request.signal)
-        : await interpretDiagramWithAi(project.id, prompt, selection, request.signal);
+        : await interpretDiagramWithAi(
+            project.id,
+            prompt,
+            selection,
+            request.signal,
+          );
       if (request.signal.aborted) return;
       const { operations, preview: result } = prepareDiagramAiProposal(
         response,
@@ -667,7 +801,11 @@ function DiagramEditorCanvas({
       }
       setPendingProposal({
         operations,
-        impact: destructivePlanImpact(operations, nodesRef.current, edgesRef.current),
+        impact: destructivePlanImpact(
+          operations,
+          nodesRef.current,
+          edgesRef.current,
+        ),
         revision: revisionRef.current,
         source: "editor",
       });
@@ -756,8 +894,24 @@ function DiagramEditorCanvas({
       const edge: DiagramEdge = {
         ...connection,
         id: crypto.randomUUID(),
-        data: { sourceCardinality: "ONE_ONE", targetCardinality: "ONE_ONE" },
+        data: {
+          sourceCardinality: "ONE_ONE",
+          targetCardinality: "ONE_ONE",
+          relationKind: selectedRelationKind,
+        },
       };
+      try {
+        validateDiagramDocument(
+          serializeDocument(nodesRef.current, [...edgesRef.current, edge]),
+        );
+      } catch (error) {
+        setAiError(
+          error instanceof Error
+            ? error.message
+            : "La relación UML no es válida.",
+        );
+        return;
+      }
       commitRelationshipEdge(edgesRef.current, edge, "EDGE_CREATED", false, {
         setEdges: (next) => {
           edgesRef.current = next;
@@ -770,7 +924,7 @@ function DiagramEditorCanvas({
         },
       });
     },
-    [agentSession, markDirty, publishEvent, setEdges],
+    [agentSession, markDirty, publishEvent, selectedRelationKind, setEdges],
   );
 
   const handleSelectionChange = useCallback(
@@ -786,14 +940,51 @@ function DiagramEditorCanvas({
     [agentSession],
   );
 
-  function addEntity() {
+  // New nodes must be valid drafts immediately: autosave runs before the user renames them.
+  function uniqueDefaultName(
+    base: string,
+    existing: readonly string[],
+  ): string {
+    const used = new Set(
+      existing.map((value) => value.trim().toLocaleLowerCase()),
+    );
+    if (!used.has(base.toLocaleLowerCase())) return base;
+    let suffix = 2;
+    while (used.has(`${base} ${suffix}`.toLocaleLowerCase())) suffix++;
+    return `${base} ${suffix}`;
+  }
+
+  function addUmlNode(kind: UmlNodeKind = "ENTITY") {
     const number = nextEntityNumber.current++;
     const id = `entity-${crypto.randomUUID()}`;
+    const baseName =
+      kind === "ENTITY"
+        ? "Nueva entidad"
+        : kind === "CLASS"
+          ? "Nueva clase"
+          : kind === "INTERFACE"
+            ? "Nueva interfaz"
+            : "Nueva enumeración";
+    const name = uniqueDefaultName(
+      baseName,
+      nodesRef.current.map((node) => node.data.name),
+    );
     const node: EntityFlowNode = {
       id,
       type: "entity",
       position: { x: 180 + number * 35, y: 180 + number * 35 },
-      data: { id, name: "Nueva entidad", attributes: [] },
+      data: {
+        id,
+        name,
+        attributes: [],
+        ...(kind !== "ENTITY"
+          ? {
+              kind,
+              methods: [],
+              ...(kind === "ENUMERATION" ? { literals: [] } : {}),
+            }
+          : {}),
+      },
       selected: true,
     };
     setNodes((current) => [
@@ -805,6 +996,27 @@ function DiagramEditorCanvas({
     publishEvent("NODE_CREATED", { node: serializeNode(node) });
     agentSession.record("NODE_CREATED", { nodeId: id });
     markDirty();
+  }
+
+  function addMethod() {
+    const method: UmlMethod = {
+      id: `method-${crypto.randomUUID()}`,
+      name: uniqueDefaultName(
+        "nuevoMetodo",
+        selectedNode?.data.methods?.map((method) => method.name) ?? [],
+      ),
+      visibility: "public",
+      returnType: "void",
+      parameters: [],
+    };
+    updateSelectedEntity((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        kind: node.data.kind ?? "CLASS",
+        methods: [...(node.data.methods ?? []), method],
+      },
+    }));
   }
 
   function updateSelectedEntity(
@@ -850,31 +1062,125 @@ function DiagramEditorCanvas({
   }
 
   function deleteSelection() {
-    const deletedNodes = nodes.filter((node) => node.selected);
-    const deletedEdges = edges.filter((edge) => edge.selected);
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+
+    const deletedNodes = currentNodes.filter((node) => node.selected);
+    const deletedEdges = currentEdges.filter((edge) => edge.selected);
+
+    // Caso especial: eliminación de una clase asociativa.
+    const associationNode = deletedNodes.find(
+      (node) => node.data.association !== undefined,
+    );
+
+    if (associationNode) {
+      if (deletedNodes.length !== 1 || deletedEdges.length > 0) {
+        setAiMessage(
+          "Selecciona solamente una clase asociativa para eliminarla.",
+        );
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `¿Eliminar la clase asociativa "${associationNode.data.name}" y sus relaciones estructurales?\n\n` +
+          "Las clases originales permanecerán. " +
+          "Esta operación también elimina los atributos propios de la clase asociativa.",
+      );
+
+      if (!confirmed) return;
+
+      const structuralEdgeIds = new Set(
+        associationNode.data.association!.endpoints.map(
+          (endpoint) => endpoint.relationshipId,
+        ),
+      );
+
+      const nextNodes = currentNodes
+        .filter((node) => node.id !== associationNode.id)
+        .map((node) => ({ ...node, selected: false }));
+
+      const nextEdges = currentEdges
+        .filter(
+          (edge) =>
+            !structuralEdgeIds.has(edge.id) &&
+            edge.source !== associationNode.id &&
+            edge.target !== associationNode.id,
+        )
+        .map((edge) => ({ ...edge, selected: false }));
+
+      try {
+        validateAssociationDocument(nextNodes, nextEdges);
+        validateDiagramDocument(serializeDocument(nextNodes, nextEdges));
+      } catch (error) {
+        setAiMessage(
+          error instanceof Error
+            ? error.message
+            : "No se puede eliminar la clase asociativa sin invalidar otras relaciones.",
+        );
+        return;
+      }
+
+      const document = serializeDocument(nextNodes, nextEdges);
+
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      setSelectedNodeId(null);
+      setSelectedEdgeIds([]);
+
+      markDirty();
+
+      // Un solo evento para mantener sincronizados
+      // a los colaboradores y sus diagramas.
+      publishEvent("DIAGRAM_BATCH_APPLIED", { document });
+
+      agentSession.record("NODE_DELETED", {
+        nodeId: associationNode.id,
+      });
+
+      setAiMessage("Clase asociativa eliminada correctamente.");
+      return;
+    }
+
+    // Conservar la protección de las entidades que
+    // pertenecen a otras asociaciones estructurales.
     if (
-      deletedNodes.some((node) => protectedNodeIds.has(node.id)) ||
-      deletedEdges.some((edge) => protectedEdgeIds.has(edge.id))
+      deletedNodes.some((node) =>
+        associationProtectedNodeIds(currentNodes).has(node.id),
+      ) ||
+      deletedEdges.some((edge) =>
+        structuralRelationshipIds(currentNodes).has(edge.id),
+      )
     ) {
       setAiMessage(
-        "Las entidades y relaciones estructurales de una asociacion no pueden eliminarse individualmente.",
+        "Este elemento pertenece a una clase asociativa. Elimina primero la clase asociativa correspondiente.",
       );
       return;
     }
+
+    // Eliminación normal existente.
     deletedNodes.forEach((node) =>
       publishEvent("NODE_DELETED", { nodeId: node.id }),
     );
+
     deletedEdges.forEach((edge) =>
       publishEvent("EDGE_DELETED", { edgeId: edge.id }),
     );
+
     deletedNodes.forEach((node) =>
       agentSession.record("NODE_DELETED", { nodeId: node.id }),
     );
+
     deletedEdges.forEach((edge) =>
       agentSession.record("EDGE_DELETED", { edgeId: edge.id }),
     );
+
     const deletedNodeIds = new Set(deletedNodes.map((node) => node.id));
+
     setNodes((current) => current.filter((node) => !node.selected));
+
     setEdges((current) =>
       current.filter(
         (edge) =>
@@ -883,6 +1189,7 @@ function DiagramEditorCanvas({
           !deletedNodeIds.has(edge.target),
       ),
     );
+
     setSelectedNodeId(null);
     setSelectedEdgeIds([]);
     markDirty();
@@ -923,30 +1230,53 @@ function DiagramEditorCanvas({
   }
 
   const handleSave = useCallback(
-    async function saveCurrentDocument(): Promise<void> {
+    async function saveCurrentDocument(automatic = false): Promise<void> {
       if (saveInFlightRef.current) {
         const savedSuccessfully = await saveInFlightRef.current;
         if (
           savedSuccessfully &&
           revisionRef.current !== persistedRevisionRef.current
         )
-          await saveCurrentDocument();
+          await saveCurrentDocument(automatic);
         return;
       }
 
       const savedRevision = revisionRef.current;
+      const document = serializeDocument(nodesRef.current, edgesRef.current);
+      const documentFingerprint = JSON.stringify(document);
+      try {
+        // Keep validation failures client-side and visible; never re-send an unchanged invalid draft.
+        validateDiagramDocument(document);
+      } catch (error) {
+        rejectedDocumentRef.current = documentFingerprint;
+        setSaveStatus("error");
+        setAiError(
+          error instanceof Error
+            ? error.message
+            : "El diagrama no es válido para guardar.",
+        );
+        return;
+      }
+      if (automatic && rejectedDocumentRef.current === documentFingerprint) {
+        setSaveStatus("error");
+        return;
+      }
       const request = guardarDiagrama(
         project.id,
-        serializeDocument(nodesRef.current, edgesRef.current),
+        document,
         serverRevisionRef.current,
       )
         .then((saved) => {
+          rejectedDocumentRef.current = null;
           serverRevisionRef.current = saved.revision;
           conflictRef.current = false;
           agentSession.setDiagramId(saved.id);
           agentSession.record("DIAGRAM_SAVED");
           persistedRevisionRef.current = savedRevision;
-          publishEvent("DIAGRAM_SAVED", { savedAt: saved.fechaActualizacion, revision: saved.revision });
+          publishEvent("DIAGRAM_SAVED", {
+            savedAt: saved.fechaActualizacion,
+            revision: saved.revision,
+          });
           setSaveStatus(
             revisionRef.current === savedRevision ? "saved" : "dirty",
           );
@@ -958,16 +1288,27 @@ function DiagramEditorCanvas({
             localStorage.removeItem("token");
             window.location.assign("/login");
           } else if (isForbiddenError(requestError)) setSaveStatus("forbidden");
-          else if (axios.isAxiosError(requestError) && requestError.response?.status === 409) {
+          else if (
+            axios.isAxiosError(requestError) &&
+            requestError.response?.status === 409
+          ) {
             conflictRef.current = true;
             setSaveStatus("conflict");
-            setAiError("Otro usuario guardÃ³ una versiÃ³n mÃ¡s reciente. Tus cambios locales se conservaron; recarga para resincronizar.");
-          } else if (axios.isAxiosError(requestError) && requestError.response?.status === 422) {
+            setAiError(
+              "Otro usuario guardÃ³ una versiÃ³n mÃ¡s reciente. Tus cambios locales se conservaron; recarga para resincronizar.",
+            );
+          } else if (
+            axios.isAxiosError(requestError) &&
+            requestError.response?.status === 422
+          ) {
+            rejectedDocumentRef.current = documentFingerprint;
             const response = record(requestError.response.data);
             setSaveStatus("error");
-            setAiError(typeof response?.mensaje === "string"
-              ? response.mensaje
-              : "El diagrama contiene una estructura invÃ¡lida y no fue guardado.");
+            setAiError(
+              typeof response?.mensaje === "string"
+                ? response.mensaje
+                : "El diagrama contiene una estructura invÃ¡lida y no fue guardado.",
+            );
           } else setSaveStatus("error");
           return false;
         })
@@ -1003,7 +1344,11 @@ function DiagramEditorCanvas({
       if (prepared.proposal?.preview.events.length) {
         setPendingProposal({
           operations: prepared.proposal.operations,
-          impact: destructivePlanImpact(prepared.proposal.operations, nodesRef.current, edgesRef.current),
+          impact: destructivePlanImpact(
+            prepared.proposal.operations,
+            nodesRef.current,
+            edgesRef.current,
+          ),
           revision: revisionRef.current,
           source: "agent",
         });
@@ -1055,7 +1400,7 @@ function DiagramEditorCanvas({
     try {
       const preview = await previewEnterpriseArchitectImport(file);
       const imported: DiagramDocument = {
-        version: 1,
+        version: preview.version === 2 ? 2 : 1,
         nodes: preview.nodes.map(normalizeStoredNode),
         edges: preview.edges.map(normalizeRelationshipEdge),
       };
@@ -1105,8 +1450,11 @@ function DiagramEditorCanvas({
       if (enable) selected.add(id);
       else selected.delete(id);
       if (entity) {
-        for (const attribute of entity.attributes.filter(item => item.status !== "unchanged")) {
-          if (enable && attribute.status !== "missing") selected.add(attribute.id);
+        for (const attribute of entity.attributes.filter(
+          (item) => item.status !== "unchanged",
+        )) {
+          if (enable && attribute.status !== "missing")
+            selected.add(attribute.id);
           else selected.delete(attribute.id);
         }
       }
@@ -1141,6 +1489,9 @@ function DiagramEditorCanvas({
       publishEvent("DIAGRAM_BATCH_APPLIED", {
         document: serializeDocument(document.nodes, document.edges),
       });
+      requestAnimationFrame(
+        () => void fitView({ padding: 0.2, duration: 350 }),
+      );
     } catch (error: unknown) {
       setImportError(
         error instanceof DiagramImportError || error instanceof Error
@@ -1191,6 +1542,7 @@ function DiagramEditorCanvas({
         "Archivo XMI descargado. Pendiente de verificar su importación en Enterprise Architect.",
       );
     } catch (requestError: unknown) {
+      const detailedMessage = await responseMessage(requestError);
       if (isUnauthorizedError(requestError)) {
         localStorage.removeItem("token");
         window.location.assign("/login");
@@ -1207,7 +1559,8 @@ function DiagramEditorCanvas({
         );
       } else {
         setExportMessage(
-          "No se pudo generar el archivo XMI. Revisa la consola de Spring.",
+          detailedMessage ??
+            "No se pudo exportar el XMI. Verifica que los elementos UML tengan nombres, tipos y relaciones completos.",
         );
       }
     } finally {
@@ -1220,12 +1573,20 @@ function DiagramEditorCanvas({
     setExportMessage("");
     try {
       await descargarProyectoGenerado(project.id, kind, project.nombre);
+      const structuralNames = nodesRef.current
+        .filter((node) => (node.data.kind ?? "ENTITY") !== "ENTITY")
+        .map((node) => node.data.name);
+      const warning =
+        structuralNames.length > 0
+          ? ` Se añadieron tipos UML estructurales sin persistencia ni lógica de negocio: ${structuralNames.join(", ")}.`
+          : "";
       setExportMessage(
         kind === "backend"
-          ? "Backend generado y descargado correctamente."
-          : "Proyecto generado y descargado correctamente.",
+          ? `Backend generado y descargado correctamente.${warning}`
+          : `Proyecto generado y descargado correctamente.${warning}`,
       );
     } catch (requestError: unknown) {
+      const detailedMessage = await responseMessage(requestError);
       if (isUnauthorizedError(requestError)) {
         localStorage.removeItem("token");
         window.location.assign("/login");
@@ -1235,11 +1596,9 @@ function DiagramEditorCanvas({
         axios.isAxiosError(requestError) &&
         requestError.response?.status === 409
       ) {
-        const data = record(requestError.response.data);
         setExportMessage(
-          typeof data?.mensaje === "string"
-            ? data.mensaje
-            : "No se puede generar el proyecto porque el diagrama contiene datos incompatibles.",
+          detailedMessage ??
+            "No se puede generar: agrega una entidad persistente con primary key y revisa sus relaciones.",
         );
       } else if (axios.isAxiosError(requestError) && !requestError.response) {
         setExportMessage(
@@ -1254,7 +1613,8 @@ function DiagramEditorCanvas({
         );
       } else {
         setExportMessage(
-          "No se pudo generar la descarga. Revisa el diagrama e inténtalo nuevamente.",
+          detailedMessage ??
+            "No se pudo generar la descarga. Revisa las entidades persistentes y sus primary keys.",
         );
       }
     } finally {
@@ -1265,7 +1625,7 @@ function DiagramEditorCanvas({
   useEffect(() => {
     if (saveStatus !== "dirty") return;
     const timeoutId = window.setTimeout(() => {
-      void handleSave();
+      void handleSave(true);
     }, 1500);
     return () => window.clearTimeout(timeoutId);
   }, [documentRevision, handleSave, saveStatus]);
@@ -1296,7 +1656,9 @@ function DiagramEditorCanvas({
   );
 
   return (
-    <div className={`diagram-editor${sidebarOpen ? " is-sidebar-open" : ""}${propertiesOpen ? " is-properties-open" : ""}`}>
+    <div
+      className={`diagram-editor${sidebarOpen ? " is-sidebar-open" : ""}${propertiesOpen ? " is-properties-open" : ""}`}
+    >
       {(sidebarOpen || propertiesOpen) && (
         <button
           className="diagram-panel-backdrop"
@@ -1310,7 +1672,9 @@ function DiagramEditorCanvas({
       )}
       <DiagramSidebar
         projectsPath={`/workspaces/${project.workspaceId}/proyectos`}
-        onAddEntity={addEntity}
+        onAddNode={addUmlNode}
+        selectedRelationKind={selectedRelationKind}
+        onSelectRelationKind={setSelectedRelationKind}
         onClose={() => setSidebarOpen(false)}
       />
       <input
@@ -1331,7 +1695,12 @@ function DiagramEditorCanvas({
         onDeleteSelection={deleteSelection}
         onFitView={() => void fitView({ padding: 0.2, duration: 350 })}
         onImport={() => importInputRef.current?.click()}
-        importDisabled={importLoading || saveStatus === "saving" || saveStatus === "conflict" || saveStatus === "forbidden"}
+        importDisabled={
+          importLoading ||
+          saveStatus === "saving" ||
+          saveStatus === "conflict" ||
+          saveStatus === "forbidden"
+        }
         exportStatus={exportStatus}
         exportMessage={exportMessage}
         exportDisabled={
@@ -1359,15 +1728,30 @@ function DiagramEditorCanvas({
       />
       {saveStatus === "conflict" && (
         <div className="diagram-import-status is-error" role="alert">
-          <span>Existe una versiÃ³n confirmada mÃ¡s reciente. Tus cambios locales siguen en este navegador.</span>
-          <button type="button" onClick={() => {
-            if (window.confirm("Recargar reemplazarÃ¡ los cambios locales no guardados por la versiÃ³n confirmada. Â¿Continuar?"))
-              window.location.reload();
-          }}>Recargar versiÃ³n del servidor</button>
+          <span>
+            Existe una versiÃ³n confirmada mÃ¡s reciente. Tus cambios locales
+            siguen en este navegador.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Recargar reemplazarÃ¡ los cambios locales no guardados por la versiÃ³n confirmada. Â¿Continuar?",
+                )
+              )
+                window.location.reload();
+            }}
+          >
+            Recargar versiÃ³n del servidor
+          </button>
         </div>
       )}
       {(importLoading || importError) && (
-        <div className={`diagram-import-status${importError ? " is-error" : ""}`} role={importError ? "alert" : "status"}>
+        <div
+          className={`diagram-import-status${importError ? " is-error" : ""}`}
+          role={importError ? "alert" : "status"}
+        >
           {importError || "Analizando XMI/XML..."}
         </div>
       )}
@@ -1376,6 +1760,7 @@ function DiagramEditorCanvas({
         <ReactFlow<EntityFlowNode, DiagramEdge>
           nodes={nodes}
           edges={edges}
+          connectionMode={ConnectionMode.Loose}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onNodesChange={handleNodesChange}
@@ -1484,6 +1869,25 @@ function DiagramEditorCanvas({
           >) {
             if (changes[key] === undefined) delete nextData[key];
           }
+          try {
+            validateDiagramDocument(
+              serializeDocument(
+                nodesRef.current,
+                edgesRef.current.map((edge) =>
+                  edge.id === selectedEdge.id
+                    ? { ...edge, data: nextData }
+                    : edge,
+                ),
+              ),
+            );
+          } catch (error) {
+            setAiError(
+              error instanceof Error
+                ? error.message
+                : "La modificación de la relación no es válida.",
+            );
+            return;
+          }
           const changed = commitRelationshipEdge(
             edgesRef.current,
             { ...selectedEdge, data: nextData },
@@ -1507,6 +1911,12 @@ function DiagramEditorCanvas({
             );
         }}
         entity={selectedNode?.data ?? null}
+        onChangeGenerateCrud={(enabled) =>
+          updateSelectedEntity((node) => ({
+            ...node,
+            data: { ...node.data, generateCrud: enabled },
+          }))
+        }
         associationColumns={selectedAssociationColumns}
         onChangeName={(name) =>
           updateSelectedEntity((node) => ({
@@ -1524,7 +1934,10 @@ function DiagramEditorCanvas({
                 ...node.data.attributes,
                 {
                   id: `attribute-${crypto.randomUUID()}-${number}`,
-                  name: "nuevo_atributo",
+                  name: uniqueDefaultName(
+                    "nuevo_atributo",
+                    node.data.attributes.map((attribute) => attribute.name),
+                  ),
                   type: "VARCHAR",
                   primaryKey: false,
                 },
@@ -1540,6 +1953,29 @@ function DiagramEditorCanvas({
               ...node.data,
               attributes: node.data.attributes.filter(
                 (attribute) => attribute.id !== attributeId,
+              ),
+            },
+          }))
+        }
+        onAddMethod={addMethod}
+        onChangeMethod={(methodId, changes) =>
+          updateSelectedEntity((node) => ({
+            ...node,
+            data: {
+              ...node.data,
+              methods: (node.data.methods ?? []).map((method) =>
+                method.id === methodId ? { ...method, ...changes } : method,
+              ),
+            },
+          }))
+        }
+        onDeleteMethod={(methodId) =>
+          updateSelectedEntity((node) => ({
+            ...node,
+            data: {
+              ...node.data,
+              methods: (node.data.methods ?? []).filter(
+                (method) => method.id !== methodId,
               ),
             },
           }))

@@ -20,9 +20,9 @@ public class GuardarDiagramaRequest {
     public Long getBaseRevision() { return baseRevision; }
     public void setBaseRevision(Long baseRevision) { this.baseRevision = baseRevision; }
 
-    @AssertTrue(message = "El documento debe usar version 1 y contener arreglos nodes y edges de hasta 1000000 bytes")
+    @AssertTrue(message = "El documento debe usar version 1 o 2 y contener arreglos nodes y edges de hasta 1000000 bytes")
     public boolean isDocumentoValido() {
-        if (!Integer.valueOf(1).equals(version) || nodes == null || edges == null) return false;
+        if (!(Integer.valueOf(1).equals(version) || Integer.valueOf(2).equals(version)) || nodes == null || edges == null) return false;
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("version", version);
         document.put("nodes", nodes);

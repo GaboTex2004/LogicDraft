@@ -5,6 +5,10 @@ import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedAssociation;
 import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedAttribute;
 import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedClass;
 import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedGeneralization;
+import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedDependency;
+import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedOperation;
+import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedParameter;
+import com.sw1.backend.generator.ea.NormalizedDiagram.NormalizedRealization;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -13,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /** Maps normalized UML semantics to the same document contract used by the manual editor. */
@@ -34,35 +39,45 @@ public final class EnterpriseArchitectDiagramMapper {
             }
         }
 
+        List<String> warnings = new ArrayList<>(diagram.warnings());
         List<Map<String, Object>> nodes = new ArrayList<>();
         for (NormalizedClass item : diagram.classes()) {
             String nodeId = nodeIds.get(item.externalId());
+            NormalizedAssociation association = associationByClass.get(item.externalId());
             List<Map<String, Object>> attributes = attributes(item);
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("id", nodeId);
             data.put("name", item.name());
+            data.put("kind", item.kind());
             data.put("attributes", attributes);
+            data.put("methods", methods(item));
+            data.put("literals", item.literals());
+            data.put("abstract", item.abstractType());
+            data.put("width", item.size().width());
+            data.put("height", item.size().height());
             data.put("externalMetadata", externalMetadata(item.externalId()));
 
-            NormalizedAssociation association = associationByClass.get(item.externalId());
             if (association != null) {
                 NormalizedClass source = requiredClass(classes, association.sourceExternalId());
                 NormalizedClass target = requiredClass(classes, association.targetExternalId());
                 String sourceEdgeId = structuralEdgeId(association.externalId(), "SOURCE");
                 String targetEdgeId = structuralEdgeId(association.externalId(), "TARGET");
-                data.put("association", Map.of(
-                        "kind", "MANY_TO_MANY_ASSOCIATION",
-                        "tableName", sqlName(technicalName(item.name())),
-                        "uniquePair", true,
-                        "endpoints", List.of(
+                Map<String, Object> associationData = new LinkedHashMap<>();
+                associationData.put("kind", "MANY_TO_MANY_ASSOCIATION");
+                associationData.put("tableName", sqlName(technicalName(item.name())));
+                associationData.put("uniquePair", true);
+                associationData.put("externalMetadata", externalMetadata(association.externalId()));
+                associationData.put("sourceMultiplicity", association.sourceMultiplicity().name());
+                associationData.put("targetMultiplicity", association.targetMultiplicity().name());
+                associationData.put("endpoints", List.of(
                                 Map.of("role", "SOURCE", "entityId", nodeIds.get(source.externalId()),
                                         "relationshipId", sourceEdgeId,
                                         "foreignKeyName", foreignKeyName(source.name())),
                                 Map.of("role", "TARGET", "entityId", nodeIds.get(target.externalId()),
                                         "relationshipId", targetEdgeId,
                                         "foreignKeyName", foreignKeyName(target.name()))
-                        )
-                ));
+                        ));
+                data.put("association", associationData);
             }
 
             Map<String, Object> node = new LinkedHashMap<>();
@@ -79,7 +94,8 @@ public final class EnterpriseArchitectDiagramMapper {
                 edges.add(edge(stableId("relationship-", association.externalId()),
                         association.externalId(),
                         nodeIds.get(association.sourceExternalId()), nodeIds.get(association.targetExternalId()),
-                        association.sourceMultiplicity(), association.targetMultiplicity(), association.name()));
+                        association.sourceMultiplicity(), association.targetMultiplicity(), association.name(),
+                        association.relationKind(), association.aggregationEnd()));
                 continue;
             }
             String associationNodeId = nodeIds.get(association.associationClassExternalId());
@@ -87,42 +103,66 @@ public final class EnterpriseArchitectDiagramMapper {
             edges.add(edge(structuralEdgeId(association.externalId(), "SOURCE"),
                     association.externalId() + ":SOURCE",
                     nodeIds.get(association.sourceExternalId()), associationNodeId,
-                    DiagramCardinality.ONE_ONE, association.targetMultiplicity(), null));
+                    DiagramCardinality.ONE_ONE, association.targetMultiplicity(), null, "ASSOCIATION", null));
             edges.add(edge(structuralEdgeId(association.externalId(), "TARGET"),
                     association.externalId() + ":TARGET",
                     nodeIds.get(association.targetExternalId()), associationNodeId,
-                    DiagramCardinality.ONE_ONE, association.sourceMultiplicity(), null));
+                    DiagramCardinality.ONE_ONE, association.sourceMultiplicity(), null, "ASSOCIATION", null));
         }
-        List<String> warnings = new ArrayList<>(diagram.warnings());
         for (NormalizedGeneralization generalization : diagram.generalizations()) {
-            NormalizedClass specific = requiredClass(classes, generalization.specificExternalId());
-            NormalizedClass general = requiredClass(classes, generalization.generalExternalId());
-            warnings.add("La generalización " + specific.name() + " → " + general.name()
-                    + " no tiene representación en el editor actual y fue omitida.");
+            requiredClass(classes, generalization.specificExternalId());
+            requiredClass(classes, generalization.generalExternalId());
+            edges.add(typedEdge(generalization.externalId(), nodeIds.get(generalization.specificExternalId()),
+                    nodeIds.get(generalization.generalExternalId()), "GENERALIZATION", null));
+        }
+        for (NormalizedRealization realization : diagram.realizations()) {
+            edges.add(typedEdge(realization.externalId(), nodeIds.get(realization.implementingExternalId()),
+                    nodeIds.get(realization.interfaceExternalId()), "REALIZATION", null));
+        }
+        for (NormalizedDependency dependency : diagram.dependencies()) {
+            edges.add(typedEdge(dependency.externalId(), nodeIds.get(dependency.clientExternalId()),
+                    nodeIds.get(dependency.supplierExternalId()), "DEPENDENCY", dependency.name()));
         }
         return new EnterpriseArchitectImportPreview(
-                diagram.projectName(), 1, List.copyOf(nodes), List.copyOf(edges), List.copyOf(warnings));
+                diagram.projectName(), 2,
+                List.copyOf(nodes), List.copyOf(edges), List.copyOf(warnings));
     }
 
     private static List<Map<String, Object>> attributes(NormalizedClass owner) {
         List<Map<String, Object>> result = new ArrayList<>();
-        boolean hasValidPk = owner.attributes().stream().anyMatch(attribute -> attribute.primaryKey()
-                && !attribute.nullable() && ("INTEGER".equals(attribute.type()) || "BIGINT".equals(attribute.type())));
-        NormalizedAttribute promotableId = owner.associationClass() && !hasValidPk
-                ? owner.attributes().stream().filter(attribute -> attribute.name().equalsIgnoreCase("id")
-                        && ("INTEGER".equals(attribute.type()) || "BIGINT".equals(attribute.type())))
-                        .findFirst().orElse(null)
-                : null;
-        if (owner.associationClass() && !hasValidPk && promotableId == null) {
-            result.add(attribute(stableId("attribute-", owner.externalId() + ":generated-pk"),
-                    owner.externalId() + ":generated-pk", "id", "INTEGER", true, false));
-        }
         for (NormalizedAttribute item : owner.attributes()) {
-            boolean primaryKey = item.primaryKey() || item == promotableId;
-            result.add(attribute(stableId("attribute-", item.externalId()), item.externalId(), item.name(), item.type(),
-                    primaryKey, primaryKey ? false : item.nullable()));
+            Map<String, Object> mapped = attribute(stableId("attribute-", item.externalId()), item.externalId(),
+                    item.name(), item.type(), item.primaryKey(), item.nullable());
+            mapped.put("visibility", normalizeVisibility(item.visibility()));
+            mapped.put("static", item.staticAttribute());
+            if (item.initialValue() != null) mapped.put("initialValue", item.initialValue());
+            result.add(mapped);
         }
         return result;
+    }
+
+    private static List<Map<String, Object>> methods(NormalizedClass owner) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (NormalizedOperation operation : owner.operations()) {
+            List<Map<String, Object>> parameters = new ArrayList<>();
+            for (NormalizedParameter parameter : operation.parameters()) {
+                parameters.add(new LinkedHashMap<>(Map.of(
+                        "id", stableId("parameter-", parameter.externalId()),
+                        "name", parameter.name(),
+                        "type", parameter.type())));
+            }
+            Map<String, Object> mapped = new LinkedHashMap<>();
+            mapped.put("id", stableId("method-", operation.externalId()));
+            mapped.put("name", operation.name());
+            mapped.put("returnType", operation.returnType());
+            mapped.put("visibility", normalizeVisibility(operation.visibility()));
+            mapped.put("static", operation.staticOperation());
+            mapped.put("abstract", operation.abstractOperation());
+            mapped.put("parameters", List.copyOf(parameters));
+            mapped.put("externalMetadata", externalMetadata(operation.externalId()));
+            result.add(mapped);
+        }
+        return List.copyOf(result);
     }
 
     private static Map<String, Object> attribute(String id, String externalId, String name, String type,
@@ -138,8 +178,11 @@ public final class EnterpriseArchitectDiagramMapper {
     }
 
     private static Map<String, Object> edge(String id, String externalId, String source, String target,
-            DiagramCardinality sourceCardinality, DiagramCardinality targetCardinality, String name) {
+            DiagramCardinality sourceCardinality, DiagramCardinality targetCardinality, String name,
+            String relationKind, String aggregationEnd) {
         Map<String, Object> data = new LinkedHashMap<>();
+        data.put("relationKind", relationKind);
+        if (aggregationEnd != null) data.put("aggregationEnd", aggregationEnd);
         data.put("sourceCardinality", sourceCardinality.name());
         data.put("targetCardinality", targetCardinality.name());
         data.put("externalMetadata", externalMetadata(externalId));
@@ -151,6 +194,31 @@ public final class EnterpriseArchitectDiagramMapper {
         edge.put("target", target);
         edge.put("data", data);
         return edge;
+    }
+
+    private static Map<String, Object> typedEdge(String externalId, String source, String target,
+            String relationKind, String name) {
+        if (source == null || target == null) {
+            throw new IllegalArgumentException("La relación " + externalId + " referencia un clasificador inexistente.");
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("relationKind", relationKind);
+        data.put("externalMetadata", externalMetadata(externalId));
+        if (name != null && !name.isBlank()) data.put("name", name);
+        Map<String, Object> edge = new LinkedHashMap<>();
+        edge.put("id", stableId("relationship-", externalId));
+        edge.put("type", "relationship");
+        edge.put("source", source);
+        edge.put("target", target);
+        edge.put("data", data);
+        return edge;
+    }
+
+    private static String normalizeVisibility(String value) {
+        if (value == null) return "private";
+        String normalized = value.toLowerCase(Locale.ROOT);
+        return Set.of("public", "private", "protected", "package").contains(normalized)
+                ? normalized : "private";
     }
 
     private static NormalizedClass requiredClass(Map<String, NormalizedClass> classes, String id) {

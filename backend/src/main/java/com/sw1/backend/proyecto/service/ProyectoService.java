@@ -11,7 +11,7 @@ import com.sw1.backend.workspace.model.RolWorkspace;
 import com.sw1.backend.workspace.service.WorkspaceAccessService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import com.sw1.backend.diagrama.repository.DiagramaRepository;
 import java.util.List;
 
 @Service
@@ -20,12 +20,16 @@ public class ProyectoService {
 
     private final ProyectoRepository proyectoRepository;
     private final WorkspaceAccessService workspaceAccessService;
+    private final DiagramaRepository diagramaRepository;
 
     public ProyectoService(
             ProyectoRepository proyectoRepository,
-            WorkspaceAccessService workspaceAccessService) {
+            WorkspaceAccessService workspaceAccessService,
+            DiagramaRepository diagramaRepository) {
+
         this.proyectoRepository = proyectoRepository;
         this.workspaceAccessService = workspaceAccessService;
+        this.diagramaRepository = diagramaRepository;
     }
 
     @Transactional(readOnly = true)
@@ -77,14 +81,32 @@ public class ProyectoService {
         return convertirAResponse(proyectoRepository.save(proyectoExistente));
     }
 
+    
     public void eliminar(Long id) {
+
+        // 1. Verificar que el proyecto exista.
         Proyecto proyecto = buscarEntidadPorId(id);
+
+        // 2. Verificar permisos dentro del workspace.
         workspaceAccessService.verificarRol(
                 proyecto.getWorkspace().getId(),
                 RolWorkspace.OWNER,
-                RolWorkspace.EDITOR);
+                RolWorkspace.EDITOR
+        );
+
+        // 3. Eliminar únicamente el diagrama
+        // asociado al proyecto autorizado.
+        diagramaRepository.findByProyectoId(id)
+                .ifPresent(diagramaRepository::delete);
+
+        // 4. Ejecutar la eliminación del diagrama
+        // antes de eliminar el proyecto.
+        diagramaRepository.flush();
+
+        // 5. Eliminar el proyecto.
         proyectoRepository.delete(proyecto);
     }
+
 
     private Proyecto buscarEntidadPorId(Long id) {
         return proyectoRepository.findById(id)

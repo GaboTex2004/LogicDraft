@@ -17,11 +17,12 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @Transactional
 public class DiagramaService {
-    static final int VERSION_SOPORTADA = 1;
+    static final Set<Integer> VERSIONES_SOPORTADAS = Set.of(1, 2);
     static final int TAMANO_MAXIMO_BYTES = 1_000_000;
     private final DiagramaRepository diagramaRepository;
     private final ProyectoRepository proyectoRepository;
@@ -61,7 +62,7 @@ public class DiagramaService {
         }
     }
     private Map<String, Object> crearYValidarContenido(GuardarDiagramaRequest request) {
-        if (!Integer.valueOf(VERSION_SOPORTADA).equals(request.getVersion())) throw new IllegalArgumentException("La version del documento no esta soportada");
+        if (!VERSIONES_SOPORTADAS.contains(request.getVersion())) throw new IllegalArgumentException("La version del documento no esta soportada");
         Map<String, Object> contenido = new LinkedHashMap<>();
         contenido.put("version", request.getVersion());
         contenido.put("nodes", request.getNodes());

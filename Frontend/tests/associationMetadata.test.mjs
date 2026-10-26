@@ -7,6 +7,9 @@ const valid = {
   kind: 'MANY_TO_MANY_ASSOCIATION',
   tableName: 'alumno_materia',
   uniquePair: true,
+  sourceMultiplicity: 'ONE_MANY',
+  targetMultiplicity: 'ZERO_MANY',
+  externalMetadata: { source: 'enterprise-architect', externalId: 'EAID_connector' },
   endpoints: [
     { role: 'SOURCE', entityId: 'alumno', relationshipId: 'alumno-inscripcion', foreignKeyName: 'alumno_id' },
     { role: 'TARGET', entityId: 'materia', relationshipId: 'materia-inscripcion', foreignKeyName: 'materia_id' },
@@ -29,6 +32,8 @@ test('association metadata rejects malformed shape and keeps absence optional', 
     { ...valid, endpoints: valid.endpoints.slice(0, 1) },
     { ...valid, endpoints: valid.endpoints.map(item => ({ ...item, role: 'SOURCE' })) },
     { ...valid, endpoints: [valid.endpoints[0], { ...valid.endpoints[1], foreignKeyName: 'Materia ID' }] },
+    { ...valid, sourceMultiplicity: 'MANY' },
+    { ...valid, externalMetadata: { source: 'browser', externalId: 'connector' } },
   ]) assert.equal(parseAssociationMetadata(invalid), null)
 })
 

@@ -45,6 +45,9 @@ public class EnterpriseArchitectXmiGenerator {
                                    DiagramCardinality targetCardinality) {}
 
     public byte[] generate(EnterpriseArchitectExportSourceService.ExportSnapshot snapshot) {
+        if (Integer.valueOf(2).equals(snapshot.diagrama().contenido().get("version"))) {
+            return UmlV2XmiGenerator.generate(snapshot.proyecto().getNombre(), snapshot.diagrama().contenido());
+        }
         try {
             var project = snapshot.proyecto();
             var diagram = snapshot.diagrama();
@@ -177,7 +180,8 @@ public class EnterpriseArchitectXmiGenerator {
             transformer.transform(new DOMSource(xml), new StreamResult(out));
             return out.toByteArray();
         } catch (Exception exception) {
-            throw new IllegalStateException("No se pudo generar el archivo XMI.", exception);
+            throw new EnterpriseArchitectXmiException("No se pudo exportar el diagrama heredado a XMI: "
+                    + (exception.getMessage() == null ? "estructura incompatible" : exception.getMessage()), exception);
         }
     }
 

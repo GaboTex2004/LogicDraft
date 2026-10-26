@@ -5,24 +5,32 @@ import com.sw1.backend.diagrama.dto.request.GuardarDiagramaRequest;
 import com.sw1.backend.diagrama.model.Diagrama;
 import com.sw1.backend.diagrama.repository.DiagramaRepository;
 import com.sw1.backend.diagrama.validation.DiagramValidationException;
+import com.sw1.backend.generator.ea.EnterpriseArchitectImportPreview;
+import com.sw1.backend.generator.ea.EnterpriseArchitectXmiParser;
+import com.sw1.backend.generator.ea.EnterpriseArchitectXmiReader;
 import com.sw1.backend.proyecto.model.Proyecto;
 import com.sw1.backend.proyecto.repository.ProyectoRepository;
 import com.sw1.backend.workspace.model.RolWorkspace;
 import com.sw1.backend.workspace.model.Workspace;
 import com.sw1.backend.workspace.service.WorkspaceAccessService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -131,6 +139,73 @@ class DiagramaServiceTest {
     }
 
     @Test
+    void guardaYRecuperaEstadosInicialesUmlV2DelFrontend() {
+        GuardarDiagramaRequest request = new GuardarDiagramaRequest();
+        request.setVersion(2);
+        Map<String, Object> entity = umlNode("entity", "Nueva entidad", "ENTITY");
+        Map<String, Object> umlClass = umlNode("class", "Nueva clase", "CLASS");
+        ((Map<String, Object>) umlClass.get("data")).put("attributes", List.of(Map.of(
+                "id", "attribute-1", "name", "nuevo_atributo", "type", "VARCHAR", "primaryKey", false)));
+        ((Map<String, Object>) umlClass.get("data")).put("methods", List.of(Map.of(
+                "id", "method-1", "name", "nuevoMetodo", "visibility", "public", "returnType", "void",
+                "parameters", List.of())));
+        Map<String, Object> umlInterface = umlNode("interface", "Nueva interfaz", "INTERFACE");
+        Map<String, Object> enumerationDraft = umlNode("enum", "Nueva enumeracion", "ENUMERATION");
+        ((Map<String, Object>) enumerationDraft.get("data")).put("literals", List.of());
+        request.setNodes(List.of(entity, umlClass, umlInterface, enumerationDraft));
+        request.setEdges(List.of(Map.of("id", "realization", "source", "class", "target", "interface",
+                "type", "relationship", "data", Map.of("sourceCardinality", "ONE_ONE",
+                "targetCardinality", "ONE_ONE", "relationKind", "REALIZATION"))));
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.empty());
+        when(diagramaRepository.saveAndFlush(any(Diagrama.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.guardar(10L, request);
+
+        ArgumentCaptor<Diagrama> captor = ArgumentCaptor.forClass(Diagrama.class);
+        verify(diagramaRepository).saveAndFlush(captor.capture());
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.of(captor.getValue()));
+        assertEquals(request.getNodes(), service.obtenerPorProyecto(10L).contenido().get("nodes"));
+        assertEquals(request.getEdges(), service.obtenerPorProyecto(10L).contenido().get("edges"));
+    }
+
+    @Test
+    void importaGuardaYRecuperaElDocumentoRealDeEa4() throws IOException {
+        String configured = System.getProperty("ea.samples.dir");
+        Assumptions.assumeTrue(configured != null && Files.isDirectory(Path.of(configured)),
+                "Set -Dea.samples.dir to execute checks against the historical EA exports.");
+        byte[] bytes = Files.readAllBytes(Path.of(configured, "exportacion de EA4.xmi"));
+        EnterpriseArchitectImportPreview preview = new EnterpriseArchitectXmiReader(
+                new EnterpriseArchitectXmiParser()).read(bytes);
+        GuardarDiagramaRequest request = new GuardarDiagramaRequest();
+        request.setVersion(preview.version());
+        request.setNodes(preview.nodes());
+        request.setEdges(preview.edges());
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.empty());
+        when(diagramaRepository.saveAndFlush(any(Diagrama.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.guardar(10L, request);
+
+        ArgumentCaptor<Diagrama> captor = ArgumentCaptor.forClass(Diagrama.class);
+        verify(diagramaRepository).saveAndFlush(captor.capture());
+        Diagrama saved = captor.getValue();
+        when(diagramaRepository.findByProyectoId(10L)).thenReturn(Optional.of(saved));
+        Map<String, Object> restored = service.obtenerPorProyecto(10L).contenido();
+        assertEquals(2, restored.get("version"));
+        assertEquals(preview.nodes(), restored.get("nodes"));
+        assertEquals(preview.edges(), restored.get("edges"));
+        Map<?, ?> class1 = preview.nodes().stream()
+                .map(node -> (Map<?, ?>) node.get("data"))
+                .filter(data -> "ASSOCIATION_CLASS".equals(data.get("kind")))
+                .findFirst().orElseThrow();
+        List<?> attributes = (List<?>) class1.get("attributes");
+        assertEquals(List.of("producto_id", "ventas_id"), attributes.stream()
+                .map(attribute -> ((Map<?, ?>) attribute).get("name")).toList());
+        assertTrue(attributes.stream().noneMatch(attribute -> Boolean.TRUE.equals(
+                ((Map<?, ?>) attribute).get("primaryKey"))));
+        assertTrue(class1.get("association") instanceof Map<?, ?>);
+    }
+
+    @Test
     void viewerPuedeLeerPeroNoGuardar() {
         Diagrama diagrama = new Diagrama();
         diagrama.setProyecto(proyecto);
@@ -224,6 +299,14 @@ class DiagramaServiceTest {
         node.put("type", "entity");
         node.put("position", Map.of("x", 0, "y", 0));
         node.put("data", data);
+        return node;
+    }
+
+    private static Map<String, Object> umlNode(String id, String name, String kind) {
+        Map<String, Object> node = node(id, name);
+        Map<String, Object> data = (Map<String, Object>) node.get("data");
+        data.put("kind", kind);
+        if (!"ENTITY".equals(kind)) data.put("methods", List.of());
         return node;
     }
 

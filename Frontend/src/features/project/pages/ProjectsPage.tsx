@@ -9,7 +9,7 @@ import {
 import { ProjectList } from "../components/ProjectList";
 import type { Proyecto } from "../types/project.types";
 import "../project.css";
-
+import axios from "axios";
 import {
   confirmarImportacionEnterpriseArchitect,
   obtenerVistaPreviaEnterpriseArchitect,
@@ -106,26 +106,48 @@ export function ProjectsPage() {
   }
 
   async function handleDelete(project: Proyecto) {
-    if (
-      !window.confirm(
-        `¿Eliminar el proyecto "${project.nombre}"? Esta acción no se puede deshacer.`,
-      )
-    )
-      return;
+    const confirmed = window.confirm(
+      `¿Eliminar el proyecto "${project.nombre}"? ` +
+        "Esta acción no se puede deshacer.",
+    );
+
+    if (!confirmed) return;
+
     setDeletingProjectId(project.id);
     setError("");
+
     try {
       await eliminarProyecto(project.id);
+
       setProjects((current) =>
         current.filter((item) => item.id !== project.id),
       );
     } catch (requestError: unknown) {
-      if (!redirectIfUnauthorized(requestError))
-        setError("No se pudo eliminar el proyecto.");
+      if (redirectIfUnauthorized(requestError)) return;
+
+      if (axios.isAxiosError(requestError)) {
+        const status = requestError.response?.status;
+
+        if (status === 403) {
+          setError("No tienes permisos para eliminar este proyecto.");
+        } else if (status === 404) {
+          setError("El proyecto ya no existe o no está disponible.");
+        } else if (status === 409) {
+          setError("El proyecto tiene un conflicto que impide eliminarlo.");
+        } else {
+          setError(
+            `No se pudo eliminar el proyecto. ` +
+              `Error del servidor: ${status ?? "sin respuesta"}.`,
+          );
+        }
+      } else {
+        setError("No se pudo completar la solicitud de eliminación.");
+      }
     } finally {
       setDeletingProjectId(null);
     }
   }
+
   async function handleImportFile(file: File | null) {
     setImportFile(null);
     setImportPreview(null);
@@ -159,12 +181,7 @@ export function ProjectsPage() {
   }
 
   async function handleConfirmImport() {
-    if (
-      workspaceId === null ||
-      !importFile ||
-      !importPreview ||
-      importing
-    ) {
+    if (workspaceId === null || !importFile || !importPreview || importing) {
       return;
     }
 
@@ -179,13 +196,38 @@ export function ProjectsPage() {
 
       navigate(`/proyectos/${created.id}/editor`);
     } catch (requestError: unknown) {
-      if (!redirectIfUnauthorized(requestError)) {
-        setImportError("No se pudo completar la importación.");
+      if (redirectIfUnauthorized(requestError)) return;
+
+      if (axios.isAxiosError(requestError)) {
+        const status = requestError.response?.status;
+        const payload = requestError.response?.data;
+
+        const body =
+          payload && typeof payload === "object"
+            ? (payload as Record<string, unknown>)
+            : null;
+
+        const message =
+          body && typeof body.mensaje === "string"
+            ? body.mensaje
+            : body && typeof body.detail === "string"
+              ? body.detail
+              : body && typeof body.message === "string"
+                ? body.message
+                : null;
+
+        setImportError(
+          message ??
+            `No se pudo completar la importación (HTTP ${status ?? "sin respuesta"}).`,
+        );
+      } else {
+        setImportError("Error inesperado al importar el archivo XMI.");
       }
     } finally {
       setImporting(false);
     }
   }
+
   return (
     <main className="projects-page">
       <header className="projects-header">

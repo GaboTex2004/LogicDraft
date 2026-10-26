@@ -9,16 +9,24 @@ public record NormalizedDiagram(
         List<NormalizedClass> classes,
         List<NormalizedAssociation> associations,
         List<NormalizedGeneralization> generalizations,
+        List<NormalizedRealization> realizations,
+        List<NormalizedDependency> dependencies,
         List<String> warnings
 ) {
     public record Position(double x, double y) {}
+    public record Size(double width, double height) {}
 
     public record NormalizedClass(
             String externalId,
             String name,
             boolean associationClass,
             List<NormalizedAttribute> attributes,
-            Position position
+            Position position,
+            Size size,
+            String kind,
+            boolean abstractType,
+            List<NormalizedOperation> operations,
+            List<String> literals
     ) {}
 
     public record NormalizedAttribute(
@@ -34,6 +42,22 @@ public record NormalizedDiagram(
             String upper
     ) {}
 
+    public record NormalizedOperation(
+            String externalId,
+            String name,
+            String returnType,
+            String visibility,
+            boolean staticOperation,
+            boolean abstractOperation,
+            List<NormalizedParameter> parameters
+    ) {}
+
+    public record NormalizedParameter(
+            String externalId,
+            String name,
+            String type
+    ) {}
+
     public record NormalizedAssociation(
             String externalId,
             String sourceExternalId,
@@ -41,12 +65,27 @@ public record NormalizedDiagram(
             DiagramCardinality sourceMultiplicity,
             DiagramCardinality targetMultiplicity,
             String associationClassExternalId,
-            String name
+            String name,
+            String relationKind,
+            String aggregationEnd
     ) {}
 
     public record NormalizedGeneralization(
             String externalId,
             String specificExternalId,
             String generalExternalId
+    ) {}
+
+    public record NormalizedRealization(
+            String externalId,
+            String implementingExternalId,
+            String interfaceExternalId
+    ) {}
+
+    public record NormalizedDependency(
+            String externalId,
+            String clientExternalId,
+            String supplierExternalId,
+            String name
     ) {}
 }

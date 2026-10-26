@@ -62,12 +62,42 @@ public final class DartModelRenderer {
     }
 
     private static String toJson(Field field) {
-        if (field.collection() && (field.type() == CanonicalType.DATE || field.type() == CanonicalType.DATETIME)) {
-            return field.nullable()
-                    ? field.name() + "?.map((item) => item.toIso8601String()).toList()"
-                    : field.name() + ".map((item) => item.toIso8601String()).toList()";
+        String name = field.name();
+        CanonicalType type = field.type();
+
+        if (type != CanonicalType.DATE
+                && type != CanonicalType.DATETIME) {
+            return name;
         }
-        if (field.type() != CanonicalType.DATE && field.type() != CanonicalType.DATETIME) return field.name();
-        return field.nullable() ? field.name() + "?.toIso8601String()" : field.name() + ".toIso8601String()";
+
+        // Fechas dentro de colecciones.
+        if (field.collection()) {
+            String conversion = type == CanonicalType.DATE
+                    ? "item.toIso8601String().substring(0, 10)"
+                    : "item.toIso8601String()";
+
+            String expression = name
+                    + ".map((item) => "
+                    + conversion
+                    + ").toList()";
+
+            return field.nullable()
+                    ? name + " == null ? null : " + expression
+                    : expression;
+        }
+
+        // DATE: enviar únicamente YYYY-MM-DD.
+        if (type == CanonicalType.DATE) {
+            return field.nullable()
+                    ? name + " == null ? null : "
+                        + name + "!.toIso8601String().substring(0, 10)"
+                    : name + ".toIso8601String().substring(0, 10)";
+        }
+
+        // DATETIME: conservar fecha y hora.
+        return field.nullable()
+                ? name + "?.toIso8601String()"
+                : name + ".toIso8601String()";
     }
+
 }

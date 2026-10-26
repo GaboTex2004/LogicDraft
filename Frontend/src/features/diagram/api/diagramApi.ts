@@ -3,7 +3,7 @@ import type { DiagramaResponse, DiagramDocument } from "../types/diagram.types";
 
 export interface EnterpriseArchitectImportPreview {
   projectName: string;
-  version: 1;
+  version: 1 | 2;
   nodes: DiagramDocument["nodes"];
   edges: DiagramDocument["edges"];
   warnings: string[];

@@ -10,6 +10,32 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ApplicationSchemaMapperTest {
     @Test
+    void v2GeneratesOnlyPersistentEntitiesAndTheirAssociations() {
+        Map<String, Object> persistent = entityWithId("customer", "Cliente");
+        ((Map<String, Object>) persistent.get("data")).put("kind", "ENTITY");
+        Map<String, Object> umlClass = node("report", "Reporte", field("title", "titulo", "VARCHAR", false, true));
+        ((Map<String, Object>) umlClass.get("data")).put("kind", "CLASS");
+        Map<String, Object> ignored = edge("customer-report", "customer", "report", "ONE_ONE", "ONE_ONE");
+        ((Map<String, Object>) ignored.get("data")).put("relationKind", "ASSOCIATION");
+        Map<String, Object> v2 = new LinkedHashMap<>();
+        v2.put("version", 2); v2.put("nodes", List.of(persistent, umlClass)); v2.put("edges", List.of(ignored));
+
+        ApplicationSchema schema = ApplicationSchemaMapper.fromDocument("Mixto", v2);
+        assertEquals(List.of("Cliente"), schema.entities().stream().map(ApplicationEntity::name).toList());
+        assertTrue(schema.relationships().isEmpty());
+    }
+
+    @Test
+    void v2WithoutPersistentEntitiesReturnsActionableError() {
+        Map<String, Object> umlClass = node("report", "Reporte", field("title", "titulo", "VARCHAR", false, true));
+        ((Map<String, Object>) umlClass.get("data")).put("kind", "CLASS");
+        Map<String, Object> v2 = Map.of("version", 2, "nodes", List.of(umlClass), "edges", List.of());
+        ApplicationSchemaException error = assertThrows(ApplicationSchemaException.class,
+                () -> ApplicationSchemaMapper.fromDocument("Solo UML", v2));
+        assertTrue(error.getMessage().contains("entidades persistentes generables"));
+    }
+
+    @Test
     void mapsSimpleEntityAndExcludesReactFlowVisualState() {
         Map<String, Object> serviceNode = node("service", "Servicio",
                 field("service-id", "ID", "INTEGER", true, false),

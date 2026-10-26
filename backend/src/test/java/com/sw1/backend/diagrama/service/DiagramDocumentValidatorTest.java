@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DiagramDocumentValidatorTest {
     @Test
@@ -45,6 +46,88 @@ class DiagramDocumentValidatorTest {
                 "id", "id", "name", "id", "type", "EXECUTABLE", "primaryKey", true)));
         Map<String, Object> document = document(List.of(node), List.of());
         assertThrows(DiagramValidationException.class, () -> DiagramDocumentValidator.validate(document));
+    }
+
+    @Test
+    void acceptsUmlV2AndRejectsInvalidRealizationAndDuplicateMethodIds() {
+        Map<String, Object> implementation = node("service", "EmailService");
+        map(implementation.get("data")).put("kind", "CLASS");
+        map(implementation.get("data")).put("methods", List.of(method("m1", "enviar")));
+        Map<String, Object> contract = node("contract", "Notificable");
+        map(contract.get("data")).put("kind", "INTERFACE");
+        map(contract.get("data")).put("methods", List.of(method("m2", "enviar")));
+        Map<String, Object> realization = edge("r", "service", "contract", Map.of(
+                "sourceCardinality", "ONE_ONE", "targetCardinality", "ONE_ONE", "relationKind", "REALIZATION"));
+        assertDoesNotThrow(() -> DiagramDocumentValidator.validate(
+                Map.of("version", 2, "nodes", List.of(implementation, contract), "edges", List.of(realization))));
+
+        map(contract.get("data")).put("kind", "CLASS");
+        assertThrows(DiagramValidationException.class, () -> DiagramDocumentValidator.validate(
+                Map.of("version", 2, "nodes", List.of(implementation, contract), "edges", List.of(realization))));
+        map(implementation.get("data")).put("methods", List.of(method("same", "a"), method("same", "b")));
+        assertThrows(DiagramValidationException.class, () -> DiagramDocumentValidator.validate(
+                Map.of("version", 2, "nodes", List.of(implementation), "edges", List.of())));
+    }
+
+    @Test
+    void rejectsEnumerationAttributesAndInvalidRelationshipDirections() {
+        Map<String, Object> enumeration = node("state", "Estado");
+        map(enumeration.get("data")).put("kind", "ENUMERATION");
+        map(enumeration.get("data")).put("literals", List.of("ACTIVO"));
+        map(enumeration.get("data")).put("attributes", List.of(Map.of(
+                "id", "wrong", "name", "ACTIVO", "type", "VARCHAR", "primaryKey", false)));
+        DiagramValidationException error = assertThrows(DiagramValidationException.class,
+                () -> DiagramDocumentValidator.validate(Map.of("version", 2, "nodes", List.of(enumeration), "edges", List.of())));
+        assertTrue(error.getMessage().contains("literales, no atributos"));
+
+        Map<String, Object> contract = node("contract", "Contrato");
+        map(contract.get("data")).put("kind", "INTERFACE");
+        Map<String, Object> implementation = node("impl", "Implementacion");
+        map(implementation.get("data")).put("kind", "CLASS");
+        Map<String, Object> reversed = edge("r", "contract", "impl", Map.of(
+                "sourceCardinality", "ONE_ONE", "targetCardinality", "ONE_ONE", "relationKind", "REALIZATION"));
+        error = assertThrows(DiagramValidationException.class,
+                () -> DiagramDocumentValidator.validate(Map.of("version", 2,
+                        "nodes", List.of(contract, implementation), "edges", List.of(reversed))));
+        assertTrue(error.getMessage().contains("partir de una clase"));
+    }
+
+    @Test
+    void rejectsAssociationAttributeThatDuplicatesAStructuralForeignKey() {
+        Map<String, Object> product = node("product", "Producto");
+        Map<String, Object> sale = node("sale", "Ventas");
+        Map<String, Object> associationClass = node("line", "Class1");
+        Map<String, Object> data = map(associationClass.get("data"));
+        data.put("kind", "ASSOCIATION_CLASS");
+        data.put("attributes", List.of(
+                Map.of("id", "id", "name", "id", "type", "INTEGER", "primaryKey", true,
+                        "nullable", false),
+                Map.of("id", "product-fk", "name", "producto_id", "type", "INTEGER",
+                        "primaryKey", false, "nullable", false)));
+        data.put("association", Map.of(
+                "kind", "MANY_TO_MANY_ASSOCIATION", "tableName", "class1", "uniquePair", true,
+                "endpoints", List.of(
+                        Map.of("role", "SOURCE", "entityId", "product", "relationshipId", "product-line",
+                                "foreignKeyName", "producto_id"),
+                        Map.of("role", "TARGET", "entityId", "sale", "relationshipId", "sale-line",
+                                "foreignKeyName", "ventas_id"))));
+        Map<String, Object> document = Map.of("version", 2,
+                "nodes", List.of(product, sale, associationClass),
+                "edges", List.of(
+                        edge("product-line", "product", "line", Map.of("sourceCardinality", "ONE_ONE",
+                                "targetCardinality", "ZERO_MANY", "relationKind", "ASSOCIATION")),
+                        edge("sale-line", "sale", "line", Map.of("sourceCardinality", "ONE_ONE",
+                                "targetCardinality", "ZERO_MANY", "relationKind", "ASSOCIATION"))));
+
+        DiagramValidationException error = assertThrows(DiagramValidationException.class,
+                () -> DiagramDocumentValidator.validate(document));
+
+        assertTrue(error.getMessage().contains("producto_id"));
+        assertTrue(error.getMessage().contains("clave foranea estructural"));
+    }
+
+    private static Map<String, Object> method(String id, String name) {
+        return Map.of("id", id, "name", name, "visibility", "public", "returnType", "void", "parameters", List.of());
     }
 
     private static Map<String, Object> document(List<Map<String, Object>> nodes, List<Map<String, Object>> edges) {

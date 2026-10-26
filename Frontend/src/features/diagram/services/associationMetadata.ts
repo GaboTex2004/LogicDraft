@@ -1,4 +1,11 @@
-import type { AssociationEndpoint, AssociativeEntityMetadata } from '../types/diagram.types.ts'
+import type {
+  AssociationEndpoint,
+  AssociativeEntityMetadata,
+  DiagramCardinality,
+  ExternalMetadata,
+} from '../types/diagram.types.ts'
+
+const cardinalities: DiagramCardinality[] = ['ZERO_ONE', 'ONE_ONE', 'ZERO_MANY', 'ONE_MANY']
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -11,6 +18,17 @@ function identifier(value: unknown): value is string {
 
 function physicalName(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.length <= maxLength && /^[a-z][a-z0-9_]*$/.test(value)
+}
+
+function cardinality(value: unknown): value is DiagramCardinality {
+  return typeof value === 'string' && cardinalities.includes(value as DiagramCardinality)
+}
+
+function externalMetadata(value: unknown): ExternalMetadata | null {
+  const item = record(value)
+  return item?.source === 'enterprise-architect' && identifier(item.externalId)
+    ? { source: 'enterprise-architect', externalId: item.externalId }
+    : null
 }
 
 function endpoint(value: unknown): AssociationEndpoint | null {
@@ -34,7 +52,19 @@ export function parseAssociationMetadata(value: unknown): AssociativeEntityMetad
   const first = endpoint(item.endpoints[0])
   const second = endpoint(item.endpoints[1])
   if (!first || !second || first.role === second.role) return null
-  return { kind: item.kind, tableName: item.tableName, uniquePair: true, endpoints: [first, second] }
+  if (item.sourceMultiplicity !== undefined && !cardinality(item.sourceMultiplicity)) return null
+  if (item.targetMultiplicity !== undefined && !cardinality(item.targetMultiplicity)) return null
+  const metadata = item.externalMetadata === undefined ? undefined : externalMetadata(item.externalMetadata)
+  if (item.externalMetadata !== undefined && !metadata) return null
+  return {
+    kind: item.kind,
+    tableName: item.tableName,
+    uniquePair: true,
+    endpoints: [first, second],
+    ...(item.sourceMultiplicity !== undefined ? { sourceMultiplicity: item.sourceMultiplicity } : {}),
+    ...(item.targetMultiplicity !== undefined ? { targetMultiplicity: item.targetMultiplicity } : {}),
+    ...(metadata ? { externalMetadata: metadata } : {}),
+  }
 }
 
 export function cloneAssociationMetadata(value: AssociativeEntityMetadata): AssociativeEntityMetadata {
@@ -43,5 +73,8 @@ export function cloneAssociationMetadata(value: AssociativeEntityMetadata): Asso
     tableName: value.tableName,
     uniquePair: true,
     endpoints: value.endpoints.map(item => ({ ...item })) as [AssociationEndpoint, AssociationEndpoint],
+    ...(value.sourceMultiplicity ? { sourceMultiplicity: value.sourceMultiplicity } : {}),
+    ...(value.targetMultiplicity ? { targetMultiplicity: value.targetMultiplicity } : {}),
+    ...(value.externalMetadata ? { externalMetadata: { ...value.externalMetadata } } : {}),
   }
 }

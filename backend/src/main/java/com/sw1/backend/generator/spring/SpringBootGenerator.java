@@ -2,6 +2,7 @@ package com.sw1.backend.generator.spring;
 
 import com.sw1.backend.generator.schema.ApplicationEntity;
 import com.sw1.backend.generator.schema.ApplicationSchema;
+import com.sw1.backend.generator.export.UmlStructuralGenerator;
 import com.sw1.backend.generator.spring.render.*;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,6 +43,7 @@ public class SpringBootGenerator {
             files.put(javaRoot + "service/" + name + "Service.java", ServiceRenderer.render(basePackage, entity, owned));
             files.put(javaRoot + "controller/" + name + "Controller.java", ControllerRenderer.render(basePackage, entity));
         }
+        files.putAll(UmlStructuralGenerator.javaFiles(basePackage, schema.uml()));
         return new GeneratedProject(artifact, artifact + ".zip", files);
     }
 }
