@@ -167,9 +167,17 @@ export function applyDiagramOperations(
     usedIds.add(id)
     return id
   }
+  const isAssociationEdge = (edge: DiagramEdge) =>
+    !edge.data?.relationKind || edge.data.relationKind === 'ASSOCIATION'
+  const isMultiplicativeEdge = (edge: DiagramEdge) =>
+    !edge.data?.relationKind || ['ASSOCIATION', 'AGGREGATION', 'COMPOSITION'].includes(edge.data.relationKind)
   const find = (entityName: string) => {
     const matches = nodes.filter(n => key(n.data.name) === key(entityName))
     if (matches.length !== 1) return fail(`La entidad "${entityName}" no existe o su nombre es ambiguo`)
+    const kind = matches[0].data.kind
+    if (kind === 'INTERFACE' || kind === 'ENUMERATION') {
+      return fail(`El elemento UML "${matches[0].data.name}" es de tipo ${kind} y no admite operaciones IA de entidad`)
+    }
     return matches[0]
   }
   const findAttribute = (entityName: string, attributeName: string) => {
@@ -184,6 +192,7 @@ export function applyDiagramOperations(
     const structural = structuralRelationshipIds(nodes)
     const expectedName = reference.name == null ? undefined : key(reference.name)
     const matches = edges.filter(edge => !structural.has(edge.id)
+      && isMultiplicativeEdge(edge)
       && ((edge.source === source.id && edge.target === target.id) || (edge.source === target.id && edge.target === source.id))
       && (expectedName === undefined || key(typeof edge.data?.name === 'string' ? edge.data.name : '') === expectedName))
     if (matches.length === 0) fail(`No encontré la relación ${source.data.name}-${target.data.name}.`)
@@ -286,7 +295,7 @@ export function applyDiagramOperations(
         ...(op.relationship.name == null ? {} : { name: op.relationship.name }),
         ...(op.relationship.joinTableName == null ? {} : { joinTableName: op.relationship.joinTableName }),
       } }
-      if (edges.some(e => equivalentRelationship(e, candidate))) continue
+      if (edges.some(e => isMultiplicativeEdge(e) && equivalentRelationship(e, candidate))) continue
       const edge = normalizeRelationshipEdge({ ...candidate, id: uniqueId('edge') })
       edges.push(edge)
     } else if (op.type === 'DELETE_RELATIONSHIP') {
@@ -306,6 +315,7 @@ export function applyDiagramOperations(
       if (source.id === target.id) fail('Las autorrelaciones nuevas no están habilitadas en este MVP')
       const structural = structuralRelationshipIds(nodes)
       const candidates = edges.filter(edge => !structural.has(edge.id)
+        && isAssociationEdge(edge)
         && ((edge.source === source.id && edge.target === target.id) || (edge.source === target.id && edge.target === source.id)))
         .filter(edge => {
           const cards = normalizeRelationshipEdge(edge).data!

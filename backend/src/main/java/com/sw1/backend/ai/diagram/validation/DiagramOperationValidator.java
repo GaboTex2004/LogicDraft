@@ -129,7 +129,11 @@ public final class DiagramOperationValidator {
             }
             return new DiagramInterpretResponse(List.copyOf(operations));
         } catch (IllegalArgumentException exception) {
-            throw new AiServiceException(HttpStatus.BAD_GATEWAY, "El servicio de IA devolvio operaciones invalidas");
+            throw new AiServiceException(
+                    HttpStatus.BAD_GATEWAY,
+                    AiServiceException.ErrorCategory.INVALID_MODEL_RESPONSE,
+                    "El servicio de IA devolvio operaciones invalidas",
+                    "Operacion propuesta no cumple el esquema DiagramOperation");
         }
     }
 

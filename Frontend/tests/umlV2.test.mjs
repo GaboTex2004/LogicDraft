@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { validateDiagramDocument } from "../src/features/diagram/services/diagramDocumentValidation.ts";
+import { applyDiagramOperations } from "../src/features/diagram/services/applyDiagramOperations.ts";
 
 const node = (id, name, kind, methods = []) => ({
   id,
@@ -207,4 +208,60 @@ test("the diagram editor rejects incompatible UML edges before publishing or aut
     /uniqueDefaultName\(\s*baseName,\s*nodesRef\.current\.map\(\(node\) => node\.data\.name\)/,
   );
   assert.match(source, /validateDiagramDocument\(document\)/);
+});
+
+test("UML v2 AI operations preserve CLASS kind and reject mutations on INTERFACE and ENUMERATION", () => {
+  const producto = node("entity-prod", "Producto", "CLASS", [method("m-1", "calcular")]);
+  producto.data.attributes = [
+    { id: "attr-id", name: "ID", type: "INTEGER", primaryKey: true, nullable: false },
+  ];
+  const contrato = node("entity-iface", "Exportable", "INTERFACE", [method("m-2", "exportar")]);
+  const estado = node("entity-enum", "EstadoVenta", "ENUMERATION");
+  estado.data.literals = ["PENDIENTE", "PAGADA"];
+
+  const applied = applyDiagramOperations(
+    [producto, contrato, estado],
+    [],
+    [
+      {
+        type: "ADD_ATTRIBUTE",
+        entityName: "Producto",
+        attribute: { name: "precio", dataType: "Double", primaryKey: false, nullable: false },
+      },
+    ],
+    () => "new-id",
+  );
+  assert.equal(applied.nodes[0].data.kind, "CLASS");
+  assert.equal(applied.nodes[0].data.methods.length, 1);
+  assert.equal(applied.nodes[0].data.attributes.length, 2);
+
+  assert.throws(
+    () =>
+      applyDiagramOperations(
+        [producto, contrato, estado],
+        [],
+        [
+          {
+            type: "ADD_ATTRIBUTE",
+            entityName: "Exportable",
+            attribute: { name: "codigo", dataType: "String", primaryKey: false, nullable: true },
+          },
+        ],
+      ),
+    /INTERFACE/,
+  );
+  assert.throws(
+    () =>
+      applyDiagramOperations(
+        [producto, contrato, estado],
+        [],
+        [
+          {
+            type: "DELETE_ENTITY",
+            entityName: "EstadoVenta",
+          },
+        ],
+      ),
+    /ENUMERATION/,
+  );
 });

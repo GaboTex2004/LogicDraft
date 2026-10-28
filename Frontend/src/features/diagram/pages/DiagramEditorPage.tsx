@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import axios from "axios";
 import {
   Background,
@@ -26,17 +33,52 @@ import {
   askProjectAgent,
   authorizeProjectAgentEdit,
 } from "../../agent/api/agentApi";
+import {
+  listarConversacionesProyecto,
+  listarMensajesConversacion,
+} from "../../agent/api/agentConversationsApi";
 import { AgentPanel } from "../../agent/components/AgentPanel";
+import { AgentConversationStore } from "../../agent/services/agentConversationStore";
 import { AgentSession } from "../../agent/services/agentSession";
 import {
   prepareAgentResponse,
   proposalAcceptanceError,
 } from "../../agent/services/agentProposal";
 import type { AgentConversationMessage } from "../../agent/types/agent.types";
+import {
+  adquirirElementLocks,
+  extractElementLockedRejection,
+  liberarElementLocks,
+  listarElementLocks,
+  renovarElementLocks,
+} from "../../collaboration/api/elementLocksApi";
 import { ProjectPresence } from "../../collaboration/components/ProjectPresence";
+import { RemoteCursorsOverlay } from "../../collaboration/components/RemoteCursorsOverlay";
+import { ElementLocksProvider } from "../../collaboration/context/ElementLocksContext";
 import { useProjectCollaboration } from "../../collaboration/hooks/useProjectCollaboration";
-import type { CollaborationEvent } from "../../collaboration/types/collaboration.types";
+import {
+  canonicalJson,
+  diffLocalElementsAgainstBase,
+  projectRemotePreviewOntoLocal,
+  rebaseLocalOntoServer,
+} from "../../collaboration/services/diagramThreeWayMerge";
 import { DiagramSynchronizer } from "../../collaboration/services/diagramSynchronization";
+import {
+  formatLockedByMessage,
+  LOCK_HEARTBEAT_INTERVAL_MS,
+  LOCK_IDLE_RELEASE_MS,
+  requiredLockIdsForAssociationConversion,
+  requiredLockIdsForConnection,
+  requiredLockIdsForEdgeEdit,
+  requiredLockIdsForNodeDelete,
+  requiredLockIdsForNodeEdit,
+} from "../../collaboration/services/elementLocks";
+import { applyLiveDiagramEvent } from "../../collaboration/services/liveDiagramEvents";
+import { CursorPublisherThrottle } from "../../collaboration/services/remoteCursors";
+import {
+  isConversationCollaborationEvent,
+  type CollaborationEvent,
+} from "../../collaboration/types/collaboration.types";
 import { triggerBlobDownload } from "../services/generatorDownload";
 import { obtenerProyecto } from "../../project/api/projectApi";
 import type { Proyecto } from "../../project/types/project.types";
@@ -266,6 +308,12 @@ function DiagramEditorCanvas({
   const [agentSession] = useState(
     () => new AgentSession(project.id, initialDiagramId),
   );
+  const [conversationStore] = useState(
+    () => new AgentConversationStore(project.id),
+  );
+  const conversationStoreRef = useRef(conversationStore);
+  const clientIdRef = useRef<string>("");
+  const syncConversationsRef = useRef<(() => Promise<void>) | null>(null);
   const aiRequest = useRef<AbortController | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const nextEntityNumber = useRef(1);
@@ -278,47 +326,93 @@ function DiagramEditorCanvas({
   const conflictRef = useRef(false);
   const saveInFlightRef = useRef<Promise<boolean> | null>(null);
   const rejectedDocumentRef = useRef<string | null>(null);
-  const { fitView } = useReactFlow();
-  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
-  const selectedEdge =
-    !selectedNode && selectedEdgeIds.length === 1
-      ? (edges.find((edge) => edge.id === selectedEdgeIds[0]) ?? null)
-      : null;
-  const selectedJoinTable = selectedEdge
-    ? deriveJoinTable(
-        selectedEdge,
-        nodes.find((node) => node.id === selectedEdge.source)?.data,
-        nodes.find((node) => node.id === selectedEdge.target)?.data,
-      )
-    : null;
-  const protectedEdgeIds = structuralRelationshipIds(nodes);
-  const protectedNodeIds = associationProtectedNodeIds(nodes);
-  const protectedSelection =
-    nodes.some((node) => node.selected && protectedNodeIds.has(node.id)) ||
-    edges.some((edge) => edge.selected && protectedEdgeIds.has(edge.id));
+  const remotePreviewAtRef = useRef<number | null>(null);
+  const cursorThrottleRef = useRef<CursorPublisherThrottle | null>(null);
+  const lastDragPublishRef = useRef<Record<string, number>>({});
+  const nodeUpdateThrottleRef = useRef<{
+    lastSentAt: number;
+    timer: number | null;
+    nodeId: string | null;
+  }>({ lastSentAt: 0, timer: null, nodeId: null });
+  const [confirmedDocument, setConfirmedDocument] = useState<DiagramDocument>(
+    () =>
+      serializeDocument(
+        initialDocument.nodes,
+        initialDocument.edges.map(normalizeRelationshipEdge),
+      ),
+  );
+  const confirmedDocumentRef = useRef<DiagramDocument>(confirmedDocument);
+  const [remotePreview, setRemotePreview] = useState<{
+    nodes: EntityFlowNode[];
+    edges: DiagramEdge[];
+    authorName?: string;
+  } | null>(null);
+  const remotePreviewRef = useRef<{
+    nodes: EntityFlowNode[];
+    edges: DiagramEdge[];
+    authorName?: string;
+  } | null>(null);
+  const [previewMeasured, setPreviewMeasured] = useState<
+    Record<string, { width: number; height: number }>
+  >({});
+  const [lockNotice, setLockNotice] = useState("");
+  const lockNoticeTimerRef = useRef<number | null>(null);
+  const pendingLockAcquiresRef = useRef<Map<string, Promise<boolean>>>(
+    new Map(),
+  );
+  const lastLockActivityAtRef = useRef<number>(0);
+  const syncLocksRef = useRef<(() => Promise<void>) | null>(null);
+  const dragInitialPositionsRef = useRef<
+    Record<string, { x: number; y: number }>
+  >({});
+  const dragDeniedRef = useRef<Set<string>>(new Set());
+  const lockedDragProbeRef = useRef<{
+    nodeId: string;
+    ownerLabel: string;
+    startX: number;
+    startY: number;
+    notified: boolean;
+  } | null>(null);
+  const { fitView, screenToFlowPosition } = useReactFlow();
 
   useEffect(() => {
-    const closePanels = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setSidebarOpen(false);
-      setPropertiesOpen(false);
-    };
-    window.addEventListener("keydown", closePanels);
-    return () => window.removeEventListener("keydown", closePanels);
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [edges, nodes]);
+
+  const updateConfirmedDocument = useCallback((nextDocument: DiagramDocument) => {
+    confirmedDocumentRef.current = nextDocument;
+    setConfirmedDocument(nextDocument);
   }, []);
-  const selectedAssociationColumns =
-    selectedNode?.data.association?.endpoints.map((endpoint) => {
-      const referenced = nodes.find((node) => node.id === endpoint.entityId);
-      const primaryKey = referenced?.data.attributes.find(
-        (attribute) => attribute.primaryKey,
-      );
-      return {
-        name: endpoint.foreignKeyName,
-        type: primaryKey ? postgresType(primaryKey.type) : "PK no definida",
-      };
-    }) ?? [];
-  nodesRef.current = nodes;
-  edgesRef.current = edges;
+
+  const clearRemotePreview = useCallback(() => {
+    remotePreviewAtRef.current = null;
+    remotePreviewRef.current = null;
+    setRemotePreview(null);
+    setPreviewMeasured((current) =>
+      Object.keys(current).length > 0 ? {} : current,
+    );
+  }, []);
+
+  const showLockNotice = useCallback((message: string) => {
+    setLockNotice(message);
+    if (lockNoticeTimerRef.current !== null) {
+      window.clearTimeout(lockNoticeTimerRef.current);
+    }
+    lockNoticeTimerRef.current = window.setTimeout(() => {
+      lockNoticeTimerRef.current = null;
+      setLockNotice("");
+    }, 3_600);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (lockNoticeTimerRef.current !== null) {
+        window.clearTimeout(lockNoticeTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const markDirty = useCallback(() => {
     revisionRef.current += 1;
@@ -328,19 +422,565 @@ function DiagramEditorCanvas({
 
   const synchronize = useCallback(() => {
     void synchronizerRef.current?.refresh();
+    void syncLocksRef.current?.();
+    void syncConversationsRef.current?.();
   }, []);
 
-  const applyRemoteEvent = useCallback((event: CollaborationEvent) => {
-    if (event.type === "DIAGRAM_COMMITTED") {
-      const payload = record(event.payload);
-      void synchronizerRef.current?.refresh(typeof payload?.revision === "number"
-        ? { name: event.name, revision: payload.revision } : undefined);
-    }
-  }, []);
-
-  const { status, collaborators, clientId } = useProjectCollaboration(
-    project.id, applyRemoteEvent, synchronize,
+  const applyRemoteEvent = useCallback(
+    (event: CollaborationEvent) => {
+      if (isConversationCollaborationEvent(event.type)) {
+        conversationStoreRef.current.applyCollaborationEvent(
+          event,
+          clientIdRef.current || undefined,
+        );
+        return;
+      }
+      if (event.type === "DIAGRAM_COMMITTED") {
+        const payload = record(event.payload);
+        void synchronizerRef.current?.refresh(
+          typeof payload?.revision === "number"
+            ? { name: event.name, revision: payload.revision }
+            : undefined,
+        );
+        return;
+      }
+      if (event.type === "USER_LEFT") {
+        if (remotePreviewAtRef.current !== null) {
+          remotePreviewAtRef.current = 1;
+          window.setTimeout(() => {
+            void synchronizerRef.current?.refresh();
+          }, 400);
+        }
+        return;
+      }
+      if (conflictRef.current) return;
+      const basePreview = remotePreviewRef.current ?? {
+        nodes: confirmedDocumentRef.current.nodes,
+        edges: confirmedDocumentRef.current.edges,
+      };
+      const result = applyLiveDiagramEvent(event, {
+        nodes: basePreview.nodes,
+        edges: basePreview.edges,
+        dirty: false,
+        conflict: false,
+      });
+      if (!result.applied) return;
+      remotePreviewAtRef.current = Date.now();
+      const nextPreview = {
+        nodes: result.nodes,
+        edges: result.edges,
+        authorName: event.name,
+      };
+      remotePreviewRef.current = nextPreview;
+      setRemotePreview(nextPreview);
+    },
+    [],
   );
+
+  const {
+    status,
+    collaborators,
+    publishLiveEvent,
+    cursorStore,
+    lockStore,
+    clientId,
+  } = useProjectCollaboration(project.id, applyRemoteEvent, synchronize);
+
+  const syncConversations = useCallback(async () => {
+    try {
+      const snap = conversationStore.getSnapshot();
+      const list = await listarConversacionesProyecto(
+        project.id,
+        snap.includeArchived,
+      );
+      conversationStore.setConversationsList(list);
+      const activeConvId = conversationStore.getSnapshot().activeConversationId;
+      if (activeConvId !== null) {
+        const page = await listarMensajesConversacion(
+          project.id,
+          activeConvId,
+          { limit: 40 },
+        );
+        conversationStore.replaceInitialMessagesPage(page);
+      }
+    } catch {
+      // Transient network errors recover on next STOMP reconnect or manual interaction.
+    }
+  }, [conversationStore, project.id]);
+
+  useEffect(() => {
+    clientIdRef.current = clientId;
+    conversationStoreRef.current = conversationStore;
+    syncConversationsRef.current = syncConversations;
+  }, [clientId, conversationStore, syncConversations]);
+
+  const activeLocksMap = useSyncExternalStore(
+    lockStore.subscribe,
+    lockStore.getMapSnapshot,
+    lockStore.getMapSnapshot,
+  );
+
+  const syncLocks = useCallback(async () => {
+    try {
+      const locks = await listarElementLocks(project.id);
+      lockStore.replaceAll(locks, clientId);
+    } catch {
+      // Transient failures recover on next STOMP frame or periodic sync.
+    }
+  }, [clientId, lockStore, project.id]);
+
+  useEffect(() => {
+    syncLocksRef.current = syncLocks;
+    void syncLocks();
+  }, [syncLocks]);
+
+  const ensureLocks = useCallback(
+    async (elementIds: readonly string[]): Promise<boolean> => {
+      const ids = [...new Set(elementIds.filter(Boolean))].sort();
+      if (ids.length === 0) return true;
+      if (saveStatus === "forbidden") return false;
+      const foreign = lockStore.findForeignLock(ids);
+      if (foreign) {
+        showLockNotice(formatLockedByMessage(foreign.label));
+        return false;
+      }
+      if (lockStore.areAllOwnedBySelf(ids)) {
+        lastLockActivityAtRef.current = Date.now();
+        return true;
+      }
+      const key = ids.join("|");
+      const existing = pendingLockAcquiresRef.current.get(key);
+      if (existing) return existing;
+      const request = adquirirElementLocks(project.id, clientId, ids)
+        .then((result) => {
+          if (result.granted) {
+            lastLockActivityAtRef.current = Date.now();
+            lockStore.upsertLocks(result.locks, clientId);
+            return true;
+          }
+          showLockNotice(result.message);
+          void syncLocks();
+          return false;
+        })
+        .catch(() => {
+          void syncLocks();
+          return false;
+        })
+        .finally(() => {
+          pendingLockAcquiresRef.current.delete(key);
+        });
+      pendingLockAcquiresRef.current.set(key, request);
+      return request;
+    },
+    [clientId, lockStore, project.id, saveStatus, showLockNotice, syncLocks],
+  );
+
+  const releaseOwnedLocks = useCallback(
+    (elementIds?: readonly string[]) => {
+      const targetIds = elementIds
+        ? elementIds.filter((id) => lockStore.getLock(id)?.ownedBySelf)
+        : lockStore.ownedElementIds();
+      if (targetIds.length === 0) return;
+      lockStore.removeElements(targetIds, clientId);
+      void liberarElementLocks(project.id, clientId, targetIds).catch(() => {
+        void syncLocks();
+      });
+    },
+    [clientId, lockStore, project.id, syncLocks],
+  );
+
+  const releaseUnusedOwnedLocks = useCallback(
+    (keepExtraIds?: Iterable<string>) => {
+      const owned = lockStore.ownedElementIds();
+      if (owned.length === 0) return;
+      const dirtyDiff = diffLocalElementsAgainstBase(
+        confirmedDocumentRef.current,
+        nodesRef.current,
+        edgesRef.current,
+      );
+      const keep = new Set<string>([
+        ...dirtyDiff.lockProtectedIds,
+        ...dirtyDiff.allTouchedIds,
+      ]);
+      for (const node of nodesRef.current) {
+        if (node.dragging) {
+          for (const id of requiredLockIdsForNodeEdit(
+            node.id,
+            nodesRef.current,
+          )) {
+            keep.add(id);
+          }
+        }
+      }
+      if (keepExtraIds) {
+        for (const id of keepExtraIds) keep.add(id);
+      }
+      const toRelease = owned.filter((id) => !keep.has(id));
+      if (toRelease.length > 0) {
+        releaseOwnedLocks(toRelease);
+      }
+    },
+    [lockStore, releaseOwnedLocks],
+  );
+
+  const selectedEdgeIdSet = useMemo(
+    () => new Set(selectedEdgeIds),
+    [selectedEdgeIds],
+  );
+  const projectedGraph = useMemo(
+    () =>
+      remotePreview
+        ? projectRemotePreviewOntoLocal(
+            confirmedDocument,
+            remotePreview,
+            nodes,
+            edges,
+            previewMeasured,
+            { nodeId: selectedNodeId, edgeIds: selectedEdgeIdSet },
+          )
+        : { nodes, edges },
+    [
+      confirmedDocument,
+      edges,
+      nodes,
+      previewMeasured,
+      remotePreview,
+      selectedEdgeIdSet,
+      selectedNodeId,
+    ],
+  );
+  const localNodeIdSet = useMemo(
+    () => new Set(nodes.map((node) => node.id)),
+    [nodes],
+  );
+  const localEdgeIdSet = useMemo(
+    () => new Set(edges.map((edge) => edge.id)),
+    [edges],
+  );
+  const renderedNodes = useMemo(
+    () =>
+      projectedGraph.nodes.map((node) => {
+        const requiredIds = requiredLockIdsForNodeEdit(
+          node.id,
+          projectedGraph.nodes,
+        );
+        const lockedByOther = requiredIds.some((id) => {
+          const lock = activeLocksMap.get(id);
+          return Boolean(lock && !lock.ownedBySelf);
+        });
+        const previewOnly = !localNodeIdSet.has(node.id);
+        if (lockedByOther || previewOnly || saveStatus === "forbidden") {
+          return { ...node, draggable: false };
+        }
+        return node;
+      }),
+    [activeLocksMap, localNodeIdSet, projectedGraph.nodes, saveStatus],
+  );
+  const renderedEdges = projectedGraph.edges;
+
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const selectedEdge =
+    !selectedNode && selectedEdgeIds.length === 1
+      ? (edges.find((edge) => edge.id === selectedEdgeIds[0]) ?? null)
+      : null;
+
+  const displaySelectedNode =
+    projectedGraph.nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const displaySelectedEdge =
+    !displaySelectedNode && selectedEdgeIds.length === 1
+      ? (projectedGraph.edges.find((edge) => edge.id === selectedEdgeIds[0]) ??
+        null)
+      : null;
+  const selectedJoinTable = displaySelectedEdge
+    ? deriveJoinTable(
+        displaySelectedEdge,
+        projectedGraph.nodes.find(
+          (node) => node.id === displaySelectedEdge.source,
+        )?.data,
+        projectedGraph.nodes.find(
+          (node) => node.id === displaySelectedEdge.target,
+        )?.data,
+      )
+    : null;
+  const selectedLockedBy = useMemo(() => {
+    if (displaySelectedNode) {
+      const ids = requiredLockIdsForNodeEdit(
+        displaySelectedNode.id,
+        projectedGraph.nodes,
+      );
+      for (const id of ids) {
+        const lock = activeLocksMap.get(id);
+        if (lock && !lock.ownedBySelf) {
+          return { label: lock.label, color: lock.color };
+        }
+      }
+      if (!localNodeIdSet.has(displaySelectedNode.id)) {
+        return {
+          label: remotePreview?.authorName ?? "otro usuario",
+          color: "#38bdf8",
+        };
+      }
+    } else if (displaySelectedEdge) {
+      const ids = requiredLockIdsForEdgeEdit(
+        displaySelectedEdge.id,
+        projectedGraph.nodes,
+      );
+      for (const id of ids) {
+        const lock = activeLocksMap.get(id);
+        if (lock && !lock.ownedBySelf) {
+          return { label: lock.label, color: lock.color };
+        }
+      }
+      if (!localEdgeIdSet.has(displaySelectedEdge.id)) {
+        return {
+          label: remotePreview?.authorName ?? "otro usuario",
+          color: "#38bdf8",
+        };
+      }
+    }
+    return null;
+  }, [
+    activeLocksMap,
+    displaySelectedEdge,
+    displaySelectedNode,
+    localEdgeIdSet,
+    localNodeIdSet,
+    projectedGraph.nodes,
+    remotePreview?.authorName,
+  ]);
+
+  const protectedEdgeIds = structuralRelationshipIds(projectedGraph.nodes);
+  const protectedNodeIds = associationProtectedNodeIds(projectedGraph.nodes);
+  const protectedSelection =
+    projectedGraph.nodes.some(
+      (node) => node.selected && protectedNodeIds.has(node.id),
+    ) ||
+    projectedGraph.edges.some(
+      (edge) => edge.selected && protectedEdgeIds.has(edge.id),
+    );
+  const selectionLockedByOther = useMemo(() => {
+    for (const node of projectedGraph.nodes) {
+      if (!node.selected) continue;
+      if (!localNodeIdSet.has(node.id)) {
+        return {
+          label: remotePreview?.authorName ?? "otro usuario",
+          color: "#38bdf8",
+        };
+      }
+      const ids = requiredLockIdsForNodeDelete(
+        node.id,
+        projectedGraph.nodes,
+        projectedGraph.edges,
+      );
+      for (const id of ids) {
+        const lock = activeLocksMap.get(id);
+        if (lock && !lock.ownedBySelf) {
+          return { label: lock.label, color: lock.color };
+        }
+      }
+    }
+    for (const edge of projectedGraph.edges) {
+      if (!edge.selected) continue;
+      if (!localEdgeIdSet.has(edge.id)) {
+        return {
+          label: remotePreview?.authorName ?? "otro usuario",
+          color: "#38bdf8",
+        };
+      }
+      const ids = requiredLockIdsForEdgeEdit(edge.id, projectedGraph.nodes);
+      for (const id of ids) {
+        const lock = activeLocksMap.get(id);
+        if (lock && !lock.ownedBySelf) {
+          return { label: lock.label, color: lock.color };
+        }
+      }
+    }
+    return null;
+  }, [
+    activeLocksMap,
+    localEdgeIdSet,
+    localNodeIdSet,
+    projectedGraph.edges,
+    projectedGraph.nodes,
+    remotePreview?.authorName,
+  ]);
+
+  const activePropertiesFocusIds = useCallback((): string[] => {
+    if (Date.now() - lastLockActivityAtRef.current >= LOCK_IDLE_RELEASE_MS) {
+      return [];
+    }
+    const activeEl = document.activeElement;
+    if (
+      !(activeEl instanceof HTMLElement) ||
+      !activeEl.closest(".diagram-properties")
+    ) {
+      return [];
+    }
+    if (selectedNodeId) {
+      return requiredLockIdsForNodeEdit(selectedNodeId, nodesRef.current);
+    }
+    if (selectedEdgeIds.length === 1) {
+      return requiredLockIdsForEdgeEdit(selectedEdgeIds[0], nodesRef.current);
+    }
+    return [];
+  }, [selectedEdgeIds, selectedNodeId]);
+
+  useEffect(() => {
+    releaseUnusedOwnedLocks(activePropertiesFocusIds());
+  }, [
+    activePropertiesFocusIds,
+    conversionOpen,
+    propertiesOpen,
+    releaseUnusedOwnedLocks,
+    selectedEdgeIds,
+    selectedNodeId,
+  ]);
+
+  useEffect(() => {
+    const heartbeat = window.setInterval(() => {
+      releaseUnusedOwnedLocks(activePropertiesFocusIds());
+      const owned = lockStore.ownedElementIds();
+      if (owned.length === 0) return;
+      void renovarElementLocks(project.id, clientId, owned)
+        .then((renewed) => {
+          lockStore.upsertLocks(renewed, clientId);
+        })
+        .catch(() => {
+          void syncLocks();
+        });
+    }, LOCK_HEARTBEAT_INTERVAL_MS);
+    return () => {
+      window.clearInterval(heartbeat);
+    };
+  }, [
+    activePropertiesFocusIds,
+    clientId,
+    lockStore,
+    project.id,
+    releaseUnusedOwnedLocks,
+    syncLocks,
+  ]);
+
+  useEffect(
+    () => () => {
+      void liberarElementLocks(project.id, clientId).catch(() => {});
+    },
+    [clientId, project.id],
+  );
+
+  useEffect(() => {
+    const closePanels = (event: KeyboardEvent) => {
+      if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        selectionLockedByOther
+      ) {
+        const target = event.target;
+        const inEditableField =
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          target instanceof HTMLSelectElement ||
+          (target instanceof HTMLElement && target.isContentEditable);
+        if (!inEditableField) {
+          event.preventDefault();
+          showLockNotice(formatLockedByMessage(selectionLockedByOther.label));
+          return;
+        }
+      }
+      if (event.key !== "Escape") return;
+      setSidebarOpen(false);
+      setPropertiesOpen(false);
+      releaseUnusedOwnedLocks();
+    };
+    window.addEventListener("keydown", closePanels);
+    return () => window.removeEventListener("keydown", closePanels);
+  }, [releaseUnusedOwnedLocks, selectionLockedByOther, showLockNotice]);
+
+  const selectedAssociationColumns =
+    displaySelectedNode?.data.association?.endpoints.map((endpoint) => {
+      const referenced = projectedGraph.nodes.find(
+        (node) => node.id === endpoint.entityId,
+      );
+      const primaryKey = referenced?.data.attributes.find(
+        (attribute) => attribute.primaryKey,
+      );
+      return {
+        name: endpoint.foreignKeyName,
+        type: primaryKey ? postgresType(primaryKey.type) : "PK no definida",
+      };
+    }) ?? [];
+
+  const emitValidNodePreview = useCallback(
+    (nodeId: string) => {
+      if (saveStatus === "forbidden") return;
+      const target = nodesRef.current.find((item) => item.id === nodeId);
+      if (!target) return;
+      try {
+        validateDiagramDocument(
+          serializeDocument(nodesRef.current, edgesRef.current),
+        );
+      } catch {
+        return;
+      }
+      publishLiveEvent("NODE_UPDATED", { node: serializeNode(target) });
+    },
+    [publishLiveEvent, saveStatus],
+  );
+
+  const scheduleNodeUpdatedPreview = useCallback(
+    (nodeId: string) => {
+      if (saveStatus === "forbidden") return;
+      const tracker = nodeUpdateThrottleRef.current;
+      const now = Date.now();
+      const elapsed = now - tracker.lastSentAt;
+      if (elapsed >= 80) {
+        if (tracker.timer !== null) {
+          window.clearTimeout(tracker.timer);
+          tracker.timer = null;
+        }
+        tracker.lastSentAt = now;
+        tracker.nodeId = null;
+        emitValidNodePreview(nodeId);
+        return;
+      }
+      tracker.nodeId = nodeId;
+      if (tracker.timer === null) {
+        tracker.timer = window.setTimeout(() => {
+          tracker.timer = null;
+          tracker.lastSentAt = Date.now();
+          const pendingId = tracker.nodeId;
+          tracker.nodeId = null;
+          if (pendingId) emitValidNodePreview(pendingId);
+        }, Math.max(1, 80 - elapsed));
+      }
+    },
+    [emitValidNodePreview, saveStatus],
+  );
+
+  useEffect(() => {
+    const throttle = new CursorPublisherThrottle(
+      (point) => publishLiveEvent("CURSOR_MOVED", { x: point.x, y: point.y }),
+      () => publishLiveEvent("CURSOR_LEFT", {}),
+    );
+    const tracker = nodeUpdateThrottleRef.current;
+    cursorThrottleRef.current = throttle;
+    const keepAliveInterval = window.setInterval(() => {
+      if (document.visibilityState === "visible") throttle.keepAlive();
+    }, 5_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") throttle.leave();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(keepAliveInterval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      throttle.dispose();
+      cursorThrottleRef.current = null;
+      if (tracker.timer !== null) {
+        window.clearTimeout(tracker.timer);
+        tracker.timer = null;
+      }
+    };
+  }, [publishLiveEvent]);
 
   useEffect(() => {
     const synchronizer = new DiagramSynchronizer({
@@ -351,6 +991,9 @@ function DiagramEditorCanvas({
         dirty: conflictRef.current || revisionRef.current !== persistedRevisionRef.current,
         dragging: nodesRef.current.some((node) => node.dragging),
         saving: saveInFlightRef.current,
+        remotePreviewStale:
+          remotePreviewAtRef.current !== null &&
+          Date.now() - remotePreviewAtRef.current >= 8_000,
       }),
       apply: (saved, author) => {
         if (saved.proyectoId !== project.id) throw new Error("Proyecto de respuesta incorrecto.");
@@ -360,16 +1003,38 @@ function DiagramEditorCanvas({
           edges: saved.contenido.edges.map(normalizeRelationshipEdge),
         };
         validateDiagramDocument(document);
-        nodesRef.current = document.nodes;
-        edgesRef.current = document.edges;
-        setNodes(document.nodes);
-        setEdges(document.edges);
+        clearRemotePreview();
+        updateConfirmedDocument(
+          serializeDocument(document.nodes, document.edges),
+        );
+        const nodeIds = new Set(document.nodes.map((node) => node.id));
+        const edgeIds = new Set(document.edges.map((edge) => edge.id));
+        const activeSelectedNodes = new Set(
+          nodesRef.current.filter((n) => n.selected && nodeIds.has(n.id)).map((n) => n.id),
+        );
+        const activeSelectedEdges = new Set(
+          edgesRef.current.filter((e) => e.selected && edgeIds.has(e.id)).map((e) => e.id),
+        );
+        const reconciledNodes = document.nodes.map((node) =>
+          activeSelectedNodes.has(node.id) ? { ...node, selected: true } : node,
+        );
+        const reconciledEdges = document.edges.map((edge) =>
+          activeSelectedEdges.has(edge.id) ? { ...edge, selected: true } : edge,
+        );
+        nodesRef.current = reconciledNodes;
+        edgesRef.current = reconciledEdges;
+        setNodes(reconciledNodes);
+        setEdges(reconciledEdges);
         serverRevisionRef.current = saved.revision;
         revisionRef.current += 1;
         persistedRevisionRef.current = revisionRef.current;
         setDocumentRevision(revisionRef.current);
-        setSelectedNodeId(null);
-        setSelectedEdgeIds([]);
+        setSelectedNodeId((current) =>
+          current && nodeIds.has(current) ? current : null,
+        );
+        setSelectedEdgeIds((current) =>
+          current.filter((id) => edgeIds.has(id)),
+        );
         setPendingProposal(null);
         setPendingImport(null);
         rejectedDocumentRef.current = null;
@@ -377,6 +1042,64 @@ function DiagramEditorCanvas({
         agentSession.record("DIAGRAM_SAVED");
         setSaveStatus("saved");
         setSyncMessage(author ? `Cambios guardados por ${author}.` : "Diagrama actualizado desde la versión confirmada del servidor.");
+        void syncLocksRef.current?.();
+      },
+      reconcileDirty: (saved, author) => {
+        if (saved.proyectoId !== project.id) return "conflict";
+        if (conflictRef.current) return "conflict";
+        let serverDocument: DiagramDocument;
+        try {
+          serverDocument = {
+            ...saved.contenido,
+            nodes: saved.contenido.nodes.map(normalizeStoredNode),
+            edges: saved.contenido.edges.map(normalizeRelationshipEdge),
+          };
+          validateDiagramDocument(serverDocument);
+        } catch {
+          return "conflict";
+        }
+        const rebased = rebaseLocalOntoServer(
+          confirmedDocumentRef.current,
+          serverDocument,
+          nodesRef.current,
+          edgesRef.current,
+        );
+        if (rebased.outcome === "conflict") {
+          return "conflict";
+        }
+        clearRemotePreview();
+        updateConfirmedDocument(
+          serializeDocument(serverDocument.nodes, serverDocument.edges),
+        );
+        serverRevisionRef.current = saved.revision;
+        nodesRef.current = rebased.nodes;
+        edgesRef.current = rebased.edges;
+        setNodes(rebased.nodes);
+        setEdges(rebased.edges);
+        const survivingNodeIds = new Set(rebased.nodes.map((node) => node.id));
+        const survivingEdgeIds = new Set(rebased.edges.map((edge) => edge.id));
+        setSelectedNodeId((current) =>
+          current && survivingNodeIds.has(current) ? current : null,
+        );
+        setSelectedEdgeIds((current) =>
+          current.filter((id) => survivingEdgeIds.has(id)),
+        );
+        setPendingProposal(null);
+        setPendingImport(null);
+        agentSession.setDiagramId(saved.id);
+        if (!rebased.stillDirty) {
+          persistedRevisionRef.current = revisionRef.current;
+          setSaveStatus("saved");
+        } else {
+          setSaveStatus("dirty");
+        }
+        setSyncMessage(
+          author
+            ? `Cambios de ${author} integrados automáticamente.`
+            : "Cambios remotos integrados automáticamente.",
+        );
+        void syncLocksRef.current?.();
+        return "rebased";
       },
       conflict: () => {
         conflictRef.current = true;
@@ -413,7 +1136,15 @@ function DiagramEditorCanvas({
       window.removeEventListener("focus", synchronize);
       window.removeEventListener("online", synchronize);
     };
-  }, [agentSession, project.id, setEdges, setNodes, synchronize]);
+  }, [
+    agentSession,
+    clearRemotePreview,
+    project.id,
+    setEdges,
+    setNodes,
+    synchronize,
+    updateConfirmedDocument,
+  ]);
 
   function commitDiagramOperations(operations: DiagramAiOperation[]) {
     const previousNodeCount = nodesRef.current.length;
@@ -428,6 +1159,11 @@ function DiagramEditorCanvas({
     setNodes(result.nodes);
     setEdges(result.edges);
     markDirty();
+    if (saveStatus !== "forbidden") {
+      publishLiveEvent("DIAGRAM_BATCH_APPLIED", {
+        document: serializeDocument(result.nodes, result.edges),
+      });
+    }
     if (result.nodes.length > previousNodeCount) {
       window.requestAnimationFrame(() => {
         void fitView({ padding: 0.2, duration: 350 });
@@ -459,6 +1195,19 @@ function DiagramEditorCanvas({
       );
       if (refreshedAuthorizationError) {
         setAiError(refreshedAuthorizationError);
+        return;
+      }
+      const preview = applyDiagramOperations(
+        nodesRef.current,
+        edgesRef.current,
+        proposal.operations,
+      );
+      const aiLockIds = diffLocalElementsAgainstBase(
+        confirmedDocumentRef.current,
+        preview.nodes,
+        preview.edges,
+      ).lockProtectedIds;
+      if (!(await ensureLocks(aiLockIds))) {
         return;
       }
       const changed = commitDiagramOperations(proposal.operations);
@@ -624,10 +1373,64 @@ function DiagramEditorCanvas({
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<EntityFlowNode>[]) => {
+      const localIds = new Set(nodesRef.current.map((node) => node.id));
+      let previewDimensionsUpdates:
+        | Record<string, { width: number; height: number }>
+        | null = null;
+      for (const change of changes) {
+        if (
+          change.type === "dimensions" &&
+          change.dimensions &&
+          !localIds.has(change.id)
+        ) {
+          previewDimensionsUpdates ??= {};
+          previewDimensionsUpdates[change.id] = {
+            width: change.dimensions.width,
+            height: change.dimensions.height,
+          };
+        }
+      }
+      if (previewDimensionsUpdates) {
+        const updates = previewDimensionsUpdates;
+        setPreviewMeasured((current) => {
+          let changed = false;
+          const next = { ...current };
+          for (const [id, dims] of Object.entries(updates)) {
+            if (
+              current[id]?.width !== dims.width ||
+              current[id]?.height !== dims.height
+            ) {
+              next[id] = dims;
+              changed = true;
+            }
+          }
+          return changed ? next : current;
+        });
+      }
+
       const protectedIds = associationProtectedNodeIds(nodesRef.current);
-      const accepted = changes.filter(
-        (change) => change.type !== "remove" || !protectedIds.has(change.id),
-      );
+      const accepted = changes.filter((change) => {
+        if (change.type === "remove") {
+          if (protectedIds.has(change.id) || !localIds.has(change.id)) {
+            return false;
+          }
+          const foreign = lockStore.findForeignLock(
+            requiredLockIdsForNodeDelete(
+              change.id,
+              nodesRef.current,
+              edgesRef.current,
+            ),
+          );
+          if (foreign) {
+            showLockNotice(formatLockedByMessage(foreign.label));
+            return false;
+          }
+        }
+        if (change.type === "position" && !localIds.has(change.id)) {
+          return false;
+        }
+        return true;
+      });
       onNodesChange(accepted);
       if (
         accepted.some(
@@ -639,23 +1442,52 @@ function DiagramEditorCanvas({
       )
         markDirty();
     },
-    [markDirty, onNodesChange],
+    [lockStore, markDirty, onNodesChange, showLockNotice],
   );
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange<DiagramEdge>[]) => {
+      const localIds = new Set(edgesRef.current.map((edge) => edge.id));
       const structuralIds = structuralRelationshipIds(nodesRef.current);
-      const accepted = changes.filter(
-        (change) => change.type !== "remove" || !structuralIds.has(change.id),
-      );
+      const accepted = changes.filter((change) => {
+        if (change.type === "remove") {
+          if (structuralIds.has(change.id) || !localIds.has(change.id)) {
+            return false;
+          }
+          const foreign = lockStore.findForeignLock(
+            requiredLockIdsForEdgeEdit(change.id, nodesRef.current),
+          );
+          if (foreign) {
+            showLockNotice(formatLockedByMessage(foreign.label));
+            return false;
+          }
+        }
+        return true;
+      });
       onEdgesChange(accepted);
       if (accepted.some((change) => change.type !== "select")) markDirty();
     },
-    [markDirty, onEdgesChange],
+    [lockStore, markDirty, onEdgesChange, showLockNotice],
   );
 
   const onConnect = useCallback(
     (connection: Connection) => {
+      if (
+        !connection.source ||
+        !connection.target ||
+        saveStatus === "forbidden"
+      ) {
+        return;
+      }
+      const lockIds = requiredLockIdsForConnection(
+        connection.source,
+        connection.target,
+      );
+      const foreign = lockStore.findForeignLock(lockIds);
+      if (foreign) {
+        showLockNotice(formatLockedByMessage(foreign.label));
+        return;
+      }
       const edge: DiagramEdge = {
         ...connection,
         id: crypto.randomUUID(),
@@ -677,18 +1509,44 @@ function DiagramEditorCanvas({
         );
         return;
       }
-      commitRelationshipEdge(edgesRef.current, edge, "EDGE_CREATED", false, {
-        setEdges: (next) => {
-          edgesRef.current = next;
-          setEdges(next);
-        },
-        markDirty,
-        publish: (kind, updated) => {
-          agentSession.record(kind, { edgeId: updated.id });
-        },
-      });
+      void (async () => {
+        if (!(await ensureLocks(lockIds))) return;
+        try {
+          validateDiagramDocument(
+            serializeDocument(nodesRef.current, [...edgesRef.current, edge]),
+          );
+        } catch (error) {
+          setAiError(
+            error instanceof Error
+              ? error.message
+              : "La relación UML no es válida.",
+          );
+          return;
+        }
+        commitRelationshipEdge(edgesRef.current, edge, "EDGE_CREATED", false, {
+          setEdges: (next) => {
+            edgesRef.current = next;
+            setEdges(next);
+          },
+          markDirty,
+          publish: (kind, updated) => {
+            publishLiveEvent(kind, { edge: serializeEdge(updated) });
+            agentSession.record(kind, { edgeId: updated.id });
+          },
+        });
+      })();
     },
-    [agentSession, markDirty, selectedRelationKind, setEdges],
+    [
+      agentSession,
+      ensureLocks,
+      lockStore,
+      markDirty,
+      publishLiveEvent,
+      saveStatus,
+      selectedRelationKind,
+      setEdges,
+      showLockNotice,
+    ],
   );
 
   const handleSelectionChange = useCallback(
@@ -751,12 +1609,18 @@ function DiagramEditorCanvas({
       },
       selected: true,
     };
-    setNodes((current) => [
-      ...current.map((item) => ({ ...item, selected: false })),
+    const nextNodes = [
+      ...nodesRef.current.map((item) => ({ ...item, selected: false })),
       node,
-    ]);
+    ];
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
     setSelectedNodeId(id);
     setSelectedEdgeIds([]);
+    if (saveStatus !== "forbidden") {
+      void ensureLocks([id]);
+      publishLiveEvent("NODE_CREATED", { node: serializeNode(node) });
+    }
     agentSession.record("NODE_CREATED", { nodeId: id });
     markDirty();
   }
@@ -785,7 +1649,24 @@ function DiagramEditorCanvas({
   function updateSelectedEntity(
     update: (node: EntityFlowNode) => EntityFlowNode,
   ) {
-    if (!selectedNode) return;
+    if (!selectedNode || saveStatus === "forbidden") {
+      if (selectedLockedBy) {
+        showLockNotice(formatLockedByMessage(selectedLockedBy.label));
+      }
+      return;
+    }
+    const lockIds = requiredLockIdsForNodeEdit(
+      selectedNode.id,
+      nodesRef.current,
+    );
+    const foreign = lockStore.findForeignLock(lockIds);
+    if (foreign) {
+      showLockNotice(formatLockedByMessage(foreign.label));
+      return;
+    }
+    const previousSnapshot = selectedNode;
+    const alreadyOwned = lockStore.areAllOwnedBySelf(lockIds);
+    lastLockActivityAtRef.current = Date.now();
     const updated = update(selectedNode);
     const candidate = nodesRef.current.map((node) =>
       node.id === updated.id ? updated : node,
@@ -802,8 +1683,20 @@ function DiagramEditorCanvas({
     }
     nodesRef.current = candidate;
     setNodes(candidate);
+    scheduleNodeUpdatedPreview(updated.id);
     agentSession.record("NODE_UPDATED", { nodeId: updated.id });
     markDirty();
+    if (!alreadyOwned) {
+      void ensureLocks(lockIds).then((granted) => {
+        if (!granted) {
+          const restored = nodesRef.current.map((node) =>
+            node.id === previousSnapshot.id ? previousSnapshot : node,
+          );
+          nodesRef.current = restored;
+          setNodes(restored);
+        }
+      });
+    }
   }
 
   function changeAttribute(
@@ -823,12 +1716,39 @@ function DiagramEditorCanvas({
     }));
   }
 
-  function deleteSelection() {
+  async function deleteSelection() {
+    if (saveStatus === "forbidden") return;
+    if (selectionLockedByOther) {
+      showLockNotice(formatLockedByMessage(selectionLockedByOther.label));
+      return;
+    }
     const currentNodes = nodesRef.current;
     const currentEdges = edgesRef.current;
 
     const deletedNodes = currentNodes.filter((node) => node.selected);
     const deletedEdges = currentEdges.filter((edge) => edge.selected);
+
+    const requiredDeleteLockIds = new Set<string>();
+    for (const node of deletedNodes) {
+      for (const id of requiredLockIdsForNodeDelete(
+        node.id,
+        currentNodes,
+        currentEdges,
+      )) {
+        requiredDeleteLockIds.add(id);
+      }
+    }
+    for (const edge of deletedEdges) {
+      for (const id of requiredLockIdsForEdgeEdit(edge.id, currentNodes)) {
+        requiredDeleteLockIds.add(id);
+      }
+    }
+    if (
+      requiredDeleteLockIds.size > 0 &&
+      !(await ensureLocks([...requiredDeleteLockIds]))
+    ) {
+      return;
+    }
 
     // Caso especial: eliminación de una clase asociativa.
     const associationNode = deletedNodes.find(
@@ -849,7 +1769,10 @@ function DiagramEditorCanvas({
           "Esta operación también elimina los atributos propios de la clase asociativa.",
       );
 
-      if (!confirmed) return;
+      if (!confirmed) {
+        releaseUnusedOwnedLocks();
+        return;
+      }
 
       const structuralEdgeIds = new Set(
         associationNode.data.association!.endpoints.map(
@@ -891,6 +1814,9 @@ function DiagramEditorCanvas({
       setSelectedEdgeIds([]);
 
       markDirty();
+      publishLiveEvent("DIAGRAM_BATCH_APPLIED", {
+        document: serializeDocument(nextNodes, nextEdges),
+      });
 
       agentSession.record("NODE_DELETED", {
         nodeId: associationNode.id,
@@ -918,6 +1844,13 @@ function DiagramEditorCanvas({
 
     // Eliminación normal existente.
     deletedNodes.forEach((node) =>
+      publishLiveEvent("NODE_DELETED", { nodeId: node.id }),
+    );
+    deletedEdges.forEach((edge) =>
+      publishLiveEvent("EDGE_DELETED", { edgeId: edge.id }),
+    );
+
+    deletedNodes.forEach((node) =>
       agentSession.record("NODE_DELETED", { nodeId: node.id }),
     );
 
@@ -927,24 +1860,27 @@ function DiagramEditorCanvas({
 
     const deletedNodeIds = new Set(deletedNodes.map((node) => node.id));
 
-    setNodes((current) => current.filter((node) => !node.selected));
-
-    setEdges((current) =>
-      current.filter(
-        (edge) =>
-          !edge.selected &&
-          !deletedNodeIds.has(edge.source) &&
-          !deletedNodeIds.has(edge.target),
-      ),
+    const nextNodes = nodesRef.current.filter((node) => !node.selected);
+    const nextEdges = edgesRef.current.filter(
+      (edge) =>
+        !edge.selected &&
+        !deletedNodeIds.has(edge.source) &&
+        !deletedNodeIds.has(edge.target),
     );
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextEdges;
+    setNodes(nextNodes);
+    setEdges(nextEdges);
 
     setSelectedNodeId(null);
     setSelectedEdgeIds([]);
     markDirty();
   }
 
-  function confirmAssociationConversion(entityName: string) {
-    if (!selectedEdge) return;
+  async function confirmAssociationConversion(entityName: string) {
+    if (!selectedEdge || saveStatus === "forbidden") return;
+    const lockIds = requiredLockIdsForAssociationConversion(selectedEdge);
+    if (!(await ensureLocks(lockIds))) return;
     try {
       const result = convertManyToManyAssociation(
         nodesRef.current,
@@ -961,6 +1897,12 @@ function DiagramEditorCanvas({
       setConversionOpen(false);
       setConversionError("");
       markDirty();
+      publishLiveEvent("DIAGRAM_BATCH_APPLIED", {
+        document: serializeDocument(
+          result.document.nodes,
+          result.document.edges,
+        ),
+      });
       agentSession.record("NODE_CREATED", { nodeId: result.associationNodeId });
     } catch (error: unknown) {
       setConversionError(
@@ -1012,18 +1954,65 @@ function DiagramEditorCanvas({
       )
         .then((saved) => {
           rejectedDocumentRef.current = null;
+          clearRemotePreview();
+          const savedDocument: DiagramDocument = {
+            ...saved.contenido,
+            nodes: saved.contenido.nodes.map(normalizeStoredNode),
+            edges: saved.contenido.edges.map(normalizeRelationshipEdge),
+          };
+          const canonicalSaved = serializeDocument(
+            savedDocument.nodes,
+            savedDocument.edges,
+          );
+          updateConfirmedDocument(canonicalSaved);
           serverRevisionRef.current = saved.revision;
           conflictRef.current = false;
           agentSession.setDiagramId(saved.id);
           agentSession.record("DIAGRAM_SAVED");
-          persistedRevisionRef.current = savedRevision;
-          setSaveStatus(
-            revisionRef.current === savedRevision ? "saved" : "dirty",
-          );
+
+          if (canonicalJson(canonicalSaved) !== canonicalJson(document)) {
+            const postSaveRebase = rebaseLocalOntoServer(
+              document,
+              savedDocument,
+              nodesRef.current,
+              edgesRef.current,
+            );
+            if (postSaveRebase.outcome !== "conflict") {
+              nodesRef.current = postSaveRebase.nodes;
+              edgesRef.current = postSaveRebase.edges;
+              setNodes(postSaveRebase.nodes);
+              setEdges(postSaveRebase.edges);
+              if (!postSaveRebase.stillDirty) {
+                persistedRevisionRef.current = revisionRef.current;
+                setSaveStatus("saved");
+              } else {
+                setSaveStatus("dirty");
+              }
+            } else {
+              persistedRevisionRef.current = savedRevision;
+              setSaveStatus(
+                revisionRef.current === savedRevision ? "saved" : "dirty",
+              );
+            }
+          } else {
+            persistedRevisionRef.current = savedRevision;
+            setSaveStatus(
+              revisionRef.current === savedRevision ? "saved" : "dirty",
+            );
+          }
+
+          releaseUnusedOwnedLocks(activePropertiesFocusIds());
           return true;
         })
         .catch((requestError: unknown) => {
           agentSession.record("SAVE_FAILED");
+          const lockRejection = extractElementLockedRejection(requestError);
+          if (lockRejection) {
+            showLockNotice(lockRejection.message);
+            void syncLocks();
+            setSaveStatus("error");
+            return false;
+          }
           if (isUnauthorizedError(requestError)) {
             localStorage.removeItem("token");
             window.location.assign("/login");
@@ -1060,7 +2049,19 @@ function DiagramEditorCanvas({
       setSaveStatus("saving");
       await request;
     },
-    [agentSession, clientId, project.id],
+    [
+      activePropertiesFocusIds,
+      agentSession,
+      clearRemotePreview,
+      clientId,
+      project.id,
+      releaseUnusedOwnedLocks,
+      setEdges,
+      setNodes,
+      showLockNotice,
+      syncLocks,
+      updateConfirmedDocument,
+    ],
   );
 
   async function handleAgentAsk(
@@ -1211,7 +2212,7 @@ function DiagramEditorCanvas({
     });
   }
 
-  function applyPendingImport() {
+  async function applyPendingImport() {
     if (!pendingImport) return;
     if (pendingImport.revision !== revisionRef.current) {
       setImportError(
@@ -1226,6 +2227,14 @@ function DiagramEditorCanvas({
         pendingImport.document,
         pendingImport.selected,
       );
+      const importLockIds = diffLocalElementsAgainstBase(
+        confirmedDocumentRef.current,
+        document.nodes,
+        document.edges,
+      ).lockProtectedIds;
+      if (!(await ensureLocks(importLockIds))) {
+        return;
+      }
       nodesRef.current = document.nodes;
       edgesRef.current = document.edges;
       setNodes(document.nodes);
@@ -1235,6 +2244,11 @@ function DiagramEditorCanvas({
       setPendingImport(null);
       setImportError("");
       markDirty();
+      if (saveStatus !== "forbidden") {
+        publishLiveEvent("DIAGRAM_BATCH_APPLIED", {
+          document: serializeDocument(document.nodes, document.edges),
+        });
+      }
       requestAnimationFrame(
         () => void fitView({ padding: 0.2, duration: 350 }),
       );
@@ -1402,6 +2416,7 @@ function DiagramEditorCanvas({
   );
 
   return (
+    <ElementLocksProvider store={lockStore}>
     <div
       className={`diagram-editor${sidebarOpen ? " is-sidebar-open" : ""}${propertiesOpen ? " is-properties-open" : ""}`}
     >
@@ -1438,7 +2453,7 @@ function DiagramEditorCanvas({
         hasSelection={selectedNodeId !== null || selectedEdgeIds.length > 0}
         saveStatus={saveStatus}
         onSave={() => void handleSave()}
-        onDeleteSelection={deleteSelection}
+        onDeleteSelection={() => void deleteSelection()}
         onFitView={() => void fitView({ padding: 0.2, duration: 350 })}
         onImport={() => importInputRef.current?.click()}
         importDisabled={
@@ -1506,14 +2521,76 @@ function DiagramEditorCanvas({
           {importError || "Analizando XMI/XML..."}
         </div>
       )}
-      {(syncError || syncMessage) && saveStatus !== "conflict" && (
+      {lockNotice && (
+        <div className="diagram-lock-notice" role="status">
+          {lockNotice}
+        </div>
+      )}
+      {(syncError || syncMessage) && !lockNotice && saveStatus !== "conflict" && (
         <div className={`diagram-import-status${syncError ? " is-error" : ""}`} role="status">{syncError || syncMessage}</div>
       )}
       <ProjectPresence status={status} collaborators={collaborators} />
-      <section className="diagram-canvas" aria-label="Canvas del diagrama">
+      <section
+        className="diagram-canvas"
+        aria-label="Canvas del diagrama"
+        onPointerDownCapture={(event) => {
+          const targetEl =
+            event.target instanceof HTMLElement
+              ? event.target.closest(".react-flow__node[data-id]")
+              : null;
+          const nodeId = targetEl?.getAttribute("data-id");
+          if (!nodeId) {
+            lockedDragProbeRef.current = null;
+            return;
+          }
+          const foreign = lockStore.findForeignLock(
+            requiredLockIdsForNodeEdit(nodeId, nodesRef.current),
+          );
+          if (foreign) {
+            lockedDragProbeRef.current = {
+              nodeId,
+              ownerLabel: foreign.label,
+              startX: event.clientX,
+              startY: event.clientY,
+              notified: false,
+            };
+          } else {
+            lockedDragProbeRef.current = null;
+          }
+        }}
+        onPointerMove={(event) => {
+          const probe = lockedDragProbeRef.current;
+          if (
+            probe &&
+            !probe.notified &&
+            Math.hypot(
+              event.clientX - probe.startX,
+              event.clientY - probe.startY,
+            ) >= 5
+          ) {
+            probe.notified = true;
+            showLockNotice(formatLockedByMessage(probe.ownerLabel));
+          }
+          const point = screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          cursorThrottleRef.current?.move(point);
+        }}
+        onPointerUp={() => {
+          lockedDragProbeRef.current = null;
+        }}
+        onPointerCancel={() => {
+          lockedDragProbeRef.current = null;
+        }}
+        onPointerLeave={() => {
+          lockedDragProbeRef.current = null;
+          cursorThrottleRef.current?.leave();
+        }}
+      >
         <ReactFlow<EntityFlowNode, DiagramEdge>
-          nodes={nodes}
-          edges={edges}
+          nodes={renderedNodes}
+          edges={renderedEdges}
           connectionMode={ConnectionMode.Loose}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -1521,7 +2598,102 @@ function DiagramEditorCanvas({
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
           onSelectionChange={handleSelectionChange}
+          onNodeDoubleClick={(_, node) => {
+            const foreign = lockStore.findForeignLock(
+              requiredLockIdsForNodeEdit(node.id, nodesRef.current),
+            );
+            if (foreign) {
+              showLockNotice(formatLockedByMessage(foreign.label));
+            }
+          }}
+          onNodeDragStart={(_, node) => {
+            if (saveStatus === "forbidden") return;
+            dragInitialPositionsRef.current[node.id] = { ...node.position };
+            dragDeniedRef.current.delete(node.id);
+            const lockIds = requiredLockIdsForNodeEdit(
+              node.id,
+              nodesRef.current,
+            );
+            void ensureLocks(lockIds).then((granted) => {
+              if (!granted) {
+                dragDeniedRef.current.add(node.id);
+                const origin = dragInitialPositionsRef.current[node.id];
+                if (origin) {
+                  const reverted = nodesRef.current.map((item) =>
+                    item.id === node.id
+                      ? { ...item, position: { ...origin }, dragging: false }
+                      : item,
+                  );
+                  nodesRef.current = reverted;
+                  setNodes(reverted);
+                }
+              }
+            });
+          }}
+          onNodeDrag={(_, node) => {
+            if (saveStatus === "forbidden") return;
+            const lockIds = requiredLockIdsForNodeEdit(
+              node.id,
+              nodesRef.current,
+            );
+            if (
+              dragDeniedRef.current.has(node.id) ||
+              lockStore.findForeignLock(lockIds)
+            ) {
+              const origin = dragInitialPositionsRef.current[node.id];
+              if (origin) {
+                const reverted = nodesRef.current.map((item) =>
+                  item.id === node.id
+                    ? { ...item, position: { ...origin }, dragging: false }
+                    : item,
+                );
+                nodesRef.current = reverted;
+                setNodes(reverted);
+              }
+              return;
+            }
+            lastLockActivityAtRef.current = Date.now();
+            const now = Date.now();
+            const last = lastDragPublishRef.current[node.id] ?? 0;
+            if (now - last < 50) return;
+            lastDragPublishRef.current[node.id] = now;
+            publishLiveEvent("NODE_MOVED", {
+              nodeId: node.id,
+              position: { x: node.position.x, y: node.position.y },
+              dragging: true,
+            });
+          }}
           onNodeDragStop={(_, node) => {
+            delete lastDragPublishRef.current[node.id];
+            const origin = dragInitialPositionsRef.current[node.id];
+            delete dragInitialPositionsRef.current[node.id];
+            const lockIds = requiredLockIdsForNodeEdit(
+              node.id,
+              nodesRef.current,
+            );
+            if (
+              dragDeniedRef.current.has(node.id) ||
+              lockStore.findForeignLock(lockIds)
+            ) {
+              dragDeniedRef.current.delete(node.id);
+              if (origin) {
+                const reverted = nodesRef.current.map((item) =>
+                  item.id === node.id
+                    ? { ...item, position: { ...origin }, dragging: false }
+                    : item,
+                );
+                nodesRef.current = reverted;
+                setNodes(reverted);
+              }
+              return;
+            }
+            if (saveStatus !== "forbidden") {
+              publishLiveEvent("NODE_MOVED", {
+                nodeId: node.id,
+                position: { x: node.position.x, y: node.position.y },
+                dragging: false,
+              });
+            }
             agentSession.record("NODE_UPDATED", { nodeId: node.id });
             markDirty();
           }}
@@ -1529,6 +2701,10 @@ function DiagramEditorCanvas({
             deleted.forEach((node) => {
               if (associationProtectedNodeIds(nodesRef.current).has(node.id))
                 return;
+              if (saveStatus !== "forbidden") {
+                void ensureLocks([node.id]);
+                publishLiveEvent("NODE_DELETED", { nodeId: node.id });
+              }
               agentSession.record("NODE_DELETED", { nodeId: node.id });
             })
           }
@@ -1536,10 +2712,18 @@ function DiagramEditorCanvas({
             deleted.forEach((edge) => {
               if (structuralRelationshipIds(nodesRef.current).has(edge.id))
                 return;
+              if (saveStatus !== "forbidden") {
+                void ensureLocks([edge.id]);
+                publishLiveEvent("EDGE_DELETED", { edgeId: edge.id });
+              }
               agentSession.record("EDGE_DELETED", { edgeId: edge.id });
             })
           }
-          deleteKeyCode={protectedSelection ? null : ["Backspace", "Delete"]}
+          deleteKeyCode={
+            protectedSelection || selectionLockedByOther
+              ? null
+              : ["Backspace", "Delete"]
+          }
           fitView
           minZoom={0.25}
           maxZoom={2}
@@ -1551,26 +2735,72 @@ function DiagramEditorCanvas({
             color="#34343a"
           />
           <Controls position="bottom-left" showInteractive={false} />
+          <RemoteCursorsOverlay store={cursorStore} />
         </ReactFlow>
       </section>
       <DiagramPropertiesPanel
-        onClose={() => setPropertiesOpen(false)}
-        edge={selectedEdge}
+        onClose={() => {
+          setPropertiesOpen(false);
+          releaseUnusedOwnedLocks();
+        }}
+        edge={displaySelectedEdge}
         joinTable={selectedJoinTable}
         structuralRelationship={Boolean(
-          selectedEdge && protectedEdgeIds.has(selectedEdge.id),
+          displaySelectedEdge && protectedEdgeIds.has(displaySelectedEdge.id),
         )}
+        lockedBy={selectedLockedBy}
+        onAttemptLockedEdit={(ownerName) =>
+          showLockNotice(formatLockedByMessage(ownerName))
+        }
+        onEditIntent={() => {
+          if (selectedNode) {
+            void ensureLocks(
+              requiredLockIdsForNodeEdit(selectedNode.id, nodesRef.current),
+            );
+          } else if (
+            selectedEdge &&
+            !protectedEdgeIds.has(selectedEdge.id)
+          ) {
+            void ensureLocks(
+              requiredLockIdsForEdgeEdit(selectedEdge.id, nodesRef.current),
+            );
+          }
+        }}
         onConvertAssociation={() => {
-          setConversionError("");
-          setConversionOpen(true);
+          if (!selectedEdge) return;
+          void ensureLocks(
+            requiredLockIdsForAssociationConversion(selectedEdge),
+          ).then((granted) => {
+            if (!granted) return;
+            setConversionError("");
+            setConversionOpen(true);
+          });
         }}
         onChangeCardinality={(end, value) => {
-          if (!selectedEdge) return;
+          if (!selectedEdge) {
+            if (selectedLockedBy) {
+              showLockNotice(formatLockedByMessage(selectedLockedBy.label));
+            }
+            return;
+          }
           if (protectedEdgeIds.has(selectedEdge.id)) {
             setAiMessage(
               "La relacion estructural no puede editarse individualmente.",
             );
             return;
+          }
+          const edgeLockIds = requiredLockIdsForEdgeEdit(
+            selectedEdge.id,
+            nodesRef.current,
+          );
+          const foreign = lockStore.findForeignLock(edgeLockIds);
+          if (foreign) {
+            showLockNotice(formatLockedByMessage(foreign.label));
+            return;
+          }
+          lastLockActivityAtRef.current = Date.now();
+          if (!lockStore.areAllOwnedBySelf(edgeLockIds)) {
+            void ensureLocks(edgeLockIds);
           }
           const data = { ...selectedEdge.data, [end]: value };
           if (
@@ -1593,6 +2823,9 @@ function DiagramEditorCanvas({
               },
               markDirty,
               publish: (kind, edge) => {
+                if (saveStatus !== "forbidden") {
+                  publishLiveEvent(kind, { edge: serializeEdge(edge) });
+                }
                 agentSession.record(kind, { edgeId: edge.id });
               },
             },
@@ -1603,13 +2836,30 @@ function DiagramEditorCanvas({
             );
         }}
         onChangeRelationshipData={(changes) => {
-          if (!selectedEdge) return;
+          if (!selectedEdge) {
+            if (selectedLockedBy) {
+              showLockNotice(formatLockedByMessage(selectedLockedBy.label));
+            }
+            return;
+          }
           if (protectedEdgeIds.has(selectedEdge.id)) {
             setAiMessage(
               "La relacion estructural no puede editarse individualmente.",
             );
             return;
           }
+          const edgeLockIds = requiredLockIdsForEdgeEdit(
+            selectedEdge.id,
+            nodesRef.current,
+          );
+          const foreign = lockStore.findForeignLock(edgeLockIds);
+          if (foreign) {
+            showLockNotice(formatLockedByMessage(foreign.label));
+            return;
+          }
+          const previousEdgesSnapshot = edgesRef.current;
+          const alreadyOwned = lockStore.areAllOwnedBySelf(edgeLockIds);
+          lastLockActivityAtRef.current = Date.now();
           const nextData = { ...selectedEdge.data, ...changes };
           for (const key of Object.keys(changes) as Array<
             keyof typeof changes
@@ -1647,6 +2897,9 @@ function DiagramEditorCanvas({
               },
               markDirty,
               publish: (kind, edge) => {
+                if (saveStatus !== "forbidden") {
+                  publishLiveEvent(kind, { edge: serializeEdge(edge) });
+                }
                 agentSession.record(kind, { edgeId: edge.id });
               },
             },
@@ -1655,8 +2908,16 @@ function DiagramEditorCanvas({
             setAiMessage(
               "Sin cambios: revisa que el nombre distinga la relación.",
             );
+          else if (!alreadyOwned) {
+            void ensureLocks(edgeLockIds).then((granted) => {
+              if (!granted) {
+                edgesRef.current = previousEdgesSnapshot;
+                setEdges(previousEdgesSnapshot);
+              }
+            });
+          }
         }}
-        entity={selectedNode?.data ?? null}
+        entity={displaySelectedNode?.data ?? null}
         onChangeGenerateCrud={(enabled) =>
           updateSelectedEntity((node) => ({
             ...node,
@@ -1748,7 +3009,42 @@ function DiagramEditorCanvas({
         }
       />
       <AgentPanel
-        onAsk={handleAgentAsk}
+        projectId={project.id}
+        store={conversationStore}
+        clientId={clientId}
+        collaborationStatus={status}
+        nodes={projectedGraph.nodes}
+        edges={projectedGraph.edges}
+        selectedNodeId={selectedNodeId}
+        selectedEdgeId={selectedEdge?.id ?? null}
+        getRecentEvents={() => agentSession.snapshot()}
+        saveStatus={saveStatus}
+        onLegacyAsk={handleAgentAsk}
+        onBeforeAcceptProposal={async () => {
+          if (conflictRef.current) return false;
+          if (
+            saveInFlightRef.current ||
+            revisionRef.current !== persistedRevisionRef.current
+          ) {
+            await handleSave(true);
+          }
+          return (
+            !conflictRef.current &&
+            revisionRef.current === persistedRevisionRef.current
+          );
+        }}
+        onProposalApplied={(proposal) => {
+          void synchronizerRef.current?.refresh(
+            typeof proposal.aplicadaRevision === "number"
+              ? { name: "LogicDraft IA", revision: proposal.aplicadaRevision }
+              : undefined,
+          );
+          setAiMessage("Propuesta compartida aplicada al diagrama.");
+        }}
+        onLockConflict={(message) => {
+          showLockNotice(message);
+          void syncLocks();
+        }}
         disabledReason={
           saveStatus === "dirty" ||
           saveStatus === "saving" ||
@@ -1766,8 +3062,9 @@ function DiagramEditorCanvas({
         onCancel={() => {
           setConversionOpen(false);
           setConversionError("");
+          releaseUnusedOwnedLocks();
         }}
-        onConfirm={confirmAssociationConversion}
+        onConfirm={(entityName) => void confirmAssociationConversion(entityName)}
       />
       <DiagramAiProposalDialog
         operations={pendingProposal?.operations ?? []}
@@ -1775,6 +3072,7 @@ function DiagramEditorCanvas({
         onCancel={() => {
           setPendingProposal(null);
           setAiMessage("Propuesta cancelada; no se realizaron cambios");
+          releaseUnusedOwnedLocks();
         }}
         onAccept={acceptAiProposal}
       />
@@ -1786,11 +3084,13 @@ function DiagramEditorCanvas({
           onCancel={() => {
             setPendingImport(null);
             setImportError("");
+            releaseUnusedOwnedLocks();
           }}
-          onApply={applyPendingImport}
+          onApply={() => void applyPendingImport()}
         />
       )}
     </div>
+    </ElementLocksProvider>
   );
 }
 

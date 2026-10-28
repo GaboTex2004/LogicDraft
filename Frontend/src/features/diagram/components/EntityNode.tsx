@@ -1,4 +1,6 @@
+import type { CSSProperties } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { useElementLock } from "../../collaboration/hooks/useElementLock";
 import type { EntityFlowNode } from "../types/diagram.types";
 
 const SYMBOL = {
@@ -8,7 +10,15 @@ const SYMBOL = {
   package: "~",
 } as const;
 
-export function EntityNode({ data, selected }: NodeProps<EntityFlowNode>) {
+export function EntityNode({ id, data, selected }: NodeProps<EntityFlowNode>) {
+  const lock = useElementLock(id);
+  const remoteLocked = Boolean(lock && !lock.ownedBySelf);
+  const selfLocked = Boolean(lock && lock.ownedBySelf);
+  const lockClass = remoteLocked
+    ? " is-locked-remote"
+    : selfLocked
+      ? " is-locked-self"
+      : "";
   const kind = data.kind ?? "ENTITY";
 
   const members = [
@@ -52,9 +62,22 @@ export function EntityNode({ data, selected }: NodeProps<EntityFlowNode>) {
 
   return (
     <article
-      className={`entity-node uml-${kind.toLowerCase()} ${selected ? "is-selected" : ""}`}
-      style={{ width, minHeight: height }}
+      className={`entity-node uml-${kind.toLowerCase()} ${selected ? "is-selected" : ""}${lockClass}`}
+      style={{
+        width,
+        minHeight: height,
+        ...(lock ? ({ "--lock-color": lock.color } as CSSProperties) : {}),
+      }}
     >
+      {remoteLocked && lock && (
+        <span
+          className="element-lock-badge"
+          style={{ backgroundColor: lock.color }}
+          title={`Está siendo usado por ${lock.label}`}
+        >
+          {lock.label} editando
+        </span>
+      )}
       {/* Puntos anteriores: se conservan para compatibilidad */}
       <Handle
         className="entity-handle"

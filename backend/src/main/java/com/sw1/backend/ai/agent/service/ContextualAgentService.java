@@ -41,8 +41,12 @@ public class ContextualAgentService {
                         new com.sw1.backend.ai.diagram.dto.DiagramAssociationContext(association.entityName(),
                                 association.tableName(), association.endpointEntityNames(),
                                 association.structuralRelationshipIds())).toList());
+        com.sw1.backend.ai.diagram.validation.SemanticOperationValidator.validate(
+                request.message(), diagramContext, proposed.operations());
         var validated = com.sw1.backend.ai.diagram.validation.ContextualOperationValidator.validate(
-                diagramContext, new com.sw1.backend.ai.diagram.dto.DiagramInterpretResponse(proposed.operations()));
+                diagramContext,
+                new com.sw1.backend.ai.diagram.dto.DiagramInterpretResponse(proposed.operations()),
+                context.readOnlyElementNames());
         return new AgentAskResponse(proposed.answer(), validated.operations());
     }
 }

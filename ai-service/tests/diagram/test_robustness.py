@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 from app.schemas.diagram import DiagramContext, EntityDefinition
 from app.services.diagram_ai_service import DiagramAIService, DiagramIncompleteResponseError
+from app.skills.diagram.semantic_safety import SemanticSafetyError
 
 
 PROMPT = (
@@ -181,7 +182,7 @@ class DiagramRobustnessTests(unittest.IsolatedAsyncioTestCase):
                 "crea 2 entidades Producto y Categoria")
         self.assertEqual(model.await_count, 2)
 
-    async def test_compound_delete_create_and_many_to_many_relationship_recovers_after_repair(self):
+    async def test_compound_repair_rejects_invented_deletions_but_accepts_safe_completion(self):
         prompt = (
             'Elimina la entidad "producto" y crea la entidad "Devolucion" con los atributos: '
             'ID int, fecha Date, motivo Varchar y con una relacion N:M con venta'
@@ -229,6 +230,15 @@ class DiagramRobustnessTests(unittest.IsolatedAsyncioTestCase):
             ]
         })
         model = AsyncMock(side_effect=[call1, call2])
+        # Phase 3.6: an unsafe repair is rejected, never silently filtered into
+        # a partial proposal. The old behavior hid these invented deletions.
+        with self.assertRaises(SemanticSafetyError):
+            await DiagramAIService(SimpleNamespace(generate=model)).interpret(prompt, context)
+        self.assertEqual(model.await_count, 2)
+
+        safe_repair = json.loads(call1)
+        safe_repair["operations"].append(relationship("Devolucion", "venta"))
+        model = AsyncMock(side_effect=[call1, json.dumps(safe_repair)])
         result = await DiagramAIService(SimpleNamespace(generate=model)).interpret(prompt, context)
         self.assertEqual(
             [op.type for op in result.operations],

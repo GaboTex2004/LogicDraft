@@ -28,7 +28,11 @@ public class ContextualDiagramAiService {
         DiagramInterpretResponse response = client.interpret(new ContextualInterpretRequest(
                 request.prompt(), initial, selection));
         // Fresh short read transaction and permission check after slow inference.
-        DiagramInterpretResponse validated = ContextualOperationValidator.validate(context.load(projectId), response);
+        DiagramContext latest = context.load(projectId);
+        com.sw1.backend.ai.diagram.validation.SemanticOperationValidator.validate(
+                request.prompt(), latest, response.operations());
+        DiagramInterpretResponse validated = ContextualOperationValidator.validate(
+                latest, response, latest.readOnlyElementNames());
         log.info("Diagram AI batch stage=spring_validated count={} types={}", validated.operations().size(),
                 validated.operations().stream().map(operation -> operation.type().name()).toList());
         return validated;

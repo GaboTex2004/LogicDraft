@@ -2,6 +2,7 @@ import { Client, type IMessage } from "@stomp/stompjs";
 import type {
   CollaborationEvent,
   CollaborationEventType,
+  EphemeralCollaborationEventType,
 } from "../types/collaboration.types";
 
 interface CollaborationCallbacks {
@@ -13,6 +14,10 @@ interface CollaborationCallbacks {
 
 export interface ProjectCollaborationConnection {
   sendPing: (message: string) => void;
+  publishEvent: (
+    type: EphemeralCollaborationEventType,
+    payload: Record<string, unknown>,
+  ) => void;
   disconnect: () => Promise<void>;
 }
 
@@ -20,6 +25,11 @@ const eventTypes = new Set<CollaborationEventType>([
   "USER_JOINED",
   "USER_LEFT",
   "PING",
+  "CURSOR_MOVED",
+  "CURSOR_LEFT",
+  "LOCK_SESSION_BIND",
+  "ELEMENT_LOCKED",
+  "ELEMENT_UNLOCKED",
   "NODE_CREATED",
   "NODE_MOVED",
   "NODE_UPDATED",
@@ -30,6 +40,11 @@ const eventTypes = new Set<CollaborationEventType>([
   "DIAGRAM_BATCH_APPLIED",
   "DIAGRAM_SAVED",
   "DIAGRAM_COMMITTED",
+  "CONVERSATION_CREATED",
+  "CONVERSATION_UPDATED",
+  "CONVERSATION_MESSAGE_CREATED",
+  "CONVERSATION_AI_STATUS",
+  "CONVERSATION_PROPOSAL_UPDATED",
 ]);
 
 function websocketUrl(): string {
@@ -121,6 +136,10 @@ export function connectToProject(
         const event = parseEvent(message);
         if (event?.projectId === projectId) callbacks.onEvent(event);
       });
+      client.publish({
+        destination: `/app/proyectos/${projectId}/eventos`,
+        body: JSON.stringify({ type: "LOCK_SESSION_BIND", clientId, payload: {} }),
+      });
       callbacks.onConnect();
     },
     onStompError: (frame) =>
@@ -137,6 +156,13 @@ export function connectToProject(
       client.publish({
         destination: `/app/proyectos/${projectId}/eventos`,
         body: JSON.stringify({ type: "PING", clientId, message }),
+      });
+    },
+    publishEvent(type, payload) {
+      if (!client.connected) return;
+      client.publish({
+        destination: `/app/proyectos/${projectId}/eventos`,
+        body: JSON.stringify({ type, clientId, payload }),
       });
     },
     async disconnect() {

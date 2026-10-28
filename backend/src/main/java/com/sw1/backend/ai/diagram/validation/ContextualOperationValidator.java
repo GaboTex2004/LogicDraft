@@ -1,6 +1,7 @@
 package com.sw1.backend.ai.diagram.validation;
 
 import com.sw1.backend.ai.client.AiServiceException;
+import com.sw1.backend.ai.client.AiServiceException.ErrorCategory;
 import com.sw1.backend.ai.diagram.dto.*;
 import java.util.*;
 import org.springframework.http.HttpStatus;
@@ -10,6 +11,21 @@ public final class ContextualOperationValidator {
     private ContextualOperationValidator() {}
 
     public static DiagramInterpretResponse validate(DiagramContext context, DiagramInterpretResponse response) {
+        return validate(context, response, Set.of());
+    }
+
+    public static DiagramInterpretResponse validate(
+            DiagramContext context,
+            DiagramInterpretResponse response,
+            Set<String> readOnlyElementNames) {
+        Set<String> readOnlyKeys = new HashSet<>();
+        if (readOnlyElementNames != null) {
+            for (String readOnlyName : readOnlyElementNames) {
+                if (readOnlyName != null && !readOnlyName.isBlank()) {
+                    readOnlyKeys.add(key(readOnlyName));
+                }
+            }
+        }
         Map<String, Map<String, AttributeDefinition>> entities = new LinkedHashMap<>();
         for (EntityDefinition entity : context.entities()) {
             Map<String, AttributeDefinition> attributes = new LinkedHashMap<>();
@@ -29,6 +45,9 @@ public final class ContextualOperationValidator {
             switch (operation.type()) {
                 case ADD_ENTITY -> {
                     EntityDefinition entity = operation.entity();
+                    if (readOnlyKeys.contains(key(entity.name()))) {
+                        throw readOnlyConflict(entity.name());
+                    }
                     if (entities.containsKey(key(entity.name()))) throw conflict("Ya existe una entidad con ese nombre");
                     Map<String, AttributeDefinition> attributes = new LinkedHashMap<>();
                     for (AttributeDefinition attribute : entity.attributes()) {
@@ -39,6 +58,9 @@ public final class ContextualOperationValidator {
                 }
                 case DELETE_ENTITY -> {
                     String entityKey = key(operation.entityName());
+                    if (readOnlyKeys.contains(entityKey)) {
+                        throw readOnlyConflict(operation.entityName());
+                    }
                     if (entities.remove(entityKey) == null) throw conflict("La entidad a eliminar no existe");
                     virtualRelationships.removeIf(relation -> key(relation.sourceEntity()).equals(entityKey)
                             || key(relation.targetEntity()).equals(entityKey));
@@ -47,6 +69,12 @@ public final class ContextualOperationValidator {
                 }
                 case RENAME_ENTITY -> {
                     String previous = key(operation.entityName()), next = key(operation.newName());
+                    if (readOnlyKeys.contains(previous)) {
+                        throw readOnlyConflict(operation.entityName());
+                    }
+                    if (readOnlyKeys.contains(next)) {
+                        throw conflict("Ya existe un elemento UML con el nuevo nombre");
+                    }
                     Map<String, AttributeDefinition> attributes = entities.remove(previous);
                     if (attributes == null) throw conflict("La entidad a renombrar no existe");
                     if (entities.putIfAbsent(next, attributes) != null) throw conflict("Ya existe una entidad con el nuevo nombre");
@@ -62,6 +90,9 @@ public final class ContextualOperationValidator {
                     virtualRelationships.forEach(relation -> relationships.add(relationKey(relation)));
                 }
                 case ADD_ATTRIBUTE -> {
+                    if (readOnlyKeys.contains(key(operation.entityName()))) {
+                        throw readOnlyConflict(operation.entityName());
+                    }
                     Map<String, AttributeDefinition> attributes = entities.get(key(operation.entityName()));
                     if (attributes == null) throw conflict("La entidad destino no existe");
                     AttributeDefinition proposed = operation.attribute();
@@ -75,12 +106,14 @@ public final class ContextualOperationValidator {
                     attributes.put(key(proposed.name()), proposed);
                 }
                 case DELETE_ATTRIBUTE -> {
-                    Map<String, AttributeDefinition> attributes = requiredAttributes(entities, operation.entityName());
+                    Map<String, AttributeDefinition> attributes =
+                            requiredAttributes(entities, readOnlyKeys, operation.entityName());
                     if (attributes.remove(key(operation.attributeName())) == null)
                         throw conflict("El atributo a eliminar no existe");
                 }
                 case RENAME_ATTRIBUTE -> {
-                    Map<String, AttributeDefinition> attributes = requiredAttributes(entities, operation.entityName());
+                    Map<String, AttributeDefinition> attributes =
+                            requiredAttributes(entities, readOnlyKeys, operation.entityName());
                     AttributeDefinition attribute = attributes.remove(key(operation.attributeName()));
                     if (attribute == null) throw conflict("El atributo a renombrar no existe");
                     if (attributes.putIfAbsent(key(operation.newName()), new AttributeDefinition(operation.newName(),
@@ -88,7 +121,8 @@ public final class ContextualOperationValidator {
                         throw conflict("Ya existe un atributo con el nuevo nombre");
                 }
                 case CHANGE_ATTRIBUTE_TYPE, SET_ATTRIBUTE_PRIMARY_KEY, SET_ATTRIBUTE_NULLABLE -> {
-                    Map<String, AttributeDefinition> attributes = requiredAttributes(entities, operation.entityName());
+                    Map<String, AttributeDefinition> attributes =
+                            requiredAttributes(entities, readOnlyKeys, operation.entityName());
                     String attributeKey = key(operation.attributeName());
                     AttributeDefinition attribute = attributes.get(attributeKey);
                     if (attribute == null) throw conflict("El atributo a modificar no existe");
@@ -107,6 +141,12 @@ public final class ContextualOperationValidator {
                 }
                 case ADD_RELATIONSHIP -> {
                     RelationshipDefinition relation = operation.relationship();
+                    if (readOnlyKeys.contains(key(relation.sourceEntity()))) {
+                        throw readOnlyConflict(relation.sourceEntity());
+                    }
+                    if (readOnlyKeys.contains(key(relation.targetEntity()))) {
+                        throw readOnlyConflict(relation.targetEntity());
+                    }
                     if (!entities.containsKey(key(relation.sourceEntity())) || !entities.containsKey(key(relation.targetEntity())))
                         throw conflict("La relacion referencia una entidad inexistente");
                     if (key(relation.sourceEntity()).equals(key(relation.targetEntity())))
@@ -117,6 +157,12 @@ public final class ContextualOperationValidator {
                     virtualRelationships.add(relation);
                 }
                 case DELETE_RELATIONSHIP -> {
+                    if (readOnlyKeys.contains(key(operation.relationship().sourceEntity()))) {
+                        throw readOnlyConflict(operation.relationship().sourceEntity());
+                    }
+                    if (readOnlyKeys.contains(key(operation.relationship().targetEntity()))) {
+                        throw readOnlyConflict(operation.relationship().targetEntity());
+                    }
                     RelationshipDefinition relation = findRelationship(virtualRelationships,
                             operation.relationship().sourceEntity(), operation.relationship().targetEntity(),
                             operation.relationship().name());
@@ -125,6 +171,12 @@ public final class ContextualOperationValidator {
                 }
                 case UPDATE_RELATIONSHIP -> {
                     RelationshipDefinition update = operation.relationship();
+                    if (readOnlyKeys.contains(key(update.sourceEntity()))) {
+                        throw readOnlyConflict(update.sourceEntity());
+                    }
+                    if (readOnlyKeys.contains(key(update.targetEntity()))) {
+                        throw readOnlyConflict(update.targetEntity());
+                    }
                     RelationshipDefinition relation = findRelationship(virtualRelationships, update.sourceEntity(),
                             update.targetEntity(), update.name());
                     virtualRelationships.remove(relation);
@@ -136,11 +188,18 @@ public final class ContextualOperationValidator {
                 }
                 case CREATE_ASSOCIATION -> {
                     AssociationCreationDefinition association = operation.association();
+                    if (readOnlyKeys.contains(key(association.sourceEntity()))) {
+                        throw readOnlyConflict(association.sourceEntity());
+                    }
+                    if (readOnlyKeys.contains(key(association.targetEntity()))) {
+                        throw readOnlyConflict(association.targetEntity());
+                    }
                     if (!entities.containsKey(key(association.sourceEntity())) || !entities.containsKey(key(association.targetEntity())))
                         throw conflict("La asociacion referencia una entidad inexistente");
                     if (key(association.sourceEntity()).equals(key(association.targetEntity())))
                         throw conflict("Las autorrelaciones no estan habilitadas");
-                    if (entities.containsKey(key(association.associationEntityName())))
+                    if (readOnlyKeys.contains(key(association.associationEntityName()))
+                            || entities.containsKey(key(association.associationEntityName())))
                         throw conflict("Ya existe una entidad con el nombre asociativo solicitado");
                     Map<String, AttributeDefinition> attributes = new LinkedHashMap<>();
                     for (AttributeDefinition attribute : association.attributes()) {
@@ -150,6 +209,9 @@ public final class ContextualOperationValidator {
                     entities.put(key(association.associationEntityName()), attributes);
                 }
                 case DELETE_ASSOCIATION -> {
+                    if (readOnlyKeys.contains(key(operation.associationEntityName()))) {
+                        throw readOnlyConflict(operation.associationEntityName());
+                    }
                     boolean exists = context.associations().stream().anyMatch(association ->
                             key(association.entityName()).equals(key(operation.associationEntityName())));
                     if (!exists || entities.remove(key(operation.associationEntityName())) == null)
@@ -157,6 +219,12 @@ public final class ContextualOperationValidator {
                 }
                 case CONVERT_MANY_TO_MANY_ASSOCIATION -> {
                     AssociationConversionDefinition conversion = operation.conversion();
+                    if (readOnlyKeys.contains(key(conversion.sourceEntity()))) {
+                        throw readOnlyConflict(conversion.sourceEntity());
+                    }
+                    if (readOnlyKeys.contains(key(conversion.targetEntity()))) {
+                        throw readOnlyConflict(conversion.targetEntity());
+                    }
                     RelationshipDefinition relation = relationshipsById.get(conversion.relationshipId());
                     if (relation == null) throw conflict("La relacion indicada no existe o ya fue convertida");
                     Set<String> expected = Set.of(key(conversion.sourceEntity()), key(conversion.targetEntity()));
@@ -169,7 +237,8 @@ public final class ContextualOperationValidator {
                             .filter(candidate -> many(candidate.sourceCardinality()) && many(candidate.targetCardinality()))
                             .count();
                     if (candidates > 1) throw conflict("Existen varias relaciones N:M candidatas; selecciona o identifica una relacion concreta");
-                    if (entities.containsKey(key(conversion.associationEntityName())))
+                    if (readOnlyKeys.contains(key(conversion.associationEntityName()))
+                            || entities.containsKey(key(conversion.associationEntityName())))
                         throw conflict("Ya existe una entidad con el nombre asociativo solicitado");
                     boolean alreadyConverted = context.associations().stream().anyMatch(association ->
                             association.endpointEntityNames().stream().map(DiagramContextMapper::key).collect(java.util.stream.Collectors.toSet())
@@ -201,16 +270,24 @@ public final class ContextualOperationValidator {
             ? List.of(source, relation.sourceCardinality().name(), target, relation.targetCardinality().name(), name)
             : List.of(target, relation.targetCardinality().name(), source, relation.sourceCardinality().name(), name);
     }
+
     private static boolean many(com.sw1.backend.ai.diagram.model.DiagramCardinality cardinality) {
         return cardinality == com.sw1.backend.ai.diagram.model.DiagramCardinality.ZERO_MANY
                 || cardinality == com.sw1.backend.ai.diagram.model.DiagramCardinality.ONE_MANY;
     }
+
     private static Map<String, AttributeDefinition> requiredAttributes(
-            Map<String, Map<String, AttributeDefinition>> entities, String entityName) {
+            Map<String, Map<String, AttributeDefinition>> entities,
+            Set<String> readOnlyKeys,
+            String entityName) {
+        if (readOnlyKeys.contains(key(entityName))) {
+            throw readOnlyConflict(entityName);
+        }
         Map<String, AttributeDefinition> attributes = entities.get(key(entityName));
         if (attributes == null) throw conflict("La entidad destino no existe");
         return attributes;
     }
+
     private static RelationshipDefinition findRelationship(List<RelationshipDefinition> relationships,
             String source, String target, String name) {
         Set<String> endpoints = Set.of(key(source), key(target));
@@ -223,7 +300,15 @@ public final class ContextualOperationValidator {
         if (matches.size() > 1) throw conflict("Existen varias relaciones candidatas; especifica su nombre");
         return matches.getFirst();
     }
+
+    private static AiServiceException readOnlyConflict(String name) {
+        return new AiServiceException(
+                HttpStatus.CONFLICT,
+                ErrorCategory.OPERATION_VALIDATION_ERROR,
+                "El elemento UML \"" + name + "\" es de solo consulta y no admite modificaciones estructurales de IA");
+    }
+
     private static AiServiceException conflict(String message) {
-        return new AiServiceException(HttpStatus.CONFLICT, message);
+        return new AiServiceException(HttpStatus.CONFLICT, ErrorCategory.OPERATION_VALIDATION_ERROR, message);
     }
 }

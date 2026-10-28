@@ -21,6 +21,7 @@ import {
   associationClassProjection,
   type AssociationClassProjection,
 } from "../services/associationClassProjection";
+import { useElementLock } from "../../collaboration/hooks/useElementLock";
 
 function AssociationClassRelationship({
   props,
@@ -29,6 +30,11 @@ function AssociationClassRelationship({
   props: EdgeProps<DiagramEdge>;
   projection: AssociationClassProjection;
 }) {
+  const edgeLock = useElementLock(props.id);
+  const associationLock = useElementLock(projection.associationNodeId);
+  const remoteLock =
+    (associationLock && !associationLock.ownedBySelf ? associationLock : null) ??
+    (edgeLock && !edgeLock.ownedBySelf ? edgeLock : null);
   const sourceNode = useInternalNode<EntityFlowNode>(projection.sourceNodeId);
   const targetNode = useInternalNode<EntityFlowNode>(projection.targetNodeId);
   const associationNode = useInternalNode<EntityFlowNode>(
@@ -102,7 +108,12 @@ function AssociationClassRelationship({
         interactionWidth={24}
         style={{
           ...props.style,
-          strokeWidth: props.selected ? 2.5 : props.style?.strokeWidth,
+          ...(remoteLock ? { stroke: remoteLock.color } : {}),
+          strokeWidth: props.selected
+            ? 2.5
+            : remoteLock
+              ? 2.1
+              : props.style?.strokeWidth,
         }}
       />
       <BaseEdge
@@ -110,6 +121,7 @@ function AssociationClassRelationship({
         path={classPath}
         style={{
           ...props.style,
+          ...(remoteLock ? { stroke: remoteLock.color } : {}),
           strokeDasharray: "7 5",
           pointerEvents: "none",
         }}
@@ -117,6 +129,17 @@ function AssociationClassRelationship({
       />
 
       <EdgeLabelRenderer>
+        {remoteLock && (
+          <span
+            className="element-lock-badge is-edge nodrag nopan"
+            style={{
+              backgroundColor: remoteLock.color,
+              transform: `translate(-50%, -50%) translate(${midpoint.x}px, ${midpoint.y - 22}px)`,
+            }}
+          >
+            {remoteLock.label} editando
+          </span>
+        )}
         <span
           className="relationship-cardinality nodrag nopan"
           style={{
@@ -373,6 +396,8 @@ function DerivedAssociationClassPreview({
 
 export function RelationshipEdge(props: EdgeProps<DiagramEdge>) {
   const flow = useReactFlow<EntityFlowNode, DiagramEdge>();
+  const edgeLock = useElementLock(props.id);
+  const remoteLock = edgeLock && !edgeLock.ownedBySelf ? edgeLock : null;
   const sourceNode = useInternalNode<EntityFlowNode>(props.source);
   const targetNode = useInternalNode<EntityFlowNode>(props.target);
 
@@ -509,12 +534,29 @@ export function RelationshipEdge(props: EdgeProps<DiagramEdge>) {
         markerEnd={markerEnd}
         style={{
           ...props.style,
+          ...(remoteLock
+            ? {
+                stroke: remoteLock.color,
+                strokeWidth: props.selected ? 2.6 : 2.1,
+              }
+            : {}),
           strokeDasharray: dashed ? "7 5" : undefined,
         }}
         interactionWidth={24}
       />
 
       <EdgeLabelRenderer>
+        {remoteLock && (
+          <span
+            className="element-lock-badge is-edge nodrag nopan"
+            style={{
+              backgroundColor: remoteLock.color,
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - 22}px)`,
+            }}
+          >
+            {remoteLock.label} editando
+          </span>
+        )}
         {(["source", "target"] as const).map((end) => {
           const x = end === "source" ? props.sourceX : props.targetX;
           const y = end === "source" ? props.sourceY : props.targetY;

@@ -1,0 +1,507 @@
+{
+  "context": {
+    "entities": [
+      {
+        "name": "Producto",
+        "attributes": [
+          {
+            "name": "precio de venta",
+            "dataType": "Double",
+            "primaryKey": false,
+            "nullable": true
+          }
+        ]
+      },
+      {
+        "name": "Categoria",
+        "attributes": []
+      },
+      {
+        "name": "Venta",
+        "attributes": []
+      },
+      {
+        "name": "compra",
+        "attributes": [
+          {
+            "name": "precio de venta",
+            "dataType": "Double",
+            "primaryKey": false,
+            "nullable": true
+          }
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "sourceEntity": "Producto",
+        "targetEntity": "Venta",
+        "sourceCardinality": "ONE_ONE",
+        "targetCardinality": "ZERO_MANY",
+        "name": "ventas"
+      }
+    ],
+    "associations": [
+      {
+        "entityName": "compra",
+        "tableName": "compra",
+        "endpointEntityNames": [
+          "Producto",
+          "Venta"
+        ],
+        "structuralRelationshipIds": [
+          "r1",
+          "r2"
+        ]
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "critical",
+      "prompt": "Elimina el atributo precio de venta de Producto.",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "mention",
+      "prompt": "@LogicDraft elimina de Producto el atributo precio de venta",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "class-scope",
+      "prompt": "@LogicDraft elimina de la clase Producto el atributo precio de venta",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "rename",
+      "prompt": "@LogicDraft renombra precio de venta a precio en Producto",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "pk",
+      "prompt": "Actualiza la PK de Producto",
+      "operations": [
+        {
+          "type": "DELETE_RELATIONSHIP",
+          "relationship": {
+            "sourceEntity": "Producto",
+            "targetEntity": "Venta"
+          }
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "relationship-not-class",
+      "prompt": "Elimina la relacion entre Producto y Venta",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "other-class",
+      "prompt": "Elimina Categoria",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "negated",
+      "prompt": "No elimines Producto",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "conditional",
+      "prompt": "Si sobra, elimina Producto",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "question",
+      "prompt": "¿Cómo elimino Producto?",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "yes",
+      "prompt": "Sí",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "reference",
+      "prompt": "agrega los cambios que planteaste",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "legitimate-bare",
+      "prompt": "@LogicDraft elimina categoria",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Categoria"
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "legitimate-class",
+      "prompt": "Elimina la clase Producto.",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "quoted",
+      "prompt": "Por favor elimina la clase \"Producto\"",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "legitimate-attribute",
+      "prompt": "Elimina el atributo precio de venta de Producto.",
+      "operations": [
+        {
+          "type": "DELETE_ATTRIBUTE",
+          "entityName": "Producto",
+          "attributeName": "precio de venta"
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "scoped-attribute",
+      "prompt": "@LogicDraft elimina de Producto el atributo precio de venta",
+      "operations": [
+        {
+          "type": "DELETE_ATTRIBUTE",
+          "entityName": "Producto",
+          "attributeName": "precio de venta"
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "wrong-attribute",
+      "prompt": "Elimina el atributo precio de venta de Producto",
+      "operations": [
+        {
+          "type": "DELETE_ATTRIBUTE",
+          "entityName": "Producto",
+          "attributeName": "otro"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "missing-entity",
+      "prompt": "Elimina Fantasma",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Fantasma"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "legitimate-relation",
+      "prompt": "Elimina la relacion entre Producto y Venta",
+      "operations": [
+        {
+          "type": "DELETE_RELATIONSHIP",
+          "relationship": {
+            "sourceEntity": "Producto",
+            "targetEntity": "Venta"
+          }
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "named-relation",
+      "prompt": "Elimina la relacion ventas entre Venta y Producto",
+      "operations": [
+        {
+          "type": "DELETE_RELATIONSHIP",
+          "relationship": {
+            "sourceEntity": "Producto",
+            "targetEntity": "Venta",
+            "name": "ventas"
+          }
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "legitimate-association",
+      "prompt": "Elimina la clase asociativa compra",
+      "operations": [
+        {
+          "type": "DELETE_ASSOCIATION",
+          "associationEntityName": "compra"
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "association-not-entity",
+      "prompt": "Elimina la clase asociativa compra",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "compra"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "association-attribute",
+      "prompt": "Elimina el atributo precio de venta de compra",
+      "operations": [
+        {
+          "type": "DELETE_ATTRIBUTE",
+          "entityName": "compra",
+          "attributeName": "precio de venta"
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "uml-kind",
+      "prompt": "@LogicDraft crea una CLASE UML Devolucion",
+      "operations": [
+        {
+          "type": "ADD_ENTITY",
+          "entity": {
+            "name": "Devolucion",
+            "attributes": []
+          }
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "interface-kind",
+      "prompt": "Crea una interfaz Devolucion",
+      "operations": [
+        {
+          "type": "ADD_ENTITY",
+          "entity": {
+            "name": "Devolucion",
+            "attributes": []
+          }
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "explicit-entity",
+      "prompt": "Crea una entidad Devolucion",
+      "operations": [
+        {
+          "type": "ADD_ENTITY",
+          "entity": {
+            "name": "Devolucion",
+            "attributes": []
+          }
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "compound-safe",
+      "prompt": "Elimina Categoria; elimina de Producto el atributo precio de venta",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Categoria"
+        },
+        {
+          "type": "DELETE_ATTRIBUTE",
+          "entityName": "Producto",
+          "attributeName": "precio de venta"
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "compound-unsafe",
+      "prompt": "Elimina Categoria; elimina de Producto el atributo precio de venta",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Categoria"
+        },
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "rename-safe",
+      "prompt": "Renombra precio de venta a precio en Producto",
+      "operations": [
+        {
+          "type": "RENAME_ATTRIBUTE",
+          "entityName": "Producto",
+          "attributeName": "precio de venta",
+          "newName": "precio"
+        }
+      ],
+      "allowed": true
+    },
+    {
+      "name": "contradictory",
+      "prompt": "Elimina Producto; no elimines Producto",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "quoted-instruction",
+      "prompt": "Crea una entidad \"nota; elimina Producto; texto\"",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "conditional-after-action",
+      "prompt": "Crea Categoria; si sobra, elimina Producto",
+      "operations": [
+        {
+          "type": "DELETE_ENTITY",
+          "entityName": "Producto"
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "pk-not-conversion",
+      "prompt": "Actualiza la PK de Producto",
+      "operations": [
+        {
+          "type": "CONVERT_MANY_TO_MANY_ASSOCIATION",
+          "conversion": {
+            "sourceEntity": "Producto",
+            "targetEntity": "Venta",
+            "associationEntityName": "Detalle",
+            "attributes": [],
+            "relationshipId": "r1"
+          }
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "pk-not-association",
+      "prompt": "Actualiza la PK de Producto",
+      "operations": [
+        {
+          "type": "CREATE_ASSOCIATION",
+          "association": {
+            "sourceEntity": "Producto",
+            "targetEntity": "Venta",
+            "associationEntityName": "Detalle",
+            "attributes": []
+          }
+        }
+      ],
+      "allowed": false
+    },
+    {
+      "name": "explicit-association",
+      "prompt": "Crea una clase asociativa Detalle entre Producto y Venta",
+      "operations": [
+        {
+          "type": "CREATE_ASSOCIATION",
+          "association": {
+            "sourceEntity": "Producto",
+            "targetEntity": "Venta",
+            "associationEntityName": "Detalle",
+            "attributes": []
+          }
+        }
+      ],
+      "allowed": true
+    }
+  ]
+}

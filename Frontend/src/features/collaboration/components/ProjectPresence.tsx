@@ -1,3 +1,4 @@
+import { collaboratorColor } from '../services/remoteCursors'
 import type { CollaborationStatus, Collaborator } from '../types/collaboration.types'
 
 interface ProjectPresenceProps {
@@ -25,9 +26,19 @@ export function ProjectPresence({ status, collaborators }: ProjectPresenceProps)
         <span>{collaborators.length} conectado{collaborators.length === 1 ? '' : 's'}</span>
       </div>
       <div className="presence-users">
-        {collaborators.slice(0, 4).map((user) => (
-          <span className="presence-avatar" key={user.userId} title={user.name}>{initials(user.name)}</span>
-        ))}
+        {collaborators.slice(0, 4).map((user) => {
+          const color = collaboratorColor(user.userId)
+          return (
+            <span
+              className="presence-avatar"
+              key={user.userId}
+              title={user.name}
+              style={{ borderColor: color, backgroundColor: color }}
+            >
+              {initials(user.name)}
+            </span>
+          )
+        })}
         {collaborators.length > 4 && <span className="presence-more">+{collaborators.length - 4}</span>}
       </div>
     </aside>

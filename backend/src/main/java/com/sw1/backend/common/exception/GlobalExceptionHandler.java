@@ -37,6 +37,42 @@ public class GlobalExceptionHandler {
                 HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage(), request.getRequestURI()));
     }
 
+    @ExceptionHandler(com.sw1.backend.collaboration.service.ElementLockedException.class)
+    public ResponseEntity<Map<String, Object>> manejarElementoBloqueado(
+            com.sw1.backend.collaboration.service.ElementLockedException exception,
+            HttpServletRequest request) {
+        Map<String, Object> body = crearRespuestaBase(
+                HttpStatus.CONFLICT, exception.getMessage(), request.getRequestURI());
+        body.put("code", "ELEMENT_LOCKED");
+        body.put("elementId", exception.getElementId());
+        body.put("lockedByUserId", exception.getOwnerUserId());
+        body.put("lockedByName", exception.getOwnerName());
+        if (exception.getOwnerClientId() != null) {
+            body.put("lockedByClientId", exception.getOwnerClientId());
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(com.sw1.backend.ai.conversation.exception.ConversationConflictException.class)
+    public ResponseEntity<Map<String, Object>> manejarConflictoConversacion(
+            com.sw1.backend.ai.conversation.exception.ConversationConflictException exception,
+            HttpServletRequest request) {
+        Map<String, Object> body = crearRespuestaBase(
+                HttpStatus.CONFLICT, exception.getMessage(), request.getRequestURI());
+        if (exception.getCode() != null) {
+            body.put("code", exception.getCode());
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(com.sw1.backend.ai.conversation.exception.ConversationValidationException.class)
+    public ResponseEntity<Map<String, Object>> manejarValidacionConversacion(
+            com.sw1.backend.ai.conversation.exception.ConversationValidationException exception,
+            HttpServletRequest request) {
+        return ResponseEntity.badRequest().body(crearRespuestaBase(
+                HttpStatus.BAD_REQUEST, exception.getMessage(), request.getRequestURI()));
+    }
+
     @ExceptionHandler(com.sw1.backend.diagrama.service.DiagramConflictException.class)
     public ResponseEntity<Map<String, Object>> manejarConflictoDeDiagrama(
             com.sw1.backend.diagrama.service.DiagramConflictException exception,

@@ -8,6 +8,7 @@ from app.schemas.diagram import (
     CreateAssociation, DeleteEntity, DeleteRelationship, DiagramContext, InterpretResponse,
 )
 from app.services.providers.base import ProviderResponseError
+from app.skills.diagram.semantic_safety import validate_semantic_safety
 
 logger = logging.getLogger(__name__)
 
@@ -480,17 +481,9 @@ def _sanitize_requested_operations(
     entity_keys = {_key(name) for name in expected.entity_names}
     attribute_keys = {(_key(entity), _key(attribute)) for entity, attribute in expected.attribute_targets}
     relationship_keys = [{_key(source), _key(target)} for source, target in expected.relationship_pairs]
-    requested_delete_keys = {_key(name) for name in _requested_deleted_entities(plain_prompt)}
-    mentions_delete = bool(requested_delete_keys) or re.search(
-        r"\b(?:elimina\w*|borra\w*|quita\w*|suprime\w*|delete\w*|remove\w*)\b",
-        plain_prompt,
-    ) is not None
-    deleted_entity_keys = set(requested_delete_keys)
-    if not requested_delete_keys and mentions_delete:
-        deleted_entity_keys.update(
-            _key(op.entityName) for op in response.operations
-            if isinstance(op, DeleteEntity) and _key(op.entityName) not in entity_keys
-        )
+    # These operations already passed semantic_safety against exact user targets.
+    # A deletion verb by itself never grants authority to delete any entity.
+    deleted_entity_keys = {_key(op.entityName) for op in response.operations if isinstance(op, DeleteEntity)}
     mentions_attributes = bool(attribute_keys) or re.search(
         r"\b(?:atributos?|attributes?|campos?|fields?)\b",
         plain_prompt,
@@ -506,15 +499,7 @@ def _sanitize_requested_operations(
     sanitized = []
     removed = 0
     for operation in response.operations:
-        if isinstance(operation, DeleteEntity):
-            entity_key = _key(operation.entityName)
-            if requested_delete_keys and entity_key not in requested_delete_keys:
-                removed += 1
-                continue
-            if not mentions_delete or entity_key in entity_keys:
-                removed += 1
-                continue
-        elif isinstance(operation, AddEntity):
+        if isinstance(operation, AddEntity):
             # La solicitud pide atributos para entidades existentes,
             # no crear una entidad nueva.
             if attribute_keys and not entity_keys:
@@ -619,6 +604,10 @@ def _typed_attribute_expectations(
 
 def validate_completeness(
         prompt: str, diagram: DiagramContext | None, response: InterpretResponse) -> InterpretResponse:
+    if _non_mutating_request(_plain(prompt)):
+        return InterpretResponse(operations=[])
+    # Reject unsafe batches BEFORE sanitization/repair can retain or hide them.
+    validate_semantic_safety(prompt, diagram, response)
     conversion_expected = extract_conversion_expectation(prompt)
     if conversion_expected is not None:
         if conversion_expected.ambiguous_attribute:

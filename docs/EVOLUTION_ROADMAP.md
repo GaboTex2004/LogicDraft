@@ -184,6 +184,21 @@ TypeScript y Python; no anunciar capacidades que los DTO/esquemas actuales no re
 7. Reabrir UML con clase asociativa y exportar/importar XMI en EA; comprobar generación existente.
    La visualización real en EA y aplicaciones generadas no se ejecutó aquí.
 
+#### Actualización de implementación Fase 3 (Subfases 3.2A, 3.2B, 3.3, 3.4 y 3.5)
+
+Implementación completada en código y verificada con suites automatizadas en la rama `Antony`, pendiente únicamente de aplicación de la migración Flyway `V3` sobre una base PostgreSQL real con respaldo y verificación manual E2E en dos navegadores:
+
+| Subfase | Estado actual y alcance |
+|---|---|
+| 3.1 Contratos base | **Completada** — `revision` optimista, validación documental v1/v2 y `DIAGRAM_COMMITTED` tras commit. |
+| 3.2A Colaboración visual en vivo y cursores | **Implementada y verificada manualmente por el usuario** — cursores remotos identificados con color, vistas previas STOMP de nodos/relaciones/clases asociativas sin marcar sucio al receptor. |
+| 3.2B Bloqueos por elemento y fusión automática | **Implementada y verificada manualmente por el usuario** — leases temporales en `ProjectElementLockService` (instancia única STOMP), etiquetas `"X editando"`, `DiagramRevisionHistory` y `DiagramThreeWayMerge` para combinar ediciones independientes sin conflictos falsos. |
+| 3.3A Conversaciones compartidas y mensajería en vivo | **Implementada (código + pruebas automatizadas)** — migración aditiva `V3__shared_agent_conversations.sql` (`conversaciones_agente`, `mensajes_conversacion_agente`, `propuestas_uml_agente`), múltiples conversaciones activas/archivadas por proyecto, autoría real JWT, paginación `beforeId` sin tope de 10 mensajes y difusión STOMP `AFTER_COMMIT`. |
+| 3.3B IA como participante explícito | **Implementada (código + pruebas automatizadas)** — mensajes normales de colaboradores no invocan al modelo; `LogicDraft IA` responde únicamente ante mención `@LogicDraft` o acción explícita `invokeAgent=true`, acota el contexto upstream a `<= 10` mensajes `SENT` con atribución `[Autor]` y preserva el mensaje humano ante fallos `502`/`503`/`504`. |
+| 3.3C Propuestas UML compartidas transaccionales | **Implementada (código + pruebas automatizadas)** — estados `PENDING`, `ACCEPTED`, `REJECTED`, `STALE`, `INVALID` con `@Version`, `ServerDiagramOperationApplier` para las 15 `DiagramOperationType` actuales, verificación de `baseRevision` y bloqueos de `ProjectElementLockService`, y commit atómico con `DiagramRevisionHistory` + `DIAGRAM_COMMITTED` + `CONVERSATION_PROPOSAL_UPDATED`. |
+| 3.4 UX tipo mensajería integrada | **Implementada (código + pruebas automatizadas)** — panel `AgentPanel` con lista de conversaciones, creación/renombrado/archivado, burbujas diferenciadas con autor real y hora del servidor, indicador `"LogicDraft está respondiendo"`, chip `@LogicDraft`, tarjetas de propuestas UML con `Aceptar propuesta` / `Rechazar` y modo `VIEWER` de solo lectura. |
+| 3.5 Pruebas y cierre de Fase 3 | **Suites automatizadas aprobadas; pendiente validación manual PostgreSQL/Docker** — Frontend: `143/143` pruebas (`test:diagram-ai`), `lint` y `build` aprobados; FastAPI: `152` pruebas + `162` subpruebas aprobadas; Backend Java: `235` ejecutadas (`232` aprobadas, `0` fallos, `0` errores, `3` omitidas por fixtures EA externos). No se ejecutó Flyway `V3` sobre una base PostgreSQL local existente sin respaldo. |
+
 ## Fase 4 — Generación fullstack y mejoras Flutter con IA local en dispositivo
 
 - Extender el `ApplicationSchema` sólo después de decidir qué construcciones UML son generables y cuáles son exclusivamente documentales.

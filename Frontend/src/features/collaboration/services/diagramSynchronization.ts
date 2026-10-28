@@ -5,12 +5,14 @@ export interface SynchronizationState {
   dirty: boolean
   dragging: boolean
   saving: Promise<unknown> | null
+  remotePreviewStale?: boolean
 }
 
 export interface SynchronizationPorts {
   read: () => Promise<DiagramaResponse>
   state: () => SynchronizationState
   apply: (saved: DiagramaResponse, author?: string) => void
+  reconcileDirty?: (saved: DiagramaResponse, author?: string) => 'rebased' | 'conflict'
   conflict: (saved: DiagramaResponse, author?: string) => void
   error: (error: unknown) => void
   verified?: () => void
@@ -53,10 +55,18 @@ export class DiagramSynchronizer {
           throw new Error('El servidor devolvió una revisión inválida.')
         this.ports.verified?.()
         // Delayed responses and duplicate deliveries cannot roll the canvas back.
-        if (current.revision !== null && saved.revision <= current.revision) continue
+        // If an unconfirmed remote preview expired without commit, allow restoring the current revision.
+        if (current.revision !== null && (
+          saved.revision < current.revision ||
+          (saved.revision === current.revision && !current.remotePreviewStale)
+        )) continue
         const author = this.author?.revision === saved.revision ? this.author.name : undefined
-        if (current.dirty || current.dragging) this.ports.conflict(saved, author)
-        else this.ports.apply(saved, author)
+        if (current.dirty || current.dragging) {
+          const outcome = this.ports.reconcileDirty?.(saved, author) ?? 'conflict'
+          if (outcome === 'conflict') this.ports.conflict(saved, author)
+        } else {
+          this.ports.apply(saved, author)
+        }
       } catch (error) {
         if (this.active) this.ports.error(error)
       }

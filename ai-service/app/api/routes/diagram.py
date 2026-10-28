@@ -7,6 +7,7 @@ from app.services.diagram_ai_service import (
     DiagramIncompleteResponseError, DiagramJsonError, DiagramStructureError,
 )
 from app.services.diagram_normalizer import DiagramConflictError
+from app.skills.diagram.semantic_safety import SemanticSafetyError
 from app.services.providers.base import (
     ProviderConfigurationError, ProviderConnectionError, ProviderTimeoutError,
     ProviderResponseError, ProviderModelNotFoundError,
@@ -32,5 +33,7 @@ async def interpret(request: InterpretRequest) -> InterpretResponse:
         raise HTTPException(502, "La IA devolvio una respuesta que no es JSON valido.") from None
     except DiagramStructureError:
         raise HTTPException(502, "La IA devolvio JSON que no cumple el contrato de operaciones.") from None
+    except SemanticSafetyError as error:
+        raise HTTPException(422, str(error)) from None
     except ProviderResponseError:
         raise HTTPException(502, "El proveedor no devolvio operaciones validas.") from None

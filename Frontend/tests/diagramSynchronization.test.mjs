@@ -158,13 +158,26 @@ test('unmount ignores in-flight responses and invalid revision cannot alter the 
   assert.equal(invalid.applied.length, 0)
 })
 
-test('editor wires reconnect, missed-event recovery and conflict protection; no draft STOMP publication', () => {
+test('stale unconfirmed remote preview restores the current confirmed server revision without rolling back to older revisions', async () => {
+  const client = browser(async () => snapshot(2, 'ServidorConfirmado'), 2)
+  await client.sync.refresh()
+  assert.equal(client.applied.length, 0)
+  client.state.remotePreviewStale = true
+  await client.sync.refresh()
+  assert.equal(client.applied.length, 1)
+  assert.equal(client.canvas().nodes[0].data.name, 'ServidorConfirmado')
+})
+
+test('editor wires reconnect, missed-event recovery, conflict protection and non-dirty live previews', () => {
   const page = readFileSync(new URL('../src/features/diagram/pages/DiagramEditorPage.tsx', import.meta.url), 'utf8')
   const transport = readFileSync(new URL('../src/features/collaboration/services/collaborationService.ts', import.meta.url), 'utf8')
   assert.match(page, /project\.id, applyRemoteEvent, synchronize/)
   assert.match(page, /15_000/)
   assert.match(page, /if \(conflictRef\.current\) return/)
   assert.match(page, /Descargar borrador local/)
-  assert.doesNotMatch(page, /remoteDocument|publishEvent\(/)
-  assert.doesNotMatch(transport, /publishEvent|JSON\.stringify\(\{ type, clientId, payload \}\)/)
+  assert.match(page, /applyLiveDiagramEvent/)
+  assert.match(page, /RemoteCursorsOverlay/)
+  assert.doesNotMatch(page, /publishEvent\(/)
+  assert.match(transport, /CURSOR_MOVED/)
+  assert.match(transport, /DIAGRAM_COMMITTED/)
 })

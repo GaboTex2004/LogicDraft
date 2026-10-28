@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ProjectPresenceService {
     private final SimpMessagingTemplate messagingTemplate;
     private final Map<String, PresenceConnection> connections = new ConcurrentHashMap<>();
+    private final Map<String, ActiveCursor> activeCursors = new ConcurrentHashMap<>();
 
     public ProjectPresenceService(SimpMessagingTemplate messagingTemplate) {
         this.messagingTemplate = messagingTemplate;
@@ -29,12 +30,34 @@ public class ProjectPresenceService {
                 user.userId(), user.name(), projectId, null, null, null)));
     }
 
+    public boolean tryRecordCursorMove(
+            String sessionId,
+            Long projectId,
+            CollaborationIdentity identity,
+            String clientId,
+            long minIntervalNanos) {
+        String cursorKey = cursorKey(sessionId, projectId);
+        long now = System.nanoTime();
+        ActiveCursor previous = activeCursors.get(cursorKey);
+        if (previous != null && now - previous.lastSentNanos() < minIntervalNanos) {
+            return false;
+        }
+        activeCursors.put(cursorKey, new ActiveCursor(sessionId, projectId, identity, clientId, now));
+        return true;
+    }
+
+    public void clearCursor(String sessionId, Long projectId) {
+        activeCursors.remove(cursorKey(sessionId, projectId));
+    }
+
     public void leaveSession(String sessionId) {
         List<PresenceConnection> leaving = connections.entrySet().stream()
                 .filter(entry -> entry.getValue().sessionId().equals(sessionId))
                 .map(Map.Entry::getValue)
                 .toList();
         connections.entrySet().removeIf(entry -> entry.getValue().sessionId().equals(sessionId));
+
+        removeSessionCursors(sessionId, null);
 
         leaving.stream()
                 .distinct()
@@ -50,12 +73,46 @@ public class ProjectPresenceService {
         return connection != null && connection.projectId().equals(projectId) ? connection.identity() : null;
     }
 
-    public void leaveSubscription(String sessionId, String subscriptionId) {
+    public Long leaveSubscription(String sessionId, String subscriptionId) {
         PresenceConnection leaving = connections.remove(sessionId + ":" + subscriptionId);
-        if (leaving != null && !isStillConnected(leaving.projectId(), leaving.identity().userId())) {
+        if (leaving == null) return null;
+        boolean stillSubscribedInSession = isSessionSubscribedToProject(sessionId, leaving.projectId());
+        if (!stillSubscribedInSession) {
+            removeSessionCursors(sessionId, leaving.projectId());
+        }
+        if (!isStillConnected(leaving.projectId(), leaving.identity().userId())) {
             send(CollaborationEvent.create(CollaborationEventType.USER_LEFT, leaving.identity().userId(),
                     leaving.identity().name(), leaving.projectId(), null, null, null));
         }
+        return stillSubscribedInSession ? null : leaving.projectId();
+    }
+
+    private void removeSessionCursors(String sessionId, Long onlyProjectId) {
+        activeCursors.entrySet().removeIf(entry -> {
+            ActiveCursor cursor = entry.getValue();
+            boolean matches = cursor.sessionId().equals(sessionId)
+                    && (onlyProjectId == null || cursor.projectId().equals(onlyProjectId));
+            if (matches) {
+                send(CollaborationEvent.create(
+                        CollaborationEventType.CURSOR_LEFT,
+                        cursor.identity().userId(),
+                        cursor.identity().name(),
+                        cursor.projectId(),
+                        cursor.clientId(),
+                        Map.of("sessionId", cursor.sessionId()),
+                        null));
+            }
+            return matches;
+        });
+    }
+
+    private boolean isSessionSubscribedToProject(String sessionId, Long projectId) {
+        return connections.values().stream().anyMatch(connection ->
+                connection.sessionId().equals(sessionId) && connection.projectId().equals(projectId));
+    }
+
+    private static String cursorKey(String sessionId, Long projectId) {
+        return sessionId + ":" + projectId;
     }
 
     private List<CollaborationIdentity> connectedUsers(Long projectId) {
@@ -81,5 +138,13 @@ public class ProjectPresenceService {
             String sessionId,
             Long projectId,
             CollaborationIdentity identity) {
+    }
+
+    private record ActiveCursor(
+            String sessionId,
+            Long projectId,
+            CollaborationIdentity identity,
+            String clientId,
+            long lastSentNanos) {
     }
 }

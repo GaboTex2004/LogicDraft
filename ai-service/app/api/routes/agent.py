@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from app.core.config import get_settings
 from app.schemas.agent import AgentAskRequest, AgentAskResponse
 from app.services.agent_service import AgentService
+from app.skills.diagram.semantic_safety import SemanticSafetyError
 from app.services.ai_service import AIService
 from app.services.providers.base import (
     ProviderConfigurationError, ProviderConnectionError, ProviderModelNotFoundError,
@@ -19,5 +20,7 @@ async def ask(request: AgentAskRequest) -> AgentAskResponse:
         raise HTTPException(503, "El proveedor de IA no esta disponible.") from None
     except ProviderTimeoutError:
         raise HTTPException(504, "El proveedor de IA excedio el tiempo de espera.") from None
+    except SemanticSafetyError as error:
+        raise HTTPException(422, str(error)) from None
     except ProviderResponseError:
         raise HTTPException(502, "El proveedor no devolvio una respuesta valida.") from None

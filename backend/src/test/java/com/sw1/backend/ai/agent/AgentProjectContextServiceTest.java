@@ -71,9 +71,12 @@ class AgentProjectContextServiceTest {
         when(projects.findById(10L)).thenReturn(Optional.of(project));
         Diagrama diagram = persistedDiagram();
         List<Object> nodes = new ArrayList<>((List<?>) diagram.getContenido().get("nodes"));
-        nodes.addFirst(Map.of("id", "uml-class", "data", Map.of(
+        nodes.addFirst(Map.of("id", "uml-enum", "data", Map.of(
+                "name", "Estado", "kind", "ENUMERATION", "attributes", List.of(),
+                "literals", List.of("ACTIVO", "INACTIVO"))));
+        nodes.add(1, Map.of("id", "uml-class", "data", Map.of(
                 "name", "Modelo", "kind", "CLASS", "attributes", List.of())));
-        nodes.add(2, Map.of("id", "uml-interface", "data", Map.of(
+        nodes.add(3, Map.of("id", "uml-interface", "data", Map.of(
                 "name", "Contrato", "kind", "INTERFACE", "attributes", List.of())));
         List<Object> edges = new ArrayList<>((List<?>) diagram.getContenido().get("edges"));
         edges.addFirst(Map.of("id", "realization", "source", "uml-class", "target", "uml-interface",
@@ -83,8 +86,12 @@ class AgentProjectContextServiceTest {
 
         var context = service.load(10L, request("producto", "rel-1", List.of()));
 
-        assertEquals(List.of("categoria", "producto"), context.entities().stream()
+        assertEquals(List.of("uml-class", "categoria", "producto"), context.entities().stream()
                 .map(AgentProjectContext.AgentEntity::id).toList());
+        assertEquals(Set.of("Estado", "Contrato"), context.readOnlyElementNames());
+        assertNotNull(context.projectDescription());
+        assertTrue(context.projectDescription().contains("INTERFACE Contrato"));
+        assertTrue(context.projectDescription().contains("ENUMERATION Estado"));
         var relation = context.relationships().getFirst();
         assertEquals("rel-1", relation.id());
         assertEquals("categoria", relation.sourceNodeId());
@@ -93,7 +100,11 @@ class AgentProjectContextServiceTest {
         assertEquals("Producto", relation.targetEntity());
         assertEquals("producto", context.selectedNodeId());
         assertEquals("rel-1", context.selectedEdgeId());
-        var filteredSelection = service.load(10L, request("uml-class", "realization", List.of()));
+
+        var classSelection = service.load(10L, request("uml-class", null, List.of()));
+        assertEquals("uml-class", classSelection.selectedNodeId());
+
+        var filteredSelection = service.load(10L, request("uml-interface", "realization", List.of()));
         assertNull(filteredSelection.selectedNodeId());
         assertNull(filteredSelection.selectedEdgeId());
     }
