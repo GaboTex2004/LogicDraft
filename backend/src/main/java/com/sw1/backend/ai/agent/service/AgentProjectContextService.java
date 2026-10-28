@@ -59,24 +59,27 @@ public class AgentProjectContextService {
                                             Diagrama diagram, AgentAskRequest request) {
         var semantic = DiagramContextMapper.fromDocument(diagram.getContenido());
         List<?> rawNodes = list(diagram.getContenido().get("nodes"));
-        List<?> rawEdges = list(diagram.getContenido().get("edges"));
         List<AgentEntity> entities = new ArrayList<>();
         Map<String, String> namesById = new HashMap<>();
-        for (int i = 0; i < semantic.entities().size(); i++) {
-            String id = text(map(rawNodes.get(i)).get("id"));
-            var entity = semantic.entities().get(i);
+        Map<String, String> idsByName = new HashMap<>();
+        for (Object rawNode : rawNodes) {
+            Map<?, ?> node = map(rawNode);
+            idsByName.put(text(map(node.get("data")).get("name")), text(node.get("id")));
+        }
+        // The semantic mapper filters non-entity UML nodes and non-association edges.
+        // Never zip those filtered lists with the original document by position.
+        for (var entity : semantic.entities()) {
+            String id = Objects.requireNonNull(idsByName.get(entity.name()));
             namesById.put(id, entity.name());
             entities.add(new AgentEntity(id, entity.name(), entity.attributes()));
         }
         List<AgentRelationship> relationships = new ArrayList<>();
         Set<String> edgeIds = new HashSet<>();
-        for (int i = 0; i < semantic.relationships().size(); i++) {
-            Map<?, ?> edge = map(rawEdges.get(i));
-            String id = optionalText(edge.get("id"));
+        for (var relation : semantic.relationships()) {
+            String id = relation.id();
             if (id != null) edgeIds.add(id);
-            String source = text(edge.get("source"));
-            String target = text(edge.get("target"));
-            var relation = semantic.relationships().get(i);
+            String source = Objects.requireNonNull(idsByName.get(relation.sourceEntity()));
+            String target = Objects.requireNonNull(idsByName.get(relation.targetEntity()));
             relationships.add(new AgentRelationship(id, source, target, namesById.get(source), namesById.get(target),
                     relation.sourceCardinality(), relation.targetCardinality(), relation.name(), relation.joinTableName()));
         }
@@ -102,8 +105,5 @@ public class AgentProjectContextService {
         if (!(value instanceof String result) || result.isBlank() || result.length() > 100)
             throw new IllegalArgumentException("Diagrama invalido");
         return result;
-    }
-    private static String optionalText(Object value) {
-        return value == null ? null : text(value);
     }
 }

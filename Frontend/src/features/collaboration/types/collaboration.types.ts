@@ -11,6 +11,7 @@ export type CollaborationEventType =
   | 'EDGE_DELETED'
   | 'DIAGRAM_BATCH_APPLIED'
   | 'DIAGRAM_SAVED'
+  | 'DIAGRAM_COMMITTED'
 
 export type DiagramCollaborationEventType = Exclude<
   CollaborationEventType,

@@ -8,6 +8,7 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 import org.springframework.web.socket.messaging.SessionSubscribeEvent;
+import org.springframework.web.socket.messaging.SessionUnsubscribeEvent;
 
 import java.security.Principal;
 import java.util.regex.Matcher;
@@ -39,6 +40,13 @@ public class CollaborationSessionListener {
         Long projectId = Long.valueOf(matcher.group(1));
         CollaborationIdentity identity = authorizer.authorize(projectId, principal);
         presenceService.join(sessionId, subscriptionId, projectId, identity);
+    }
+
+    @EventListener
+    public void onUnsubscribe(SessionUnsubscribeEvent event) {
+        SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.wrap(event.getMessage());
+        if (accessor.getSessionId() != null && accessor.getSubscriptionId() != null)
+            presenceService.leaveSubscription(accessor.getSessionId(), accessor.getSubscriptionId());
     }
 
     @EventListener

@@ -8,7 +8,7 @@ const collaboration = readFileSync(new URL('../src/features/collaboration/hooks/
 
 test('save sends the confirmed server revision separately from document version', () => {
   assert.match(api, /baseRevision:\s*number \| null/)
-  assert.match(api, /\{ \.\.\.document, baseRevision \}/)
+  assert.match(api, /\{ \.\.\.document, baseRevision,/)
   assert.match(editor, /serverRevisionRef\.current = saved\.revision/)
 })
 

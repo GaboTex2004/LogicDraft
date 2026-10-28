@@ -67,6 +67,38 @@ class AgentProjectContextServiceTest {
     }
 
     @Test
+    void mixedUmlContextKeepsIdentityAfterFilteringNodesAndRelationships() {
+        when(projects.findById(10L)).thenReturn(Optional.of(project));
+        Diagrama diagram = persistedDiagram();
+        List<Object> nodes = new ArrayList<>((List<?>) diagram.getContenido().get("nodes"));
+        nodes.addFirst(Map.of("id", "uml-class", "data", Map.of(
+                "name", "Modelo", "kind", "CLASS", "attributes", List.of())));
+        nodes.add(2, Map.of("id", "uml-interface", "data", Map.of(
+                "name", "Contrato", "kind", "INTERFACE", "attributes", List.of())));
+        List<Object> edges = new ArrayList<>((List<?>) diagram.getContenido().get("edges"));
+        edges.addFirst(Map.of("id", "realization", "source", "uml-class", "target", "uml-interface",
+                "data", Map.of("relationKind", "REALIZATION")));
+        diagram.setContenido(Map.of("version", 2, "nodes", nodes, "edges", edges));
+        when(diagrams.findByProyectoId(10L)).thenReturn(Optional.of(diagram));
+
+        var context = service.load(10L, request("producto", "rel-1", List.of()));
+
+        assertEquals(List.of("categoria", "producto"), context.entities().stream()
+                .map(AgentProjectContext.AgentEntity::id).toList());
+        var relation = context.relationships().getFirst();
+        assertEquals("rel-1", relation.id());
+        assertEquals("categoria", relation.sourceNodeId());
+        assertEquals("producto", relation.targetNodeId());
+        assertEquals("Categoria", relation.sourceEntity());
+        assertEquals("Producto", relation.targetEntity());
+        assertEquals("producto", context.selectedNodeId());
+        assertEquals("rel-1", context.selectedEdgeId());
+        var filteredSelection = service.load(10L, request("uml-class", "realization", List.of()));
+        assertNull(filteredSelection.selectedNodeId());
+        assertNull(filteredSelection.selectedEdgeId());
+    }
+
+    @Test
     void unknownSelectionIsSafelyIgnored() {
         when(projects.findById(10L)).thenReturn(Optional.of(project));
         when(diagrams.findByProyectoId(10L)).thenReturn(Optional.of(persistedDiagram()));

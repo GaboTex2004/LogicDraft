@@ -22,10 +22,11 @@ export async function guardarDiagrama(
   projectId: number,
   document: DiagramDocument,
   baseRevision: number | null,
+  clientId?: string,
 ): Promise<DiagramaResponse> {
   const response = await api.put<DiagramaResponse>(
     `/proyectos/${projectId}/diagrama`,
-    { ...document, baseRevision },
+    { ...document, baseRevision, ...(clientId ? { clientId } : {}) },
   );
   return response.data;
 }

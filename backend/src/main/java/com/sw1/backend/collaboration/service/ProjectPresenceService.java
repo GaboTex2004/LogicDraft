@@ -45,6 +45,19 @@ public class ProjectPresenceService {
                         connection.projectId(), null, null, null)));
     }
 
+    public CollaborationIdentity subscriber(String sessionId, String subscriptionId, Long projectId) {
+        PresenceConnection connection = connections.get(sessionId + ":" + subscriptionId);
+        return connection != null && connection.projectId().equals(projectId) ? connection.identity() : null;
+    }
+
+    public void leaveSubscription(String sessionId, String subscriptionId) {
+        PresenceConnection leaving = connections.remove(sessionId + ":" + subscriptionId);
+        if (leaving != null && !isStillConnected(leaving.projectId(), leaving.identity().userId())) {
+            send(CollaborationEvent.create(CollaborationEventType.USER_LEFT, leaving.identity().userId(),
+                    leaving.identity().name(), leaving.projectId(), null, null, null));
+        }
+    }
+
     private List<CollaborationIdentity> connectedUsers(Long projectId) {
         return connections.values().stream()
                 .filter(connection -> connection.projectId().equals(projectId))

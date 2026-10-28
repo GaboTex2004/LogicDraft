@@ -8,15 +8,15 @@ const styles = readFileSync(new URL('../src/features/diagram/diagram.css', impor
 
 test('RelationshipEdge renders the derived N:M table without adding a node type', () => {
   assert.match(edgeComponent, /deriveJoinTable\(props, sourceNode\?\.data, targetNode\?\.data\)/)
-  assert.match(edgeComponent, /derived-join-table/)
+  assert.match(edgeComponent, /derived-association-class/)
   assert.match(edgeComponent, /joinTable\.columns\.map/)
-  assert.match(edgeComponent, /UNIQUE \(/)
+  assert.match(edgeComponent, /Vista derivada · Sin métodos/)
   assert.doesNotMatch(edgeComponent, /addNodes|convertManyToManyAssociation/)
 })
 
 test('derived table is visibly styled and documented as read-only', () => {
-  assert.match(styles, /\.derived-join-table\s*\{/)
-  assert.match(styles, /\.derived-join-columns/)
+  assert.match(styles, /\.derived-association-class\s*\{/)
+  assert.match(styles, /\.derived-association-attributes/)
   assert.match(propertiesPanel, /se deriva de la relación N:M y es de solo lectura/)
   assert.match(propertiesPanel, /entidad asociativa/)
 })

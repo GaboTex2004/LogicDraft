@@ -1,6 +1,7 @@
 package com.sw1.backend.diagrama.service;
 
 import com.sw1.backend.common.exception.AccesoDenegadoException;
+import com.sw1.backend.collaboration.service.DiagramCommitPublisher;
 import com.sw1.backend.diagrama.dto.request.GuardarDiagramaRequest;
 import com.sw1.backend.diagrama.model.Diagrama;
 import com.sw1.backend.diagrama.repository.DiagramaRepository;
@@ -43,12 +44,13 @@ class DiagramaServiceTest {
     @Mock private DiagramaRepository diagramaRepository;
     @Mock private ProyectoRepository proyectoRepository;
     @Mock private WorkspaceAccessService workspaceAccessService;
+    @Mock private DiagramCommitPublisher commitPublisher;
     private DiagramaService service;
     private Proyecto proyecto;
 
     @BeforeEach
     void preparar() {
-        service = new DiagramaService(diagramaRepository, proyectoRepository, workspaceAccessService);
+        service = new DiagramaService(diagramaRepository, proyectoRepository, workspaceAccessService, commitPublisher);
         Workspace workspace = new Workspace();
         workspace.setId(20L);
         proyecto = new Proyecto();
@@ -219,6 +221,7 @@ class DiagramaServiceTest {
                 .verificarRol(20L, RolWorkspace.OWNER, RolWorkspace.EDITOR);
         assertThrows(AccesoDenegadoException.class, () -> service.guardar(10L, requestValido()));
         verify(diagramaRepository, never()).saveAndFlush(any(Diagrama.class));
+        org.mockito.Mockito.verifyNoInteractions(commitPublisher);
     }
 
     private GuardarDiagramaRequest requestValido() {
@@ -271,6 +274,7 @@ class DiagramaServiceTest {
         service.guardar(10L, request);
 
         verify(diagramaRepository).saveAndFlush(existing);
+        verify(commitPublisher).schedule(any(), org.mockito.ArgumentMatchers.isNull());
     }
 
     @Test
@@ -287,6 +291,7 @@ class DiagramaServiceTest {
         request.setBaseRevision(4L);
 
         assertThrows(DiagramConflictException.class, () -> service.guardar(10L, request));
+        org.mockito.Mockito.verifyNoInteractions(commitPublisher);
     }
 
     private static Map<String, Object> node(String id, String name) {

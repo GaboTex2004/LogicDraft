@@ -62,18 +62,18 @@ test('consultas informativas se distinguen de instrucciones explícitas', () => 
   assert.equal(classifyAgentIntent('Convierte la relación N:M entre Alumno y Materia en Inscripcion'), 'MODIFICATION')
 })
 
-test('el flujo React revalida permisos y solo publica después de aceptar', () => {
+test('el flujo React revalida permisos y deja el guardado y difusión al backend', () => {
   const editor = readFileSync(new URL('../src/features/diagram/pages/DiagramEditorPage.tsx', import.meta.url), 'utf8')
   const handlerStart = editor.indexOf('async function handleAgentAsk')
   const acceptStart = editor.indexOf('async function acceptAiProposal')
   const permissionCheck = editor.indexOf('await authorizeProjectAgentEdit', acceptStart)
   const commit = editor.indexOf('commitDiagramOperations(proposal.operations)', permissionCheck)
-  const publish = editor.indexOf('publishEvent(event.type', editor.indexOf('function commitDiagramOperations'))
   assert.ok(handlerStart >= 0)
   assert.match(editor.slice(handlerStart), /prepareAgentResponse\(\s*message,\s*response/)
   assert.ok(permissionCheck > acceptStart)
   assert.ok(commit > permissionCheck)
-  assert.ok(publish >= 0)
+  assert.doesNotMatch(editor, /publishEvent\(/)
+  assert.match(editor, /DIAGRAM_COMMITTED/)
   assert.match(editor, /Ollama no está disponible/)
   assert.match(editor, /Ollama tardó demasiado/)
   assert.match(editor, /handleAiPrompt[\s\S]*prepareDiagramAiProposal/,

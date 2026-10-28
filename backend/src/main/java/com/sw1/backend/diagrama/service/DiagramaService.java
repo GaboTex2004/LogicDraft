@@ -1,6 +1,7 @@
 package com.sw1.backend.diagrama.service;
 
 import com.sw1.backend.common.exception.RecursoNoEncontradoException;
+import com.sw1.backend.collaboration.service.DiagramCommitPublisher;
 import com.sw1.backend.diagrama.dto.request.GuardarDiagramaRequest;
 import com.sw1.backend.diagrama.dto.response.DiagramaResponse;
 import com.sw1.backend.diagrama.model.Diagrama;
@@ -27,10 +28,13 @@ public class DiagramaService {
     private final DiagramaRepository diagramaRepository;
     private final ProyectoRepository proyectoRepository;
     private final WorkspaceAccessService workspaceAccessService;
-    public DiagramaService(DiagramaRepository diagramaRepository, ProyectoRepository proyectoRepository, WorkspaceAccessService workspaceAccessService) {
+    private final DiagramCommitPublisher commitPublisher;
+    public DiagramaService(DiagramaRepository diagramaRepository, ProyectoRepository proyectoRepository,
+                           WorkspaceAccessService workspaceAccessService, DiagramCommitPublisher commitPublisher) {
         this.diagramaRepository = diagramaRepository;
         this.proyectoRepository = proyectoRepository;
         this.workspaceAccessService = workspaceAccessService;
+        this.commitPublisher = commitPublisher;
     }
     @Transactional(readOnly = true)
     public DiagramaResponse obtenerPorProyecto(Long proyectoId) {
@@ -55,11 +59,14 @@ public class DiagramaService {
         }
         diagrama.setVersion(request.getVersion());
         diagrama.setContenido(contenido);
+        DiagramaResponse saved;
         try {
-            return convertirAResponse(diagramaRepository.saveAndFlush(diagrama));
+            saved = convertirAResponse(diagramaRepository.saveAndFlush(diagrama));
         } catch (OptimisticLockingFailureException | DataIntegrityViolationException exception) {
             throw new DiagramConflictException(proyectoId, null);
         }
+        commitPublisher.schedule(saved, request.getClientId());
+        return saved;
     }
     private Map<String, Object> crearYValidarContenido(GuardarDiagramaRequest request) {
         if (!VERSIONES_SOPORTADAS.contains(request.getVersion())) throw new IllegalArgumentException("La version del documento no esta soportada");

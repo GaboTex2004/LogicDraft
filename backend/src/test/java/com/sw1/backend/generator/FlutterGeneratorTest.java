@@ -116,7 +116,7 @@ class FlutterGeneratorTest {
         assertTrue(categoryForm.contains("'activa': _activa"));
         assertTrue(categoryForm.contains("'cantidad': _cantidadController.text.trim().isEmpty ? null : int.parse"));
         assertTrue(categoryForm.contains("'total': _totalController.text.trim().isEmpty ? null : double.parse"));
-        assertTrue(categoryForm.contains("'fecha': _fecha?.toIso8601String()"));
+        assertTrue(categoryForm.contains("'fecha': _fecha == null ? null : _fecha!.toIso8601String().substring(0, 10)"));
         assertTrue(categoryForm.contains("'actualizadaEn': _actualizadaEn?.toIso8601String()"));
 
         String cutModel = project.files().get("lib/models/corte.dart");
@@ -214,7 +214,7 @@ class FlutterGeneratorTest {
         String model = project.files().get("lib/models/registro.dart");
         assertTrue(model.contains("final List<DateTime>? eventoIds;"));
         assertTrue(model.contains("DateTime.parse(item as String)"));
-        assertTrue(model.contains("eventoIds?.map((item) => item.toIso8601String()).toList()"));
+        assertTrue(model.contains("eventoIds == null ? null : eventoIds.map((item) => item.toIso8601String().substring(0, 10)).toList()"));
         String form = project.files().get("lib/screens/registro/registro_form_screen.dart");
         assertTrue(form.contains("FormField<Set<DateTime>>"));
         assertTrue(form.contains("CheckboxListTile("));

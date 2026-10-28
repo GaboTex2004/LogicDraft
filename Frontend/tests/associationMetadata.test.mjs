@@ -40,9 +40,10 @@ test('association metadata rejects malformed shape and keeps absence optional', 
 test('editor serialization and collaborative reconstruction preserve optional metadata', () => {
   const editor = readFileSync(new URL('../src/features/diagram/pages/DiagramEditorPage.tsx', import.meta.url), 'utf8')
   assert.match(editor, /association: cloneAssociationMetadata\(node\.data\.association\)/)
-  assert.match(editor, /parseAssociationMetadata\(data\.association\)/)
-  assert.match(editor, /data\.association !== undefined && !association/)
+  assert.match(editor, /parseAssociationMetadata\(node\.data\.association\)/)
+  assert.match(editor, /if \(!association\)/)
   assert.match(editor, /nodes: content\.nodes\.map\(normalizeStoredNode\)/)
   assert.match(editor, /externalMetadata: \{ \.\.\.node\.data\.externalMetadata \}/)
-  assert.match(editor, /externalMetadata\(data\.externalMetadata\)/)
+  assert.match(editor, /nodes: saved\.contenido\.nodes\.map\(normalizeStoredNode\)/)
+  assert.match(editor, /\.\.\.saved\.contenido/)
 })

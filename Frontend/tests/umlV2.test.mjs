@@ -158,9 +158,9 @@ test("autosave remembers a rejected document and only retries automatically afte
   assert.match(source, /rejectedDocumentRef\.current === documentFingerprint/);
   assert.match(source, /rejectedDocumentRef\.current = documentFingerprint/);
   assert.match(source, /handleSave\(true\)/);
-  assert.match(source, /typeof method\.static === ["']boolean["']/);
-  assert.match(source, /typeof method\.abstract === ["']boolean["']/);
-  assert.match(source, /typeof attribute\.visibility === "string"/);
+  assert.match(source, /\.\.\.method,/);
+  assert.match(source, /attributes: node\.data\.attributes\.map\(\(attribute\) => \(\{ \.\.\.attribute \}\)\)/);
+  assert.match(source, /\.\.\.saved\.contenido/);
 });
 
 test("UML v2 detects invalid class-to-interface aggregation before autosave", () => {

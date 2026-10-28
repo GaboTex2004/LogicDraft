@@ -244,7 +244,7 @@ class UmlV2XmiGeneratorTest {
             if (!"Aggregation".equals(properties.getAttribute("ea_type"))) continue;
             var target = (org.w3c.dom.Element) connector.getElementsByTagName("target").item(0);
             var type = (org.w3c.dom.Element) target.getElementsByTagName("type").item(0);
-            targetShared = "shared".equals(type.getAttribute("aggregation"));
+            targetShared |= "shared".equals(type.getAttribute("aggregation"));
         }
         assertTrue(targetShared);
     }

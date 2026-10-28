@@ -1,6 +1,7 @@
 package com.sw1.backend.collaboration.config;
 
 import com.sw1.backend.collaboration.security.StompJwtChannelInterceptor;
+import com.sw1.backend.collaboration.security.ProjectSubscriptionInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -13,12 +14,15 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final StompJwtChannelInterceptor jwtChannelInterceptor;
+    private final ProjectSubscriptionInterceptor subscriptionInterceptor;
     private final String corsAllowedOrigin;
 
     public WebSocketConfig(
             StompJwtChannelInterceptor jwtChannelInterceptor,
+            ProjectSubscriptionInterceptor subscriptionInterceptor,
             @Value("${cors.allowed-origin}") String corsAllowedOrigin) {
         this.jwtChannelInterceptor = jwtChannelInterceptor;
+        this.subscriptionInterceptor = subscriptionInterceptor;
         this.corsAllowedOrigin = corsAllowedOrigin;
     }
 
@@ -36,5 +40,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(jwtChannelInterceptor);
+    }
+
+    @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.interceptors(subscriptionInterceptor);
     }
 }

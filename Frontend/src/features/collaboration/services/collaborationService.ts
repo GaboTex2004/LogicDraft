@@ -2,7 +2,6 @@ import { Client, type IMessage } from "@stomp/stompjs";
 import type {
   CollaborationEvent,
   CollaborationEventType,
-  DiagramCollaborationEventType,
 } from "../types/collaboration.types";
 
 interface CollaborationCallbacks {
@@ -14,7 +13,6 @@ interface CollaborationCallbacks {
 
 export interface ProjectCollaborationConnection {
   sendPing: (message: string) => void;
-  publishEvent: (type: DiagramCollaborationEventType, payload: unknown) => void;
   disconnect: () => Promise<void>;
 }
 
@@ -31,6 +29,7 @@ const eventTypes = new Set<CollaborationEventType>([
   "EDGE_DELETED",
   "DIAGRAM_BATCH_APPLIED",
   "DIAGRAM_SAVED",
+  "DIAGRAM_COMMITTED",
 ]);
 
 function websocketUrl(): string {
@@ -138,13 +137,6 @@ export function connectToProject(
       client.publish({
         destination: `/app/proyectos/${projectId}/eventos`,
         body: JSON.stringify({ type: "PING", clientId, message }),
-      });
-    },
-    publishEvent(type, payload) {
-      if (!client.connected) return;
-      client.publish({
-        destination: `/app/proyectos/${projectId}/eventos`,
-        body: JSON.stringify({ type, clientId, payload }),
       });
     },
     async disconnect() {

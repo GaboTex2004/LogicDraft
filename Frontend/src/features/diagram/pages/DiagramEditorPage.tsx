@@ -5,7 +5,6 @@ import {
   BackgroundVariant,
   ConnectionMode,
   Controls,
-  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
@@ -37,6 +36,8 @@ import type { AgentConversationMessage } from "../../agent/types/agent.types";
 import { ProjectPresence } from "../../collaboration/components/ProjectPresence";
 import { useProjectCollaboration } from "../../collaboration/hooks/useProjectCollaboration";
 import type { CollaborationEvent } from "../../collaboration/types/collaboration.types";
+import { DiagramSynchronizer } from "../../collaboration/services/diagramSynchronization";
+import { triggerBlobDownload } from "../services/generatorDownload";
 import { obtenerProyecto } from "../../project/api/projectApi";
 import type { Proyecto } from "../../project/types/project.types";
 import {
@@ -83,20 +84,16 @@ import { deriveJoinTable, postgresType } from "../services/derivedJoinTable";
 import {
   commitRelationshipEdge,
   normalizeRelationshipEdge,
-  removeRelationshipEdges,
 } from "../services/relationshipCardinality";
 import type {
-  AttributeType,
   DiagramDocument,
   DiagramEdge,
   EntityAttribute,
   EntityFlowNode,
-  ExternalMetadata,
   UmlNodeKind,
   UmlMethod,
   UmlRelationKind,
 } from "../types/diagram.types";
-import { UML_NODE_KINDS, UML_VISIBILITIES } from "../types/diagram.types";
 import type { DiagramAiOperation } from "../types/diagramAi.types";
 import "../diagram.css";
 import { interpretDiagramImage } from "../api/diagramImageApi";
@@ -217,210 +214,6 @@ async function responseMessage(error: unknown): Promise<string | null> {
   return typeof body?.mensaje === "string" ? body.mensaje : null;
 }
 
-function externalMetadata(value: unknown): ExternalMetadata | undefined {
-  const metadata = record(value);
-  return metadata?.source === "enterprise-architect" &&
-    typeof metadata.externalId === "string" &&
-    metadata.externalId.length > 0
-    ? { source: "enterprise-architect", externalId: metadata.externalId }
-    : undefined;
-}
-
-function remoteNode(payload: unknown): EntityFlowNode | null {
-  const wrapper = record(payload);
-  const node = record(wrapper?.node);
-  const position = record(node?.position);
-  const data = record(node?.data);
-  if (
-    !node ||
-    !position ||
-    !data ||
-    typeof node.id !== "string" ||
-    typeof position.x !== "number" ||
-    typeof position.y !== "number" ||
-    typeof data.id !== "string" ||
-    typeof data.name !== "string" ||
-    !Array.isArray(data.attributes)
-  )
-    return null;
-  const attributes: EntityAttribute[] = [];
-  for (const item of data.attributes) {
-    const attribute = record(item);
-    if (
-      !attribute ||
-      typeof attribute.id !== "string" ||
-      typeof attribute.name !== "string" ||
-      typeof attribute.type !== "string" ||
-      typeof attribute.primaryKey !== "boolean"
-    )
-      return null;
-    const attributeExternalMetadata = externalMetadata(
-      attribute.externalMetadata,
-    );
-    attributes.push({
-      id: attribute.id,
-      name: attribute.name,
-      type: attribute.type as AttributeType,
-      primaryKey: attribute.primaryKey,
-      ...(typeof attribute.nullable === "boolean"
-        ? { nullable: attribute.nullable }
-        : {}),
-      ...(typeof attribute.visibility === "string" &&
-      UML_VISIBILITIES.includes(
-        attribute.visibility as (typeof UML_VISIBILITIES)[number],
-      )
-        ? {
-            visibility:
-              attribute.visibility as (typeof UML_VISIBILITIES)[number],
-          }
-        : {}),
-      ...(typeof attribute.static === "boolean"
-        ? { static: attribute.static }
-        : {}),
-      ...(attributeExternalMetadata
-        ? { externalMetadata: attributeExternalMetadata }
-        : {}),
-    });
-  }
-  const association =
-    data.association === undefined
-      ? undefined
-      : parseAssociationMetadata(data.association);
-  if (data.association !== undefined && !association) return null;
-  const nodeExternalMetadata = externalMetadata(data.externalMetadata);
-  const kind =
-    typeof data.kind === "string" &&
-    UML_NODE_KINDS.includes(data.kind as UmlNodeKind)
-      ? (data.kind as UmlNodeKind)
-      : undefined;
-  const methods: UmlMethod[] = [];
-  if (data.methods !== undefined) {
-    if (!Array.isArray(data.methods)) return null;
-    for (const rawMethod of data.methods) {
-      const method = record(rawMethod);
-      if (
-        !method ||
-        typeof method.id !== "string" ||
-        typeof method.name !== "string" ||
-        typeof method.returnType !== "string" ||
-        typeof method.visibility !== "string" ||
-        !UML_VISIBILITIES.includes(
-          method.visibility as UmlMethod["visibility"],
-        ) ||
-        !Array.isArray(method.parameters)
-      )
-        return null;
-      const parameters = method.parameters
-        .map((raw) => record(raw))
-        .map((parameter) =>
-          parameter &&
-          typeof parameter.id === "string" &&
-          typeof parameter.name === "string" &&
-          typeof parameter.type === "string"
-            ? { id: parameter.id, name: parameter.name, type: parameter.type }
-            : null,
-        );
-      if (parameters.some((parameter) => parameter === null)) return null;
-      methods.push({
-        id: method.id,
-        name: method.name,
-        returnType: method.returnType,
-        visibility: method.visibility as UmlMethod["visibility"],
-        parameters: parameters as UmlMethod["parameters"],
-        ...(typeof method.static === "boolean"
-          ? { static: method.static }
-          : {}),
-        ...(typeof method.abstract === "boolean"
-          ? { abstract: method.abstract }
-          : {}),
-      });
-    }
-  }
-  return {
-    id: node.id,
-    type: "entity",
-    position: { x: position.x, y: position.y },
-    data: {
-      id: data.id,
-      name: data.name,
-      attributes,
-      ...(kind ? { kind } : {}),
-      ...(kind === "CLASS" && data.generateCrud === true
-        ? { generateCrud: true }
-        : {}),
-      ...(data.methods !== undefined ? { methods } : {}),
-      ...(Array.isArray(data.literals) &&
-      data.literals.every((item) => typeof item === "string")
-        ? { literals: data.literals as string[] }
-        : {}),
-      ...(typeof data.abstract === "boolean"
-        ? { abstract: data.abstract }
-        : {}),
-      ...(typeof data.width === "number" ? { width: data.width } : {}),
-      ...(typeof data.height === "number" ? { height: data.height } : {}),
-      ...(association ? { association } : {}),
-      ...(nodeExternalMetadata
-        ? { externalMetadata: nodeExternalMetadata }
-        : {}),
-    },
-  };
-}
-
-function remoteEdge(payload: unknown): DiagramEdge | null {
-  const wrapper = record(payload);
-  const edge = record(wrapper?.edge);
-  if (
-    !edge ||
-    typeof edge.id !== "string" ||
-    typeof edge.source !== "string" ||
-    typeof edge.target !== "string"
-  )
-    return null;
-  return {
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    ...(typeof edge.sourceHandle === "string"
-      ? { sourceHandle: edge.sourceHandle }
-      : {}),
-    ...(typeof edge.targetHandle === "string"
-      ? { targetHandle: edge.targetHandle }
-      : {}),
-    ...(typeof edge.type === "string" ? { type: edge.type } : {}),
-    markerEnd: { type: MarkerType.ArrowClosed },
-    ...(record(edge.data) ? { data: { ...record(edge.data)! } } : {}),
-  };
-}
-
-function remoteDocument(payload: unknown): DiagramDocument | null {
-  const wrapper = record(payload);
-  const document = record(wrapper?.document);
-  if (
-    (document?.version !== 1 && document?.version !== 2) ||
-    !Array.isArray(document.nodes) ||
-    !Array.isArray(document.edges)
-  )
-    return null;
-  const nodes = document.nodes.map((node) => remoteNode({ node }));
-  const edges = document.edges.map((edge) => remoteEdge({ edge }));
-  if (
-    nodes.some((node) => node === null) ||
-    edges.some((edge) => edge === null)
-  )
-    return null;
-  const result: DiagramDocument = {
-    version: document.version,
-    nodes: nodes as EntityFlowNode[],
-    edges: edges as DiagramEdge[],
-  };
-  try {
-    validateAssociationDocument(result.nodes, result.edges);
-  } catch {
-    return null;
-  }
-  return result;
-}
-
 function DiagramEditorCanvas({
   project,
   initialDocument,
@@ -441,6 +234,9 @@ function DiagramEditorCanvas({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("clean");
+  const [syncMessage, setSyncMessage] = useState("");
+  const [syncError, setSyncError] = useState("");
+  const synchronizerRef = useRef<DiagramSynchronizer | null>(null);
   const [documentRevision, setDocumentRevision] = useState(0);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
@@ -530,128 +326,94 @@ function DiagramEditorCanvas({
     setSaveStatus(conflictRef.current ? "conflict" : "dirty");
   }, []);
 
-  // Transient events are applied in arrival order; confirmed saves are protected by server revisions.
-  // Direct state updates here never call publishEvent, preventing echo loops.
-  const applyRemoteEvent = useCallback(
-    (event: CollaborationEvent) => {
+  const synchronize = useCallback(() => {
+    void synchronizerRef.current?.refresh();
+  }, []);
+
+  const applyRemoteEvent = useCallback((event: CollaborationEvent) => {
+    if (event.type === "DIAGRAM_COMMITTED") {
       const payload = record(event.payload);
-      if (event.type === "DIAGRAM_BATCH_APPLIED") {
-        const document = remoteDocument(event.payload);
-        if (!document) return;
+      void synchronizerRef.current?.refresh(typeof payload?.revision === "number"
+        ? { name: event.name, revision: payload.revision } : undefined);
+    }
+  }, []);
+
+  const { status, collaborators, clientId } = useProjectCollaboration(
+    project.id, applyRemoteEvent, synchronize,
+  );
+
+  useEffect(() => {
+    const synchronizer = new DiagramSynchronizer({
+      read: () => obtenerDiagrama(project.id),
+      verified: () => setSyncError(""),
+      state: () => ({
+        revision: serverRevisionRef.current,
+        dirty: conflictRef.current || revisionRef.current !== persistedRevisionRef.current,
+        dragging: nodesRef.current.some((node) => node.dragging),
+        saving: saveInFlightRef.current,
+      }),
+      apply: (saved, author) => {
+        if (saved.proyectoId !== project.id) throw new Error("Proyecto de respuesta incorrecto.");
+        const document = {
+          ...saved.contenido,
+          nodes: saved.contenido.nodes.map(normalizeStoredNode),
+          edges: saved.contenido.edges.map(normalizeRelationshipEdge),
+        };
+        validateDiagramDocument(document);
         nodesRef.current = document.nodes;
         edgesRef.current = document.edges;
         setNodes(document.nodes);
         setEdges(document.edges);
+        serverRevisionRef.current = saved.revision;
+        revisionRef.current += 1;
+        persistedRevisionRef.current = revisionRef.current;
+        setDocumentRevision(revisionRef.current);
         setSelectedNodeId(null);
         setSelectedEdgeIds([]);
+        setPendingProposal(null);
+        setPendingImport(null);
+        rejectedDocumentRef.current = null;
+        agentSession.setDiagramId(saved.id);
         agentSession.record("DIAGRAM_SAVED");
-      } else if (event.type === "NODE_CREATED") {
-        const node = remoteNode(event.payload);
-        if (node) {
-          setNodes((current) =>
-            current.some((item) => item.id === node.id)
-              ? current
-              : [...current, node],
-          );
-          agentSession.record("NODE_CREATED", { nodeId: node.id });
+        setSaveStatus("saved");
+        setSyncMessage(author ? `Cambios guardados por ${author}.` : "Diagrama actualizado desde la versión confirmada del servidor.");
+      },
+      conflict: () => {
+        conflictRef.current = true;
+        setSaveStatus("conflict");
+        setPendingProposal(null);
+        setAiError("Otro usuario guardó una versión más reciente. Tus cambios locales se conservaron; descarga el borrador antes de recargar.");
+      },
+      error: (error) => {
+        if (isNotFoundError(error) && serverRevisionRef.current === null) return;
+        if (isForbiddenError(error)) {
+          conflictRef.current = true;
+          setSaveStatus("forbidden");
         }
-      } else if (event.type === "NODE_MOVED") {
-        const position = record(payload?.position);
-        if (
-          typeof payload?.nodeId === "string" &&
-          typeof position?.x === "number" &&
-          typeof position.y === "number"
-        ) {
-          setNodes((current) =>
-            current.map((node) =>
-              node.id === payload.nodeId
-                ? {
-                    ...node,
-                    position: {
-                      x: position.x as number,
-                      y: position.y as number,
-                    },
-                  }
-                : node,
-            ),
-          );
+        if (isUnauthorizedError(error)) {
+          localStorage.removeItem("token");
+          window.location.assign("/login");
+          return;
         }
-      } else if (event.type === "NODE_UPDATED") {
-        const node = remoteNode(event.payload);
-        if (node) {
-          setNodes((current) =>
-            current.map((item) =>
-              item.id === node.id ? { ...node, selected: item.selected } : item,
-            ),
-          );
-          agentSession.record("NODE_UPDATED", { nodeId: node.id });
-        }
-      } else if (
-        event.type === "NODE_DELETED" &&
-        typeof payload?.nodeId === "string"
-      ) {
-        setNodes((current) =>
-          current.filter((node) => node.id !== payload.nodeId),
-        );
-        setEdges((current) =>
-          current.filter(
-            (edge) =>
-              edge.source !== payload.nodeId && edge.target !== payload.nodeId,
-          ),
-        );
-        setSelectedNodeId((current) =>
-          current === payload.nodeId ? null : current,
-        );
-        agentSession.record("NODE_DELETED", { nodeId: payload.nodeId });
-      } else if (
-        event.type === "EDGE_CREATED" ||
-        event.type === "EDGE_UPDATED"
-      ) {
-        const edge = remoteEdge(event.payload);
-        if (edge) {
-          try {
-            const changed = commitRelationshipEdge(
-              edgesRef.current,
-              edge,
-              event.type,
-              true,
-              {
-                setEdges: (next) => {
-                  edgesRef.current = next;
-                  setEdges(next);
-                },
-                markDirty,
-                publish: () => {},
-              },
-            );
-            if (changed) agentSession.record(event.type, { edgeId: edge.id });
-          } catch {
-            /* Invalid remote cardinalities must not enter local state. */
-          }
-        }
-        return;
-      } else if (
-        event.type === "EDGE_DELETED" &&
-        typeof payload?.edgeId === "string"
-      ) {
-        const edgeId = payload.edgeId;
-        setEdges((current) =>
-          removeRelationshipEdges(current, new Set([edgeId])),
-        );
-        setSelectedEdgeIds((current) => current.filter((id) => id !== edgeId));
-        agentSession.record("EDGE_DELETED", { edgeId });
-      } else if (event.type === "DIAGRAM_SAVED") {
-        agentSession.record("DIAGRAM_SAVED");
-      }
-      if (event.type !== "DIAGRAM_SAVED") markDirty();
-    },
-    [agentSession, markDirty, setEdges, setNodes],
-  );
-
-  const { status, collaborators, publishEvent } = useProjectCollaboration(
-    project.id,
-    applyRemoteEvent,
-  );
+        setSyncError("No se pudo sincronizar. El borrador local se conserva; se reintentará la lectura.");
+      },
+    });
+    synchronizerRef.current = synchronizer;
+    // Covers the initial GET/subscribe gap, reconnect, missed notifications and tab resume.
+    void synchronizer.refresh();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void synchronizer.refresh();
+    }, 15_000);
+    window.addEventListener("focus", synchronize);
+    window.addEventListener("online", synchronize);
+    return () => {
+      synchronizer.dispose();
+      synchronizerRef.current = null;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", synchronize);
+      window.removeEventListener("online", synchronize);
+    };
+  }, [agentSession, project.id, setEdges, setNodes, synchronize]);
 
   function commitDiagramOperations(operations: DiagramAiOperation[]) {
     const previousNodeCount = nodesRef.current.length;
@@ -666,10 +428,6 @@ function DiagramEditorCanvas({
     setNodes(result.nodes);
     setEdges(result.edges);
     markDirty();
-    const event = result.events[0];
-    publishEvent(event.type, {
-      document: serializeDocument(event.document.nodes, event.document.edges),
-    });
     if (result.nodes.length > previousNodeCount) {
       window.requestAnimationFrame(() => {
         void fitView({ padding: 0.2, duration: 350 });
@@ -692,11 +450,12 @@ function DiagramEditorCanvas({
       return;
     }
     try {
+      await synchronizerRef.current?.refresh();
       await authorizeProjectAgentEdit(project.id);
       const refreshedAuthorizationError = proposalAcceptanceError(
         proposal.revision,
         revisionRef.current,
-        saveStatus !== "forbidden",
+        saveStatus !== "forbidden" && !conflictRef.current,
       );
       if (refreshedAuthorizationError) {
         setAiError(refreshedAuthorizationError);
@@ -734,7 +493,7 @@ function DiagramEditorCanvas({
   async function handleAiPrompt(prompt: string, image?: File) {
     if (aiRequest.current) return;
     if (
-      revisionRef.current !== persistedRevisionRef.current ||
+      conflictRef.current || revisionRef.current !== persistedRevisionRef.current ||
       saveInFlightRef.current ||
       nodesRef.current.some((n) => n.dragging)
     ) {
@@ -744,6 +503,7 @@ function DiagramEditorCanvas({
       return;
     }
     const request = new AbortController();
+    const requestedRevision = revisionRef.current;
     aiRequest.current = request;
     setAiLoading(true);
     setAiError("");
@@ -777,6 +537,11 @@ function DiagramEditorCanvas({
             request.signal,
           );
       if (request.signal.aborted) return;
+      await synchronizerRef.current?.refresh();
+      if (conflictRef.current || requestedRevision !== revisionRef.current) {
+        setAiError("El diagrama cambió durante la consulta. Solicita una propuesta nueva.");
+        return;
+      }
       const { operations, preview: result } = prepareDiagramAiProposal(
         response,
         nodesRef.current,
@@ -919,12 +684,11 @@ function DiagramEditorCanvas({
         },
         markDirty,
         publish: (kind, updated) => {
-          publishEvent(kind, { edge: serializeEdge(updated) });
           agentSession.record(kind, { edgeId: updated.id });
         },
       });
     },
-    [agentSession, markDirty, publishEvent, selectedRelationKind, setEdges],
+    [agentSession, markDirty, selectedRelationKind, setEdges],
   );
 
   const handleSelectionChange = useCallback(
@@ -993,7 +757,6 @@ function DiagramEditorCanvas({
     ]);
     setSelectedNodeId(id);
     setSelectedEdgeIds([]);
-    publishEvent("NODE_CREATED", { node: serializeNode(node) });
     agentSession.record("NODE_CREATED", { nodeId: id });
     markDirty();
   }
@@ -1039,7 +802,6 @@ function DiagramEditorCanvas({
     }
     nodesRef.current = candidate;
     setNodes(candidate);
-    publishEvent("NODE_UPDATED", { node: serializeNode(updated) });
     agentSession.record("NODE_UPDATED", { nodeId: updated.id });
     markDirty();
   }
@@ -1120,8 +882,6 @@ function DiagramEditorCanvas({
         return;
       }
 
-      const document = serializeDocument(nextNodes, nextEdges);
-
       nodesRef.current = nextNodes;
       edgesRef.current = nextEdges;
 
@@ -1131,10 +891,6 @@ function DiagramEditorCanvas({
       setSelectedEdgeIds([]);
 
       markDirty();
-
-      // Un solo evento para mantener sincronizados
-      // a los colaboradores y sus diagramas.
-      publishEvent("DIAGRAM_BATCH_APPLIED", { document });
 
       agentSession.record("NODE_DELETED", {
         nodeId: associationNode.id,
@@ -1161,14 +917,6 @@ function DiagramEditorCanvas({
     }
 
     // Eliminación normal existente.
-    deletedNodes.forEach((node) =>
-      publishEvent("NODE_DELETED", { nodeId: node.id }),
-    );
-
-    deletedEdges.forEach((edge) =>
-      publishEvent("EDGE_DELETED", { edgeId: edge.id }),
-    );
-
     deletedNodes.forEach((node) =>
       agentSession.record("NODE_DELETED", { nodeId: node.id }),
     );
@@ -1213,12 +961,6 @@ function DiagramEditorCanvas({
       setConversionOpen(false);
       setConversionError("");
       markDirty();
-      publishEvent("DIAGRAM_BATCH_APPLIED", {
-        document: serializeDocument(
-          result.document.nodes,
-          result.document.edges,
-        ),
-      });
       agentSession.record("NODE_CREATED", { nodeId: result.associationNodeId });
     } catch (error: unknown) {
       setConversionError(
@@ -1231,6 +973,7 @@ function DiagramEditorCanvas({
 
   const handleSave = useCallback(
     async function saveCurrentDocument(automatic = false): Promise<void> {
+      if (conflictRef.current) return;
       if (saveInFlightRef.current) {
         const savedSuccessfully = await saveInFlightRef.current;
         if (
@@ -1265,6 +1008,7 @@ function DiagramEditorCanvas({
         project.id,
         document,
         serverRevisionRef.current,
+        clientId,
       )
         .then((saved) => {
           rejectedDocumentRef.current = null;
@@ -1273,10 +1017,6 @@ function DiagramEditorCanvas({
           agentSession.setDiagramId(saved.id);
           agentSession.record("DIAGRAM_SAVED");
           persistedRevisionRef.current = savedRevision;
-          publishEvent("DIAGRAM_SAVED", {
-            savedAt: saved.fechaActualizacion,
-            revision: saved.revision,
-          });
           setSaveStatus(
             revisionRef.current === savedRevision ? "saved" : "dirty",
           );
@@ -1295,7 +1035,7 @@ function DiagramEditorCanvas({
             conflictRef.current = true;
             setSaveStatus("conflict");
             setAiError(
-              "Otro usuario guardÃ³ una versiÃ³n mÃ¡s reciente. Tus cambios locales se conservaron; recarga para resincronizar.",
+              "Otro usuario guardó una versión más reciente. Tus cambios locales se conservaron; descarga el borrador antes de recargar.",
             );
           } else if (
             axios.isAxiosError(requestError) &&
@@ -1307,7 +1047,7 @@ function DiagramEditorCanvas({
             setAiError(
               typeof response?.mensaje === "string"
                 ? response.mensaje
-                : "El diagrama contiene una estructura invÃ¡lida y no fue guardado.",
+                : "El diagrama contiene una estructura inválida y no fue guardado.",
             );
           } else setSaveStatus("error");
           return false;
@@ -1320,13 +1060,17 @@ function DiagramEditorCanvas({
       setSaveStatus("saving");
       await request;
     },
-    [agentSession, project.id, publishEvent],
+    [agentSession, clientId, project.id],
   );
 
   async function handleAgentAsk(
     message: string,
     conversation: AgentConversationMessage[],
   ) {
+    if (conflictRef.current || revisionRef.current !== persistedRevisionRef.current || saveInFlightRef.current) {
+      throw new Error("Guarda o resincroniza el diagrama antes de consultar al agente.");
+    }
+    const requestedRevision = revisionRef.current;
     try {
       const response = await askProjectAgent(project.id, {
         message,
@@ -1335,6 +1079,10 @@ function DiagramEditorCanvas({
         recentEvents: agentSession.snapshot(),
         conversation,
       });
+      await synchronizerRef.current?.refresh();
+      if (conflictRef.current || requestedRevision !== revisionRef.current) {
+        throw new DiagramOperationError("El diagrama cambió durante la consulta. Solicita una propuesta nueva.");
+      }
       const prepared = prepareAgentResponse(
         message,
         response,
@@ -1355,6 +1103,7 @@ function DiagramEditorCanvas({
       }
       return prepared.response;
     } catch (error: unknown) {
+      if (error instanceof DiagramOperationError) throw error;
       if (isUnauthorizedError(error)) {
         localStorage.removeItem("token");
         window.location.assign("/login");
@@ -1486,9 +1235,6 @@ function DiagramEditorCanvas({
       setPendingImport(null);
       setImportError("");
       markDirty();
-      publishEvent("DIAGRAM_BATCH_APPLIED", {
-        document: serializeDocument(document.nodes, document.edges),
-      });
       requestAnimationFrame(
         () => void fitView({ padding: 0.2, duration: 350 }),
       );
@@ -1729,21 +1475,26 @@ function DiagramEditorCanvas({
       {saveStatus === "conflict" && (
         <div className="diagram-import-status is-error" role="alert">
           <span>
-            Existe una versiÃ³n confirmada mÃ¡s reciente. Tus cambios locales
+            Existe una versión confirmada más reciente. Tus cambios locales
             siguen en este navegador.
           </span>
+          <button type="button" onClick={() => triggerBlobDownload(
+            new Blob([JSON.stringify(serializeDocument(nodesRef.current, edgesRef.current), null, 2)],
+              { type: "application/json" }),
+            `logicdraft-${project.id}-borrador.json`,
+          )}>Descargar borrador local</button>
           <button
             type="button"
             onClick={() => {
               if (
                 window.confirm(
-                  "Recargar reemplazarÃ¡ los cambios locales no guardados por la versiÃ³n confirmada. Â¿Continuar?",
+                  "Recargar reemplazará los cambios locales no guardados. Descarga el borrador primero si quieres conservarlos. ¿Continuar?",
                 )
               )
                 window.location.reload();
             }}
           >
-            Recargar versiÃ³n del servidor
+            Recargar versión del servidor
           </button>
         </div>
       )}
@@ -1754,6 +1505,9 @@ function DiagramEditorCanvas({
         >
           {importError || "Analizando XMI/XML..."}
         </div>
+      )}
+      {(syncError || syncMessage) && saveStatus !== "conflict" && (
+        <div className={`diagram-import-status${syncError ? " is-error" : ""}`} role="status">{syncError || syncMessage}</div>
       )}
       <ProjectPresence status={status} collaborators={collaborators} />
       <section className="diagram-canvas" aria-label="Canvas del diagrama">
@@ -1768,10 +1522,6 @@ function DiagramEditorCanvas({
           onConnect={onConnect}
           onSelectionChange={handleSelectionChange}
           onNodeDragStop={(_, node) => {
-            publishEvent("NODE_MOVED", {
-              nodeId: node.id,
-              position: { x: node.position.x, y: node.position.y },
-            });
             agentSession.record("NODE_UPDATED", { nodeId: node.id });
             markDirty();
           }}
@@ -1779,7 +1529,6 @@ function DiagramEditorCanvas({
             deleted.forEach((node) => {
               if (associationProtectedNodeIds(nodesRef.current).has(node.id))
                 return;
-              publishEvent("NODE_DELETED", { nodeId: node.id });
               agentSession.record("NODE_DELETED", { nodeId: node.id });
             })
           }
@@ -1787,7 +1536,6 @@ function DiagramEditorCanvas({
             deleted.forEach((edge) => {
               if (structuralRelationshipIds(nodesRef.current).has(edge.id))
                 return;
-              publishEvent("EDGE_DELETED", { edgeId: edge.id });
               agentSession.record("EDGE_DELETED", { edgeId: edge.id });
             })
           }
@@ -1845,8 +1593,7 @@ function DiagramEditorCanvas({
               },
               markDirty,
               publish: (kind, edge) => {
-                publishEvent(kind, { edge: serializeEdge(edge) });
-                agentSession.record("EDGE_UPDATED", { edgeId: edge.id });
+                agentSession.record(kind, { edgeId: edge.id });
               },
             },
           );
@@ -1900,8 +1647,7 @@ function DiagramEditorCanvas({
               },
               markDirty,
               publish: (kind, edge) => {
-                publishEvent(kind, { edge: serializeEdge(edge) });
-                agentSession.record("EDGE_UPDATED", { edgeId: edge.id });
+                agentSession.record(kind, { edgeId: edge.id });
               },
             },
           );

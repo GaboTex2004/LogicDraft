@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { connectToProject, type ProjectCollaborationConnection } from '../services/collaborationService'
-import type { CollaborationEvent, CollaborationStatus, Collaborator, DiagramCollaborationEventType } from '../types/collaboration.types'
+import type { CollaborationEvent, CollaborationStatus, Collaborator } from '../types/collaboration.types'
 
 export function useProjectCollaboration(
   projectId: number,
   onDiagramEvent?: (event: CollaborationEvent) => void,
+  onConnected?: () => void,
 ) {
   const connectionRef = useRef<ProjectCollaborationConnection | null>(null)
   const [clientId] = useState(() => crypto.randomUUID())
   const onDiagramEventRef = useRef(onDiagramEvent)
+  const onConnectedRef = useRef(onConnected)
   const [status, setStatus] = useState<CollaborationStatus>(() =>
     localStorage.getItem('token') ? 'connecting' : 'error')
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
@@ -17,20 +19,26 @@ export function useProjectCollaboration(
 
   useEffect(() => {
     onDiagramEventRef.current = onDiagramEvent
-  }, [onDiagramEvent])
+    onConnectedRef.current = onConnected
+  }, [onDiagramEvent, onConnected])
 
   useEffect(() => {
     const token = localStorage.getItem('token')
     if (!token) return
+    seenEventIds.current.clear()
+    let active = true
 
     const connection = connectToProject(projectId, token, clientId, {
       onConnect: () => {
+        if (!active) return
         console.info('[WS] conectado')
         setStatus('connected')
+        onConnectedRef.current?.()
       },
-      onDisconnect: () => setStatus('disconnected'),
-      onError: () => setStatus('error'),
+      onDisconnect: () => { if (active) { setStatus('disconnected'); setCollaborators([]) } },
+      onError: () => { if (active) setStatus('error') },
       onEvent: (event) => {
+        if (!active || event.projectId !== projectId) return
         if (seenEventIds.current.has(event.eventId)) return
         seenEventIds.current.add(event.eventId)
         if (seenEventIds.current.size > 1000) {
@@ -47,7 +55,9 @@ export function useProjectCollaboration(
         } else if (event.type === 'PING') {
           setLastPing(event)
           console.info(`[Collaboration] PING de ${event.name}:`, event.message)
-        } else if (event.clientId !== clientId) {
+        } else if (event.type === 'DIAGRAM_COMMITTED') {
+          // Own notifications also trigger reconciliation: a REST response may be lost.
+          // The revision gate prevents applying our own commit twice.
           console.info(`[WS] ${event.type} recibido`)
           onDiagramEventRef.current?.(event)
         }
@@ -56,6 +66,7 @@ export function useProjectCollaboration(
     connectionRef.current = connection
 
     return () => {
+      active = false
       connectionRef.current = null
       void connection.disconnect()
     }
@@ -65,9 +76,5 @@ export function useProjectCollaboration(
     connectionRef.current?.sendPing(`PING ${new Date().toISOString()}`)
   }, [])
 
-  const publishEvent = useCallback((type: DiagramCollaborationEventType, payload: unknown) => {
-    connectionRef.current?.publishEvent(type, payload)
-  }, [])
-
-  return { status, collaborators, lastPing, sendPing, publishEvent }
+  return { status, collaborators, lastPing, sendPing, clientId }
 }
