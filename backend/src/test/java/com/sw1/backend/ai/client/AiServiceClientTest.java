@@ -66,6 +66,39 @@ class AiServiceClientTest {
         assertTrue(response.operations().isEmpty());
     }
 
+    @Test void preservesBoundedSemanticRejectionReason() {
+        respondAgent(422, """
+                {"detail":{"code":"AGENT_SEMANTIC_REJECTION","message":"Aclara el atributo de Producto que deseas eliminar."}}
+                """);
+        var context = new AgentProjectContext(10L, "Tienda", null, null, null,
+                java.util.List.of(), java.util.List.of(), java.util.List.of());
+        var error = assertThrows(AiServiceException.class,
+                () -> client.askAgent(new AgentUpstreamRequest("elimina", context)));
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, error.getStatus());
+        assertTrue(error.getMessage().contains("Aclara el atributo de Producto"));
+    }
+
+    @Test void doesNotForwardArbitraryUpstreamErrorDetails() {
+        respondAgent(422, "{\"detail\":\"internal-private-trace\"}");
+        var context = new AgentProjectContext(10L, "Tienda", null, null, null,
+                java.util.List.of(), java.util.List.of(), java.util.List.of());
+        var error = assertThrows(AiServiceException.class,
+                () -> client.askAgent(new AgentUpstreamRequest("elimina", context)));
+        assertFalse(error.getMessage().contains("internal-private-trace"));
+    }
+
+    @Test void preservesPlanningOutcomeAndRepairCount() {
+        respondAgent(200, """
+                {"answer":"Falta Categoria.","operations":[],"intent":"NEEDS_CLARIFICATION",
+                 "outcome":"NEEDS_CLARIFICATION","repairAttempts":1}
+                """);
+        var context = new AgentProjectContext(10L, "Tienda", null, null, null,
+                java.util.List.of(), java.util.List.of(), java.util.List.of());
+        var response = client.askAgent(new AgentUpstreamRequest("relaciona", context));
+        assertEquals(com.sw1.backend.ai.agent.dto.AgentAskResponse.Outcome.NEEDS_CLARIFICATION, response.outcome());
+        assertEquals(1, response.repairAttempts());
+    }
+
     @Test void returnsValidatedAgentManyToManyOperations() {
         respondAgent(200, """
                 {"answer":"Relacion propuesta.","operations":[{"type":"ADD_RELATIONSHIP","relationship":{

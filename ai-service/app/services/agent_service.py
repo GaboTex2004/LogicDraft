@@ -1,70 +1,29 @@
-import re
+import logging
 
 from app.schemas.agent import AgentAskRequest, AgentAskResponse
 from app.schemas.data_types import normalize_type_aliases
-from app.schemas.diagram import ContextRelationship, DiagramContext, EntityDefinition, InterpretResponse
+from app.schemas.diagram import DiagramContext, InterpretResponse
 from app.services.ai_service import AIService
-from app.services.diagram_ai_service import _merge_previous_and_repaired
 from app.services.llm_json_parser import parse_llm_json_response
 from app.services.providers.base import ProviderResponseError
+from app.skills.agent.context import build_diagram_context
+from app.skills.agent.execution_plan import action_coverage_error, matches_plan, plan_execution
 from app.skills.agent.intent import AgentIntent, classify_agent_intent
 from app.skills.agent.prompt import build_agent_prompt, build_informational_prompt
 from app.skills.agent.suggestions import contains_technical_operation
-from app.skills.diagram.completeness import DiagramIncompleteError, _key, validate_completeness
-from app.skills.diagram.repair import build_repair_prompt
+from app.skills.diagram.completeness import DiagramIncompleteError, validate_completeness
+from app.skills.diagram.semantic_safety import validate_semantic_safety
+
+logger = logging.getLogger(__name__)
 
 
 def _build_agent_diagram_context(request: AgentAskRequest) -> DiagramContext:
-    entities = [
-        EntityDefinition(name=entity.name, attributes=entity.attributes)
-        for entity in request.context.entities
-    ]
-    existing_names = {_key(entity.name) for entity in entities}
-    relationships = [
-        ContextRelationship(
-            id=relationship.id,
-            sourceEntity=relationship.sourceEntity,
-            targetEntity=relationship.targetEntity,
-            sourceCardinality=relationship.sourceCardinality,
-            targetCardinality=relationship.targetCardinality,
-            name=relationship.name,
-            joinTableName=relationship.joinTableName,
-        )
-        for relationship in request.context.relationships
-    ]
-    description = request.context.projectDescription or ""
-    ro_match = re.search(r"Elementos UML de solo consulta:\s*([^|]+)", description)
-    if ro_match:
-        for item in re.finditer(
-            r"([A-Za-z0-9_ÁÉÍÓÚÑáéíóúñ -]+?)\s*\((INTERFACE|ENUMERATION|CLASS|ENTITY|ASSOCIATION_CLASS)\)",
-            ro_match.group(1),
-        ):
-            name = item.group(1).strip(" ,;")
-            kind = item.group(2)
-            if name and _key(name) not in existing_names:
-                existing_names.add(_key(name))
-                entities.append(EntityDefinition(name=name, kind=kind, attributes=[]))
-    rel_match = re.search(r"Relaciones UML estructurales:\s*([^|]+)", description)
-    if rel_match:
-        for item in re.finditer(
-            r"(GENERALIZATION|REALIZATION|DEPENDENCY|AGGREGATION|COMPOSITION|ASSOCIATION)\s+"
-            r"([A-Za-z0-9_ÁÉÍÓÚÑáéíóúñ -]+?)\s*->\s*([A-Za-z0-9_ÁÉÍÓÚÑáéíóúñ -]+)",
-            rel_match.group(1),
-        ):
-            kind = item.group(1)
-            src = item.group(2).strip(" ,;")
-            tgt = item.group(3).strip(" ,;")
-            if src and tgt:
-                relationships.append(ContextRelationship(
-                    sourceEntity=src,
-                    targetEntity=tgt,
-                    kind=kind,
-                ))
-    return DiagramContext(
-        entities=entities,
-        relationships=relationships,
-        associations=request.context.associations,
-    )
+    return build_diagram_context(request)
+
+
+def _clarification(reason: str, attempts: int = 0) -> AgentAskResponse:
+    return AgentAskResponse(answer="No se preparo ningun cambio. " + reason, operations=[],
+                           intent="NEEDS_CLARIFICATION", outcome="NEEDS_CLARIFICATION", repairAttempts=attempts)
 
 
 class AgentService:
@@ -79,34 +38,65 @@ class AgentService:
                 raise ProviderResponseError("El modelo devolvio una respuesta conversacional vacia.")
             if contains_technical_operation(answer):
                 raise ProviderResponseError("El modelo devolvio identificadores internos en una consulta.")
-            return AgentAskResponse(answer=answer, operations=[])
-        prompt = build_agent_prompt(request)
-        raw = await self.ai.generate(prompt, AgentAskResponse.model_json_schema())
-        try:
-            parsed = normalize_type_aliases(parse_llm_json_response(raw))
-            response = AgentAskResponse.model_validate(parsed)
-        except (ValueError, TypeError):
-            raise ProviderResponseError("El modelo devolvio una respuesta textual fuera de contrato.")
+            wire_intent = "INFORMATIONAL" if intent is AgentIntent.INFORMATIONAL else "NEEDS_CLARIFICATION"
+            return AgentAskResponse(answer=answer, operations=[], intent=wire_intent, outcome=wire_intent)
         diagram = _build_agent_diagram_context(request)
-        previous = InterpretResponse(operations=response.operations)
-        try:
-            validated = validate_completeness(request.message, diagram, previous)
-        except DiagramIncompleteError as exc:
-            repair_prompt = build_repair_prompt(request.message, exc.reason, previous, diagram)
-            repaired_raw = await self.ai.generate(repair_prompt, InterpretResponse.model_json_schema())
+        plan = plan_execution(request.message, diagram)
+        if plan is not None and plan.reason:
+            return _clarification(plan.reason)
+        if plan is not None and not plan.operations:
+            return AgentAskResponse(answer="La accion ya esta satisfecha en el diagrama; no se requieren cambios.",
+                                    operations=[], intent="MUTATION", outcome="ALREADY_SATISFIED")
+        prompt = build_agent_prompt(request, list(plan.operations) if plan is not None else None)
+        schema = AgentAskResponse.model_json_schema()
+        if plan is not None:
+            # Reuse existing schemas, but expose only operation families required by the
+            # human's deterministic plan (e.g. DELETE_ATTRIBUTE, never DELETE_ENTITY).
+            kinds = {operation["type"] for operation in plan.operations}
+            definitions = schema.get("$defs", {})
+            allowed = [{"$ref": f"#/$defs/{name}"} for name, definition in definitions.items()
+                       if definition.get("properties", {}).get("type", {}).get("const") in kinds]
+            schema["properties"]["operations"]["items"] = {"oneOf": allowed}
+            schema["properties"]["operations"]["maxItems"] = len(plan.operations)
+        reason = "Especifica los elementos y la modificacion requerida."
+        for attempt in range(2):
+            raw = await self.ai.generate(prompt, schema)
             try:
-                repaired_parsed = normalize_type_aliases(parse_llm_json_response(repaired_raw))
-                repaired = InterpretResponse.model_validate(repaired_parsed)
+                parsed = normalize_type_aliases(parse_llm_json_response(raw))
+                # Repair may use the existing operations-only schema; all other fields stay strict.
+                response = (InterpretResponse.model_validate(parsed) if attempt and set(parsed) == {"operations"}
+                            else InterpretResponse(operations=AgentAskResponse.model_validate(parsed).operations))
             except (ValueError, TypeError):
-                raise ProviderResponseError("El modelo devolvio una respuesta textual fuera de contrato.")
-            try:
-                validated = validate_completeness(request.message, diagram, repaired)
-            except DiagramIncompleteError:
-                merged = _merge_previous_and_repaired(previous, repaired, request.message, diagram)
-                validated = validate_completeness(request.message, diagram, merged)
-        answer = response.answer
-        if validated.operations:
-            count = len(validated.operations)
-            answer = (f"Preparé una propuesta con {count} cambio"
-                      f"{'s' if count != 1 else ''}. Revísala antes de aplicar.")
-        return response.model_copy(update={"answer": answer, "operations": validated.operations})
+                reason = "El proveedor no produjo un lote JSON valido."
+            else:
+                # Unsafe destructive output is NEVER repaired or silently sanitized.
+                validate_semantic_safety(request.message, diagram, response)
+                try:
+                    if not response.operations:
+                        raise DiagramIncompleteError("La orden solicita cambios, pero el proveedor no propuso ninguna operacion.", response)
+                    if plan is not None:
+                        if not matches_plan(response, plan):
+                            raise DiagramIncompleteError("El lote no coincide con todas las acciones, nombres o cardinalidades solicitadas.", response)
+                        validated = response
+                    else:
+                        validated = validate_completeness(request.message, diagram, response)
+                        if validated.model_dump() != response.model_dump():
+                            raise DiagramIncompleteError("El lote contenia cambios no solicitados; se rechazo completo.", response)
+                        missing = action_coverage_error(request.message, validated)
+                        if missing: raise DiagramIncompleteError(missing, response)
+                    if not validated.operations:
+                        raise DiagramIncompleteError("No se obtuvo una propuesta completa y verificable.", response)
+                except DiagramIncompleteError as error:
+                    reason = error.reason
+                else:
+                    count = len(validated.operations)
+                    logger.info("Agent execution outcome=PROPOSAL operations=%d repairAttempts=%d", count, attempt)
+                    return AgentAskResponse(answer=f"Propuesta de modificaciones: {count} operaciones. Revisa cada cambio y confirma para aplicarlo.",
+                                            operations=validated.operations, intent="MUTATION", outcome="PROPOSAL", repairAttempts=attempt)
+            logger.info("Agent execution validation failed attempt=%d", attempt)
+            if attempt == 0:
+                prompt += ("\nREPARACION 1/1: el lote anterior fue rechazado. " + reason
+                           + "\nDevuelve el lote COMPLETO con answer y operations, no explicaciones manuales. "
+                           "Si falta informacion, no inventes nombres, elementos ni cardinalidades.")
+        logger.info("Agent execution outcome=NEEDS_CLARIFICATION repairAttempts=1")
+        return _clarification(reason, 1)

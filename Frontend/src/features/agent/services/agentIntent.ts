@@ -8,7 +8,7 @@ function plain(value: string) {
 /** An authorization decision derived from the user's words, never from model operations. */
 export function classifyAgentIntent(message: string): AgentIntent {
   const normalized = plain(String(message))
-  if (String(message).includes('?') || /^(que|cual|cuales|cuanto|cuantos|cuanta|cuantas|como|por que|que pasaria si|explica(?:me)?|describe|dime|muestra(?:me)?|opinas|lee|leer|lista|listar|enumera|sugiere|sugerir|recomienda|recomendar|analiza|analizar|revisa|revisar|evalua|evaluar)\b/.test(normalized)) {
+  if (String(message).replace(/^\s*@logicdraft\b\s*/i, '').trimStart().startsWith('¿') || /^(que|cual|cuales|cuanto|cuantos|cuanta|cuantas|como|por que|que pasaria si|explica(?:me)?|describe|dime|muestra(?:me)?|opinas|lee|leer|lista|listar|enumera|sugiere|sugerir|recomienda|recomendar|analiza|analizar|revisa|revisar|evalua|evaluar)\b/.test(normalized)) {
     return 'INFORMATIONAL'
   }
   if (/^(no|nunca|jamas|evita|evitar)\b|^(no quiero|no necesito)\s+que\b/.test(normalized)) {
@@ -21,7 +21,7 @@ export function classifyAgentIntent(message: string): AgentIntent {
     || /^(quiero|necesito)\s+que\s+(agregues|anadas|crees|generes|incluyas|definas|establezcas|marques|asignes|implementes|heredes|extiendas|conectes|relaciones|unas|conviertas|transformes|edites|modifiques|actualices|cambies|renombres|elimines|borres|quites|suprimas|remuevas)\b/.test(normalized)) {
     return 'MODIFICATION'
   }
-  return 'AMBIGUOUS'
+  return String(message).includes('?') ? 'INFORMATIONAL' : 'AMBIGUOUS'
 }
 
 export function containsTechnicalOperation(answer: string) {

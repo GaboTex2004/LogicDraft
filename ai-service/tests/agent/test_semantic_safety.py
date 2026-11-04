@@ -58,7 +58,8 @@ class AgentSemanticSafetyTests(unittest.IsolatedAsyncioTestCase):
                 response = await client.post("/api/agent/ask", json=request(
                     "Elimina el atributo precio de venta de Producto.").model_dump(mode="json"))
         assert response.status_code == 422
-        assert "Aclara" in response.json()["detail"]
+        assert response.json()["detail"]["code"] == "AGENT_SEMANTIC_REJECTION"
+        assert "Aclara" in response.json()["detail"]["message"]
         generate.assert_awaited_once()
 
     async def test_correct_compound_name_attribute_delete_survives_service(self):
@@ -97,10 +98,11 @@ class AgentSemanticSafetyTests(unittest.IsolatedAsyncioTestCase):
             "@LogicDraft elimina la interfaz Auditable, elimina el literal BORRADOR de la enumeracion EstadoVenta, "
             "crea la interfaz Notificador y haz que Venta implemente Notificador"
         ).model_dump(mode="json")
-        req_data["context"]["projectDescription"] = (
-            "Sistema de ventas | Elementos UML de solo consulta: Auditable (INTERFACE), EstadoVenta (ENUMERATION) | "
-            "Relaciones UML estructurales: REALIZATION Venta -> Auditable"
-        )
+        req_data["context"]["uml"] = {"version": 2, "nodes": [
+            {"id": "venta", "data": {"name": "Venta", "kind": "CLASS"}},
+            {"id": "auditable", "data": {"name": "Auditable", "kind": "INTERFACE"}},
+            {"id": "estado", "data": {"name": "EstadoVenta", "kind": "ENUMERATION", "literals": ["BORRADOR"]}},
+        ], "edges": [{"id": "realization", "source": "venta", "target": "auditable", "data": {"relationKind": "REALIZATION"}}]}
         req = AgentAskRequest.model_validate(req_data)
         body = {
             "answer": "Propuesta UML v2",

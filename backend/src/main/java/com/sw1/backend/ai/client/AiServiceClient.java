@@ -77,7 +77,20 @@ public class AiServiceClient {
                 Map.of("operations", operations));
         log.info("AI agent call stage=spring_received_agent_reply projectId={} operationsCount={}",
                 ctx != null ? ctx.projectId() : null, validated.operations().size());
-        return new com.sw1.backend.ai.agent.dto.AgentAskResponse(answer, validated.operations());
+        try {
+            var intent = body.get("intent") == null ? null
+                    : com.sw1.backend.ai.agent.dto.AgentAskResponse.Intent.valueOf((String) body.get("intent"));
+            var outcome = body.get("outcome") == null ? null
+                    : com.sw1.backend.ai.agent.dto.AgentAskResponse.Outcome.valueOf((String) body.get("outcome"));
+            Object attempts = body.getOrDefault("repairAttempts", 0);
+            if (!(attempts instanceof Number number) || number.doubleValue() != number.intValue()
+                    || number.intValue() < 0 || number.intValue() > 1) {
+                throw invalidResponse("repairAttempts invalido");
+            }
+            return new com.sw1.backend.ai.agent.dto.AgentAskResponse(answer, validated.operations(), intent, outcome, number.intValue());
+        } catch (IllegalArgumentException | ClassCastException invalid) {
+            throw invalidResponse("Estado de planificacion de agente invalido");
+        }
     }
 
     private Map<String, Object> post(String path, Object request) {
@@ -90,7 +103,10 @@ public class AiServiceClient {
                         int code = res.getStatusCode().value();
                         if (code == 504) throw providerTimeout(code);
                         if (code == 503) throw providerUnavailable(code);
-                        if (code == 422) throw incompleteResponse(code);
+                        if (code == 422) {
+                            if ("/api/agent/ask".equals(path)) throw agentRejection(res.getBody());
+                            throw incompleteResponse(code);
+                        }
                         if (code >= 500 && code != 502) throw upstreamInternalError(code);
                         throw invalidResponse("FastAPI respondio HTTP " + code);
                     })
@@ -181,6 +197,29 @@ public class AiServiceClient {
                         + "No se aplicaron cambios. Aclara el tipo de elemento, su nombre y la acción; "
                         + "si el tipo UML aún no está soportado por el agente, usa el editor.",
                 "FastAPI rechazo o no completo el lote de operaciones (HTTP " + code + ")");
+    }
+
+    private static AiServiceException agentRejection(java.io.InputStream body) {
+        // Only forward bounded, typed domain errors, never arbitrary upstream bodies/traces.
+        try {
+            byte[] bytes = body.readNBytes(4097);
+            if (bytes.length <= 4096) {
+                var json = new tools.jackson.databind.ObjectMapper().readTree(bytes);
+                var detail = json.path("detail");
+                if ("AGENT_SEMANTIC_REJECTION".equals(detail.path("code").asText())) {
+                    String message = detail.path("message").asText();
+                    if (!message.isBlank() && message.length() <= 1000
+                            && message.chars().noneMatch(Character::isISOControl)) {
+                        return new AiServiceException(HttpStatus.UNPROCESSABLE_ENTITY,
+                                ErrorCategory.INVALID_MODEL_RESPONSE, "No se aplicaron cambios. " + message,
+                                "FastAPI rechazo semanticamente el lote (HTTP 422)");
+                    }
+                }
+            }
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // Malformed or unrecognized error: use the safe existing fallback.
+        }
+        return incompleteResponse(422);
     }
 
     private static AiServiceException upstreamInternalError(int code) {

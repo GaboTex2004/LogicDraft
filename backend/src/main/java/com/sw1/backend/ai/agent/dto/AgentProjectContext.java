@@ -19,7 +19,17 @@ public record AgentProjectContext(
         List<AgentEventInput> recentEvents,
         String projectDescription,
         @JsonIgnore Set<String> readOnlyElementNames,
-        @JsonIgnore DiagramContext semanticContext) {
+        @JsonIgnore DiagramContext semanticContext,
+        AgentUmlDocument uml) {
+
+    public AgentProjectContext(Long projectId, String projectName, Long diagramId, String selectedNodeId,
+                               String selectedEdgeId, List<AgentEntity> entities,
+                               List<AgentRelationship> relationships, List<AgentAssociation> associations,
+                               List<AgentEventInput> recentEvents, String projectDescription,
+                               Set<String> readOnlyElementNames, DiagramContext semanticContext) {
+        this(projectId, projectName, diagramId, selectedNodeId, selectedEdgeId, entities, relationships,
+                associations, recentEvents, projectDescription, readOnlyElementNames, semanticContext, null);
+    }
 
     public AgentProjectContext {
         readOnlyElementNames = readOnlyElementNames == null ? Set.of() : Set.copyOf(readOnlyElementNames);

@@ -732,6 +732,11 @@ public class SharedAgentConversationService {
             SharedProposalResponse proposalResponse = crearPropuestaSiAplica(
                     proyecto, conversacion, savedAgentMsg, requester, aiResponse, baseRevision, ahora);
 
+            if (proposalResponse == null && aiResponse.operations() != null && !aiResponse.operations().isEmpty()) {
+                savedAgentMsg.setContenido("No se requieren cambios: la propuesta ya esta satisfecha en el diagrama actual.");
+                mensajeRepository.saveAndFlush(savedAgentMsg);
+            }
+
             ConversationMessageResponse agentResponse = toMessageResponse(savedAgentMsg, proposalResponse);
             eventPublisher.scheduleAiStatus(projectId, conversationId, false, requester, null, clientId);
             eventPublisher.scheduleMessageCreated(

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.schemas.diagram import AssociationContext, AttributeDefinition, DiagramCardinality, Name, Operation
+from app.schemas.agent_uml import AgentUmlDocument
 
 
 class AgentContract(BaseModel):
@@ -48,6 +49,7 @@ class AgentRelationship(AgentContract):
 
 
 class AgentContext(AgentContract):
+    uml: AgentUmlDocument | None = None
     projectId: int = Field(gt=0)
     projectName: Name
     projectDescription: str | None = Field(default=None, max_length=500)
@@ -81,3 +83,6 @@ class AgentAskRequest(AgentContract):
 class AgentAskResponse(AgentContract):
     answer: str = Field(min_length=1, max_length=20000)
     operations: list[Operation] = Field(default_factory=list, max_length=50)
+    intent: Literal["INFORMATIONAL", "MUTATION", "NEEDS_CLARIFICATION"] | None = None
+    outcome: Literal["PROPOSAL", "ALREADY_SATISFIED", "NEEDS_CLARIFICATION", "INFORMATIONAL"] | None = None
+    repairAttempts: int = Field(default=0, ge=0, le=1)

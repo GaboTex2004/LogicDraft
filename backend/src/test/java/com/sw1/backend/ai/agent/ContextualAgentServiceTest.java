@@ -21,6 +21,30 @@ class ContextualAgentServiceTest {
     @Mock AiServiceClient client;
 
     @Test
+    void emptyMutationIsClarificationNotModelTutorial() {
+        var request = new AgentAskRequest("Agrega una relacion entre Producto y Categoria", null, null, List.of());
+        when(contexts.load(10L, request)).thenReturn(new AgentProjectContext(10L, "Tienda", 30L, null, null,
+                List.of(), List.of(), List.of()));
+        when(client.askAgent(any())).thenReturn(new AgentAskResponse("Ya cree la relacion. Usa el editor."));
+        var response = new ContextualAgentService(contexts, client).ask(10L, request);
+        assertEquals(AgentAskResponse.Outcome.NEEDS_CLARIFICATION, response.outcome());
+        assertFalse(response.answer().contains("Ya cree"));
+        assertTrue(response.operations().isEmpty());
+        verify(contexts).requireEditAccess(10L);
+    }
+
+    @Test
+    void mutationRequiresEditBeforeCallingProviderEvenIfProviderWouldReturnEmpty() {
+        var request = new AgentAskRequest("Crea la clase Producto", null, null, List.of());
+        when(contexts.load(10L, request)).thenReturn(new AgentProjectContext(10L, "Tienda", 30L, null, null,
+                List.of(), List.of(), List.of()));
+        doThrow(new org.springframework.security.access.AccessDeniedException("VIEWER")).when(contexts).requireEditAccess(10L);
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> new ContextualAgentService(contexts, client).ask(10L, request));
+        verifyNoInteractions(client);
+    }
+
+    @Test
     void revalidatesEditPermissionWithoutCallingModel() {
         new ContextualAgentService(contexts, client).authorizeEdit(10L);
         verify(contexts).requireEditAccess(10L);
@@ -93,15 +117,13 @@ class ContextualAgentServiceTest {
         AgentAskRequest request = new AgentAskRequest("crea Cliente", null, null, List.of());
         AgentProjectContext context = new AgentProjectContext(10L, "Tienda", null, null, null,
                 List.of(), List.of(), List.of());
-        var operation = new DiagramOperation(DiagramOperationType.ADD_ENTITY,
-                new EntityDefinition("Cliente", List.of()), null, null, null);
         when(contexts.load(10L, request)).thenReturn(context);
-        when(client.askAgent(any())).thenReturn(new AgentAskResponse("Propuesta.", List.of(operation)));
         doThrow(new com.sw1.backend.common.exception.AccesoDenegadoException("Solo editores"))
                 .when(contexts).requireEditAccess(10L);
 
         assertThrows(com.sw1.backend.common.exception.AccesoDenegadoException.class,
                 () -> new ContextualAgentService(contexts, client).ask(10L, request));
+        verifyNoInteractions(client);
     }
 
     @Test

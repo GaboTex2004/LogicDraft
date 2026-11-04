@@ -21,6 +21,7 @@ public class ContextualAgentService {
     public AgentAskResponse ask(Long projectId, AgentAskRequest request) {
         AgentProjectContext context = contexts.load(projectId, request);
         var intent = AgentIntentClassifier.classify(request.message());
+        if (intent == AgentIntentClassifier.Intent.MODIFICATION) contexts.requireEditAccess(projectId);
         AgentAskResponse proposed = client.askAgent(new AgentUpstreamRequest(
                 request.message().strip(), context,
                 request.conversation() == null ? java.util.List.of() : request.conversation()));
@@ -28,9 +29,21 @@ public class ContextualAgentService {
             String answer = AgentIntentClassifier.containsTechnicalOperation(proposed.answer())
                     ? "Puedo darte sugerencias en lenguaje natural, pero necesito más contexto de los requisitos del proyecto."
                     : proposed.answer();
-            return new AgentAskResponse(answer, java.util.List.of());
+            boolean informational = intent == AgentIntentClassifier.Intent.INFORMATIONAL;
+            return new AgentAskResponse(answer, java.util.List.of(),
+                    informational ? AgentAskResponse.Intent.INFORMATIONAL : AgentAskResponse.Intent.NEEDS_CLARIFICATION,
+                    informational ? AgentAskResponse.Outcome.INFORMATIONAL : AgentAskResponse.Outcome.NEEDS_CLARIFICATION, 0);
         }
-        if (!proposed.operations().isEmpty()) contexts.requireEditAccess(projectId);
+        if (proposed.operations().isEmpty()) {
+            // Older upstreams may return tutorials for commands. Never present that as execution.
+            boolean clarified = proposed.outcome() == AgentAskResponse.Outcome.NEEDS_CLARIFICATION;
+            boolean satisfied = proposed.outcome() == AgentAskResponse.Outcome.ALREADY_SATISFIED;
+            return new AgentAskResponse(clarified || satisfied ? proposed.answer()
+                    : "No se preparo ninguna propuesta ni se aplicaron cambios. Indica los elementos y la modificacion solicitada.",
+                    java.util.List.of(), satisfied ? AgentAskResponse.Intent.MUTATION : AgentAskResponse.Intent.NEEDS_CLARIFICATION,
+                    satisfied ? AgentAskResponse.Outcome.ALREADY_SATISFIED : AgentAskResponse.Outcome.NEEDS_CLARIFICATION,
+                    proposed.repairAttempts());
+        }
         var diagramContext = context.semanticContext() != null
                 ? context.semanticContext()
                 : new com.sw1.backend.ai.diagram.dto.DiagramContext(
@@ -50,6 +63,12 @@ public class ContextualAgentService {
                 diagramContext,
                 new com.sw1.backend.ai.diagram.dto.DiagramInterpretResponse(proposed.operations()),
                 context.readOnlyElementNames());
-        return new AgentAskResponse(proposed.answer(), validated.operations());
+        boolean empty = validated.operations().isEmpty();
+        return new AgentAskResponse(empty ? "No se requieren cambios: las operaciones ya estan satisfechas."
+                : "Propuesta de modificaciones: " + validated.operations().size()
+                    + " operaciones. Revisa los cambios y confirma para aplicarlos.",
+                validated.operations(), AgentAskResponse.Intent.MUTATION,
+                empty ? AgentAskResponse.Outcome.ALREADY_SATISFIED : AgentAskResponse.Outcome.PROPOSAL,
+                proposed.repairAttempts());
     }
 }

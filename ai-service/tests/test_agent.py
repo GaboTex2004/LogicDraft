@@ -49,7 +49,8 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
                 response = await client.post("/api/agent/ask", json=payload())
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"answer": "Producto pertenece a Categoria.", "operations": []})
+        self.assertEqual(response.json(), {"answer": "Producto pertenece a Categoria.", "operations": [],
+            "intent": "INFORMATIONAL", "outcome": "INFORMATIONAL", "repairAttempts": 0})
         self.assertEqual(len(generate.call_args.args), 1)
 
     async def test_prompt_contains_selection_relationships_cardinality_and_events(self):

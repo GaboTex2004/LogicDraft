@@ -142,7 +142,8 @@ public class AgentProjectContextService {
                 List.copyOf(request.recentEvents()),
                 enrichedDescription,
                 snapshot.readOnlyElementNames(),
-                snapshot.diagramContext());
+                snapshot.diagramContext(),
+                AgentUmlDocument.from(diagram.getContenido()));
     }
 
     private static String enrichDescriptionWithReadOnlyUml(

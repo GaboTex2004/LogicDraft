@@ -46,11 +46,12 @@ public final class AgentIntentClassifier {
         String stripped = message == null ? "" : message.replaceFirst("(?i)^\\s*@logicdraft\\b\\s*", "");
         String plain = Normalizer.normalize(stripped.toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "").replace('¿', ' ').replace('¡', ' ').strip();
-        if (stripped.indexOf('?') >= 0 || QUESTION.matcher(plain).find()
+        if (stripped.strip().startsWith("¿") || QUESTION.matcher(plain).find()
                 || ADVISORY.matcher(plain).find()) return Intent.INFORMATIONAL;
         if (NEGATED.matcher(plain).find()) return Intent.AMBIGUOUS;
         if (SUGGESTIVE.matcher(plain).find()) return Intent.AMBIGUOUS;
-        return EXPLICIT.matcher(plain).find() ? Intent.MODIFICATION : Intent.AMBIGUOUS;
+        if (EXPLICIT.matcher(plain).find()) return Intent.MODIFICATION;
+        return stripped.indexOf('?') >= 0 ? Intent.INFORMATIONAL : Intent.AMBIGUOUS;
     }
 
     public static boolean containsTechnicalOperation(String answer) {

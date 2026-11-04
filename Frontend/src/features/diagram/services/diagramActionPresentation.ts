@@ -1,6 +1,15 @@
 import type { DiagramEdge, EntityFlowNode } from '../types/diagram.types.ts'
 import type { DiagramAiOperation } from '../types/diagramAi.types.ts'
 
+function cardinalityLabel(relation: { sourceCardinality?: string; targetCardinality?: string;
+  sourceMultiplicity?: string; targetMultiplicity?: string; kind?: string }) {
+  if (relation.kind && ['GENERALIZATION', 'REALIZATION', 'DEPENDENCY'].includes(relation.kind)) return ''
+  const labels: Record<string, string> = { ZERO_ONE: '0..1', ONE_ONE: '1..1', ZERO_MANY: '0..N', ONE_MANY: '1..N' }
+  const source = relation.sourceCardinality ?? relation.sourceMultiplicity
+  const target = relation.targetCardinality ?? relation.targetMultiplicity
+  return source || target ? ` (origen: ${source ? labels[source] ?? source : 'sin cambio'}; destino: ${target ? labels[target] ?? target : 'sin cambio'})` : ''
+}
+
 export function diagramOperationLabel(operation: DiagramAiOperation): string {
   switch (operation.type) {
     case 'ADD_ENTITY': {
@@ -43,14 +52,14 @@ export function diagramOperationLabel(operation: DiagramAiOperation): string {
     case 'ADD_RELATIONSHIP': {
       const kind = operation.relationship.kind
       const suffix = kind && kind !== 'ASSOCIATION' ? ` (${kind})` : ''
-      return `Crear relación${suffix} ${operation.relationship.sourceEntity} - ${operation.relationship.targetEntity}`
+      return `Crear relación${suffix} ${operation.relationship.sourceEntity} - ${operation.relationship.targetEntity}${cardinalityLabel(operation.relationship)}`
     }
     case 'DELETE_RELATIONSHIP': {
       const kind = operation.relationship.kind
       const suffix = kind && kind !== 'ASSOCIATION' ? ` (${kind})` : ''
       return `Eliminar relación${suffix} ${operation.relationship.sourceEntity} - ${operation.relationship.targetEntity}`
     }
-    case 'UPDATE_RELATIONSHIP': return `Actualizar relación ${operation.relationship.sourceEntity} - ${operation.relationship.targetEntity}`
+    case 'UPDATE_RELATIONSHIP': return `Actualizar relación ${operation.relationship.sourceEntity} - ${operation.relationship.targetEntity}${cardinalityLabel(operation.relationship)}`
     case 'CREATE_ASSOCIATION': return `Crear asociación ${operation.association.associationEntityName} entre ${operation.association.sourceEntity} y ${operation.association.targetEntity}`
     case 'DELETE_ASSOCIATION': return `Eliminar asociación ${operation.associationEntityName}`
     case 'CONVERT_MANY_TO_MANY_ASSOCIATION': return `Convertir la relación en ${operation.conversion.associationEntityName}`

@@ -7,6 +7,8 @@ class AgentIntent(StrEnum):
     INFORMATIONAL = "INFORMATIONAL"
     MODIFICATION = "MODIFICATION"
     AMBIGUOUS = "AMBIGUOUS"
+    MUTATION = "MODIFICATION"  # Internal compatibility; wire intent uses MUTATION.
+    NEEDS_CLARIFICATION = "AMBIGUOUS"
 
 
 def _plain(value: str) -> str:
@@ -24,7 +26,7 @@ def classify_agent_intent(message: str) -> AgentIntent:
         r"describe|dime|muestra(?:me)?|opinas|lee|leer|lista|listar|enumera|consulta|consultar|sugiere|sugerir|"
         r"recomienda|recomendar|analiza|analizar|revisa|revisar|evalua|evaluar|que pasaria si)\b",
         plain,
-    )) or "?" in plain
+    )) or re.sub(r"^\s*@logicdraft\b\s*", "", message, flags=re.I).lstrip().startswith("¿")
     if interrogative:
         return AgentIntent.INFORMATIONAL
     if re.match(r"^(?:no|nunca|jamas|evita|evitar)\b|^(?:no quiero|no necesito)\s+que\b", plain):
@@ -65,4 +67,6 @@ def classify_agent_intent(message: str) -> AgentIntent:
         r")\b",
         plain,
     )
-    return AgentIntent.MODIFICATION if explicit else AgentIntent.AMBIGUOUS
+    if explicit:
+        return AgentIntent.MODIFICATION
+    return AgentIntent.INFORMATIONAL if "?" in plain else AgentIntent.AMBIGUOUS

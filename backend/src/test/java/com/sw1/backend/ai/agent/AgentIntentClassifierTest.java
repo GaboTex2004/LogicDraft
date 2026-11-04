@@ -16,6 +16,9 @@ class AgentIntentClassifierTest {
             Profesor | AMBIGUOUS
             Agrega una entidad Profesor | MODIFICATION
             Crea una relación entre Profesor y Materia | MODIFICATION
+            @LogicDraft agrega una relacion entre la clase Producto y categoria donde una categoria tiene artos productos y un producto si o si en una categoria | MODIFICATION
+            @LogicDraft elimina el atributo "Precio de venta" de la clase Producto y crea un nuevo atributo en la clase compra con el nombre de "CANTIDAD" tipo int | MODIFICATION
+            Agrega una relacion entre Producto y Categoria ¿de acuerdo? | MODIFICATION
             Convierte la relación N:M en Inscripcion | MODIFICATION
             """)
     void classifiesAuthorizationFromUserWords(String message, String expected) {

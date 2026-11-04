@@ -21,4 +21,10 @@ export interface AgentAskRequest {
 export interface AgentConversationMessage { role: 'user' | 'agent'; text: string }
 import type { DiagramAiOperation } from '../../diagram/types/diagramAi.types'
 
-export interface AgentAskResponse { answer: string; operations: DiagramAiOperation[] }
+export interface AgentAskResponse {
+  answer: string
+  operations: DiagramAiOperation[]
+  intent?: 'INFORMATIONAL' | 'MUTATION' | 'NEEDS_CLARIFICATION'
+  outcome?: 'INFORMATIONAL' | 'PROPOSAL' | 'ALREADY_SATISFIED' | 'NEEDS_CLARIFICATION'
+  repairAttempts?: number
+}

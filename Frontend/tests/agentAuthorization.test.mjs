@@ -4,6 +4,30 @@ import { readFileSync } from 'node:fs'
 import { classifyAgentIntent } from '../src/features/agent/services/agentIntent.ts'
 import { prepareAgentResponse, proposalAcceptanceError } from '../src/features/agent/services/agentProposal.ts'
 import { applyDiagramOperations } from '../src/features/diagram/services/applyDiagramOperations.ts'
+import { diagramOperationLabel } from '../src/features/diagram/services/diagramActionPresentation.ts'
+
+test('instrucciones exactas son modificaciones y respuestas vacías no afirman éxito', () => {
+  const relation = '@LogicDraft agrega una relacion entre la clase Producto y categoria donde una categoria tiene artos productos y un producto si o si en una categoria'
+  const compound = '@LogicDraft elimina el atributo "Precio de venta" de la clase Producto y crea un nuevo atributo en la clase compra con el nombre de "CANTIDAD" tipo int'
+  for (const message of [relation, compound, relation + ' ¿correcto?']) {
+    assert.equal(classifyAgentIntent(message), 'MODIFICATION')
+    const result = prepareAgentResponse(message, { answer: 'Ya lo hice. Usa el editor.', operations: [] }, [], [])
+    assert.equal(result.proposal, null)
+    assert.equal(result.response.outcome, 'NEEDS_CLARIFICATION')
+    assert.doesNotMatch(result.response.answer, /Ya lo hice/)
+  }
+  const reason = 'No existe Categoria. Indica un clasificador existente.'
+  assert.equal(prepareAgentResponse(relation, { answer: reason, operations: [],
+    outcome: 'NEEDS_CLARIFICATION' }, [], []).response.answer, reason)
+})
+
+test('las propuestas muestran cardinalidades en el extremo correcto', () => {
+  const label = diagramOperationLabel({ type: 'ADD_RELATIONSHIP', relationship: {
+    sourceEntity: 'Producto', targetEntity: 'Categoria', sourceCardinality: 'ZERO_MANY', targetCardinality: 'ONE_ONE',
+  } })
+  assert.match(label, /Producto - Categoria/)
+  assert.match(label, /origen: 0\.\.N; destino: 1\.\.1/)
+})
 
 const professor = {
   type: 'ADD_ENTITY',

@@ -21,7 +21,13 @@ export function prepareAgentResponse(
       proposal: null,
     }
   }
-  if (!response.operations.length) return { response, proposal: null }
+  if (!response.operations.length) {
+    const explained = response.outcome === 'NEEDS_CLARIFICATION' || response.outcome === 'ALREADY_SATISFIED'
+    return { response: explained ? response : { ...response,
+      answer: 'No se preparó una propuesta ni se aplicaron cambios. Especifica los elementos y la modificación solicitada.',
+      intent: 'NEEDS_CLARIFICATION', outcome: 'NEEDS_CLARIFICATION',
+    } satisfies AgentAskResponse, proposal: null }
+  }
   return { response, proposal: prepareDiagramAiProposal(response, nodes, edges) }
 }
 

@@ -21,6 +21,6 @@ async def ask(request: AgentAskRequest) -> AgentAskResponse:
     except ProviderTimeoutError:
         raise HTTPException(504, "El proveedor de IA excedio el tiempo de espera.") from None
     except SemanticSafetyError as error:
-        raise HTTPException(422, str(error)) from None
+        raise HTTPException(422, {"code": "AGENT_SEMANTIC_REJECTION", "message": str(error)}) from None
     except ProviderResponseError:
         raise HTTPException(502, "El proveedor no devolvio una respuesta valida.") from None

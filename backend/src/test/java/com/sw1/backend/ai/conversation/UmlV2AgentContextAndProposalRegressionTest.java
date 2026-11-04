@@ -660,6 +660,16 @@ class UmlV2AgentContextAndProposalRegressionTest {
         assertEquals(3, sentEntities.size());
         List<?> sentAssociations = (List<?>) sentContext.get("associations");
         assertEquals(1, sentAssociations.size());
+        Map<?, ?> uml = (Map<?, ?>) sentContext.get("uml");
+        assertEquals(2, uml.get("version"));
+        List<?> nodes = (List<?>) uml.get("nodes");
+        assertEquals(3, nodes.size());
+        Map<?, ?> first = (Map<?, ?>) nodes.getFirst();
+        assertEquals("entity-8a0d0094-0c00-4409-8652-b338a6aa9cb1", first.get("id"));
+        assertEquals("CLASS", ((Map<?, ?>) first.get("data")).get("kind"));
+        Map<?, ?> compra = (Map<?, ?>) ((Map<?, ?>) nodes.get(2)).get("data");
+        assertEquals("ASSOCIATION_CLASS", compra.get("kind"));
+        assertEquals(2, ((List<?>) ((Map<?, ?>) compra.get("association")).get("endpoints")).size());
     }
 
     // 11. Solicitud válida de modificación sobre CLASS (propuesta PENDING, bloqueos 3.2B, revisión, STOMP y preservación de kind=CLASS)
@@ -990,7 +1000,7 @@ class UmlV2AgentContextAndProposalRegressionTest {
         // Scenario 40: Generate proposal and reject without mutating diagram
         var send1 = as("gabriel@logicdraft.test", () -> conversationService.enviarMensaje(3L, conv.id(),
                 new SendConversationMessageRequest(
-                        "@LogicDraft elimina el atributo Precio de venta de la clase Producto y crea un atributo CANTIDAD de tipo INTEGER en la clase compra",
+                        "@LogicDraft elimina el atributo \"Precio de venta\" de la clase Producto y crea un nuevo atributo en la clase compra con el nombre de \"CANTIDAD\" tipo int",
                         "multi-op-reject", false, null, null, List.of(), "tab-g")));
         assertNotNull(send1.agentMessage().proposal());
         assertEquals(AgentProposalState.PENDING, send1.agentMessage().proposal().estado());
@@ -1005,7 +1015,7 @@ class UmlV2AgentContextAndProposalRegressionTest {
         // Scenario 39, 41, 42: Generate proposal, accept it, verify revision 98->99, STOMP broadcast, and manual editor compatibility
         var send2 = as("gabriel@logicdraft.test", () -> conversationService.enviarMensaje(3L, conv.id(),
                 new SendConversationMessageRequest(
-                        "@LogicDraft elimina el atributo Precio de venta de la clase Producto y crea un atributo CANTIDAD de tipo INTEGER en la clase compra",
+                        "@LogicDraft elimina el atributo \"Precio de venta\" de la clase Producto y crea un nuevo atributo en la clase compra con el nombre de \"CANTIDAD\" tipo int",
                         "multi-op-accept", false, null, null, List.of(), "tab-g")));
         var proposal = send2.agentMessage().proposal();
         assertNotNull(proposal);
@@ -1040,6 +1050,47 @@ class UmlV2AgentContextAndProposalRegressionTest {
         attributes.add(colAttr("attr-price-sale", "precio de venta", "DOUBLE"));
         data.put("attributes", attributes);
         return document;
+    }
+
+    @Test
+    void exactProductoCategoriaInstructionRequiresAcceptanceAndPreservesCardinalitiesAndIds() {
+        var before = Map.<String, Object>of("version", 2, "nodes", List.of(
+                classNode("product-real-id", "Producto", List.of(pkAttr("product-pk", "id", "INTEGER"))),
+                classNode("category-real-id", "Categoria", List.of(pkAttr("category-pk", "id", "INTEGER")))),
+                "edges", List.of());
+        storedDiagram.get().setContenido(before);
+        upstreamBody.set("""
+                {"answer":"Ya lo aplique.","operations":[{"type":"ADD_RELATIONSHIP","relationship":{
+                "sourceEntity":"Producto","targetEntity":"Categoria","sourceCardinality":"ZERO_MANY",
+                "targetCardinality":"ONE_ONE"}}],"intent":"MUTATION","outcome":"PROPOSAL","repairAttempts":0}
+                """);
+        var conv = as("gabriel@logicdraft.test", () -> conversationService.crearConversacion(
+                3L, new CreateConversationRequest("Relacion exacta", "tab-g")));
+        var sent = as("gabriel@logicdraft.test", () -> conversationService.enviarMensaje(3L, conv.id(),
+                new SendConversationMessageRequest(
+                        "@LogicDraft agrega una relacion entre la clase Producto y categoria donde una categoria tiene artos productos y un producto si o si en una categoria",
+                        "relation-exact", false, null, null, List.of(), "tab-g")));
+        assertNull(sent.agentError());
+        assertEquals(AgentProposalState.PENDING, sent.agentMessage().proposal().estado());
+        assertFalse(sent.agentMessage().contenido().contains("Ya lo aplique"));
+        assertEquals(before, storedDiagram.get().getContenido());
+        assertEquals(98L, storedDiagram.get().getRevision());
+        var accepted = as("carlos@logicdraft.test", () -> conversationService.aceptarPropuesta(
+                3L, conv.id(), sent.agentMessage().proposal().id(), new ProposalDecisionRequest("tab-e", null)));
+        assertEquals(AgentProposalState.ACCEPTED, accepted.estado());
+        assertEquals(99L, storedDiagram.get().getRevision());
+        var document = storedDiagram.get().getContenido();
+        assertEquals(before.get("nodes"), document.get("nodes"));
+        assertDoesNotThrow(() -> DiagramDocumentValidator.validate(document));
+        Map<?, ?> edge = (Map<?, ?>) ((List<?>) document.get("edges")).getFirst();
+        assertEquals("product-real-id", edge.get("source"));
+        assertEquals("category-real-id", edge.get("target"));
+        Map<?, ?> data = (Map<?, ?>) edge.get("data");
+        assertEquals("ZERO_MANY", data.get("sourceCardinality"));
+        assertEquals("ONE_ONE", data.get("targetCardinality"));
+        ArgumentCaptor<CollaborationEvent> events = ArgumentCaptor.forClass(CollaborationEvent.class);
+        verify(messaging, atLeastOnce()).convertAndSend(eq("/topic/proyectos/3"), events.capture());
+        assertTrue(events.getAllValues().stream().anyMatch(e -> e.type() == CollaborationEventType.DIAGRAM_COMMITTED));
     }
 
     private static Map<String, Object> project3RealUmlV2Document() {

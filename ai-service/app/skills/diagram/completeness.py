@@ -148,6 +148,16 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
             continue
         end = starts[index + 1].start() if index + 1 < len(starts) else len(plain_prompt)
         clause = plain_prompt[start.start():end]
+        owner_first = re.match(
+            r"(?:atributo|attribute)\s+(?:en|a|para)\s+" + ENTITY
+            + r"[\"']?([a-z_][\w-]{0,99})[\"']?\s+"
+            + r"(?:con\s+(?:el\s+)?nombre\s+(?:de\s+)?|llamado\s+)"
+            + r"[\"']?([a-z_][\w-]{0,99})", clause)
+        if owner_first:
+            request = (owner_first.group(1), owner_first.group(2))
+            if request not in requests:
+                requests.append(request)
+            continue
         attribute = re.match(
             r"(?:atributo|attribute)\s+(?:(?:llamado|named)\s+)?[\"']?([a-z_][\w-]{0,99})",
             clause,
@@ -160,7 +170,7 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
         )
         if attribute and target and target.group(1) not in (
             {"muchos", "uno", "una", "cero", "ambas", "ambos", "si", "n", "m"} | _CLASSIFIER_KEYWORDS
-        ) and attribute.group(1) not in _CLASSIFIER_KEYWORDS:
+        ) and attribute.group(1) not in (_CLASSIFIER_KEYWORDS | {"en", "de", "a", "para", "tipo", "nombre"}):
             request = (target.group(1), attribute.group(1))
             if request not in requests:
                 requests.append(request)
@@ -328,6 +338,14 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
             r"\b(?:nombre|llamad[ao]|denominad[ao])\s+[\"']?"
             r"([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ-]{0,99})",
             prompt):
+        # A member named Stock/CANTIDAD is not a request to create a classifier.
+        prefix = _plain(prompt[max(0, match.start() - 160):match.start()])
+        member_prefix = re.search(r"\b(?:atributo|campo|metodo|parametro|literal)\b[^,;.!]*$", prefix)
+        classifier_after_member = member_prefix and re.search(
+            rf"(?:{_CREATE_VERB}|\botra|\botro|\bultima|\bultimo)\s+(?:(?:una?|la|el)\s+)?{_CLASSIFIER_NO_ASSOC}\b",
+            member_prefix.group())
+        if member_prefix and not classifier_after_member:
+            continue
         candidate = match.group(1)
         if (candidate not in names
                 and candidate.casefold() not in _TYPE_ALIASES
@@ -441,7 +459,8 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
     direct_patterns = [
         r"\b(?:conecta|relaciona|conecte|relacione)\s+[\"']?([a-z][\w-]*)[\"']?\s+con\s+[\"']?([a-z][\w-]*)[\"']?",
         r"\bnombre\s+[\"']?([a-z][\w-]*)[\"']?.{0,180}?\b(?:conecte|relacione)\s+con\s+[\"']?([a-z][\w-]*)[\"']?",
-        r"\brelacion(?:\s+n\s*:\s*m|\s+1\s*:\s*n|\s+1\s*:\s*1)?\s+entre\s+[\"']?([a-z][\w-]*)[\"']?\s+y\s+[\"']?([a-z][\w-]*)[\"']?",
+        r"\brelacion(?:\s+n\s*:\s*m|\s+1\s*:\s*n|\s+1\s*:\s*1)?\s+entre\s+" + ENTITY
+        + r"[\"']?([a-z][\w-]*)[\"']?\s+y\s+" + ENTITY + r"[\"']?([a-z][\w-]*)[\"']?",
     ]
     for pattern in direct_patterns:
         for match in re.finditer(pattern, plain_prompt, re.DOTALL):
