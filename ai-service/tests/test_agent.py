@@ -115,21 +115,20 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         ]
         body["context"]["relationships"] = []
         body["message"] = "Relaciona Alumno y Materia de muchos a muchos"
-        generated = json.dumps({"answer": "Relacion N:M propuesta.", "operations": [{
-            "type": "ADD_RELATIONSHIP", "relationship": {
-                "sourceEntity": "Alumno", "targetEntity": "Materia",
-                "sourceCardinality": "ZERO_MANY", "targetCardinality": "ZERO_MANY",
-                "name": "materias", "joinTableName": "alumno_materia",
-            },
-        }]})
-        with patch("app.services.ai_service.AIService.generate", new=AsyncMock(return_value=generated)):
+
+        with patch("app.services.ai_service.AIService.generate", new_callable=AsyncMock) as generate:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
                 response = await client.post("/api/agent/ask", json=body)
         self.assertEqual(response.status_code, 200)
         relation = response.json()["operations"][0]["relationship"]
         self.assertEqual(relation["sourceCardinality"], "ZERO_MANY")
         self.assertEqual(relation["targetCardinality"], "ZERO_MANY")
-        self.assertEqual(relation["joinTableName"], "alumno_materia")
+        self.assertEqual(relation["sourceEntity"], "Alumno")
+        self.assertEqual(relation["targetEntity"], "Materia")
+        self.assertNotIn("joinTableName", relation)
+
+        # El planificador debe resolver esta instruccion sin Ollama.
+        generate.assert_not_awaited()
 
 
 if __name__ == "__main__":

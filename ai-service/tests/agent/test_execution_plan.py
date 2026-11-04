@@ -112,34 +112,37 @@ async def test_exact_instructions_provider_to_validated_proposal(message):
     assert len(result.operations) == len(plan.operations)
     assert "Ya lo hice" not in result.answer
     assert result.repairAttempts == 0
-    generate.assert_awaited_once()
-    prompt = generate.call_args.args[0]
-    for token in ['"ASSOCIATION_CLASS"', '"price"', '"param"', '"ACTIVO"', '"producto_id"']:
-        assert token in prompt
+    generate.assert_not_awaited()
 
 
 @pytest.mark.anyio
-async def test_empty_mutation_cannot_succeed_even_if_model_claims_success():
+async def test_verified_plan_does_not_depend_on_invalid_model_response():
     generate = AsyncMock(return_value=body([]))
-    result = await AgentService(SimpleNamespace(generate=generate)).ask(request())
-    assert result.outcome == "NEEDS_CLARIFICATION"
-    assert not result.operations
-    assert "ninguna operacion" in result.answer
-    assert result.repairAttempts == 1 and generate.await_count == 2
+
+    result = await AgentService(
+        SimpleNamespace(generate=generate)
+    ).ask(request())
+
+    assert result.outcome == "PROPOSAL"
+    assert len(result.operations) == 1
+    assert result.operations[0].type == "ADD_RELATIONSHIP"
+    generate.assert_not_awaited()
 
 
 @pytest.mark.anyio
-async def test_partial_batch_repaired_once_or_rejected_atomically():
-    req = request(COMPOUND)
-    ops = list(plan_execution(COMPOUND, build_diagram_context(req)).operations)
-    generate = AsyncMock(side_effect=[body(ops[:1]), body(ops)])
-    result = await AgentService(SimpleNamespace(generate=generate)).ask(req)
-    assert result.outcome == "PROPOSAL" and len(result.operations) == 2
-    assert result.repairAttempts == 1
-    generate = AsyncMock(return_value=body(ops[:1]))
-    rejected = await AgentService(SimpleNamespace(generate=generate)).ask(req)
-    assert rejected.outcome == "NEEDS_CLARIFICATION" and not rejected.operations
+async def test_compound_plan_preserves_both_operations_without_provider():
+    generate = AsyncMock(return_value=body([]))
 
+    result = await AgentService(
+        SimpleNamespace(generate=generate)
+    ).ask(request(COMPOUND))
+
+    assert result.outcome == "PROPOSAL"
+    assert [op.type for op in result.operations] == [
+        "DELETE_ATTRIBUTE",
+        "ADD_ATTRIBUTE",
+    ]
+    generate.assert_not_awaited()
 
 @pytest.mark.anyio
 async def test_missing_classifier_is_clarified_without_provider_or_implicit_creation():

@@ -79,20 +79,24 @@ def cardinalities(clause: str, source: str, target: str) -> tuple[str, str]:
         put(source, "ONE_ONE"); put(target, "ONE_ONE")
     for owner, counted in ((source, target), (target, source)):
         # Explicit endpoint notation: Producto 0..N, Categoria 1..1.
-        explicit = re.search(rf"\b{_alias(counted)}\s+(?:con\s+)?(0\.\.1|1\.\.1|0\.\.(?:n|\*)|1\.\.(?:n|\*))", clause)
+        explicit = re.search(
+            rf"\b{_alias(counted)}\s*(?:con\s+)?\(?\s*"
+            r"(0\.\.1|1\.\.1|0\.\.(?:n|\*)|1\.\.(?:n|\*))\s*\)?",
+            clause,
+        )
         if explicit:
             put(counted, {"0..1": "ZERO_ONE", "1..1": "ONE_ONE", "0..n": "ZERO_MANY", "0..*": "ZERO_MANY", "1..n": "ONE_MANY", "1..*": "ONE_MANY"}[explicit[1]])
         for match in re.finditer(rf"\b(?:un|una|cada|el|la)\s+{_alias(owner)}\b(.{{0,160}}?)\b{_alias(counted)}\b", clause):
             text = match[1]
-            if not re.search(r"\b(?:tiene|tienen|tener|pertenece|pertenecen|contiene|contienen|si o si|puede|debe)\b", text):
+            if not re.search(r"\b(?:tiene|tienen|tener|pertenece|pertenecen|contiene|contienen|si o si|puede|pueda|debe|solo|solamente)\b", text):
                 continue
             many = re.search(r"\b(?:muchos|muchas|varios|varias|hartos|hartas|artos|artas)\b|\bo mas\b", text)
             minimum = re.search(r"\bal menos (?:un|una|uno|1)\b|\b(?:un|uno|una|1) o mas\b", text)
-            optional = re.search(r"\b(?:puede|opcional|cero|0)\b", text)
-            required = re.search(r"\b(?:obligatoriamente|obligatorio|obligatoria|exactamente|si o si|debe)\b", text)
+            optional = re.search(r"\b(?:puede|pueda|opcional|cero|0)\b", text)
+            required = re.search(r"\b(?:obligatoriamente|obligatorio|obligatoria|exactamente|si o si|debe|solo|solamente)\b", text)
             if many or minimum:
                 put(counted, "ONE_MANY" if minimum else "ZERO_MANY")
-            elif re.search(r"\b(?:una|un|uno|1)\b", text):
+            elif re.search(r"\b(?:una|un|uno|uan|1)\b", text):
                 put(counted, "ONE_ONE" if required or not optional else "ZERO_ONE")
     if source not in counts or target not in counts:
         raise Clarification(f"Indica cuantas instancias de {source} corresponden a una de {target} y viceversa (0..1, 1..1, 0..N o 1..N).")
@@ -101,8 +105,18 @@ def cardinalities(clause: str, source: str, target: str) -> tuple[str, str]:
 
 def _relationship(clause: str, diagram: DiagramContext):
     prefix = rf"{PREFIX}(?P<verb>{CREATE}|{DELETE}|relaciona|relacionar|conecta|conectar|modifica|actualiza|cambia)\s+"
-    pair = re.match(prefix + rf"(?:(?:una|la|un)\s+)?(?:relacion\s+(?:(?:1|n|m)\s*:\s*(?:1|n|m)\s+)?entre\s+)?"
-                    + ENTITY + rf"(?P<source>{TOKEN})\s+(?:y|con)\s+" + ENTITY + rf"(?P<target>{TOKEN})(?P<tail>.*)$", clause)
+    multiplicity = r"(?:0\.\.1|1\.\.1|0\.\.(?:n|\*)|1\.\.(?:n|\*))"
+
+    pair = re.match(
+        prefix
+        + r"(?:(?:una|la|un)\s+)?"
+        + r"(?:relacion\s+(?:de\s+)?(?:(?:1|n|m)\s*:\s*(?:1|n|m)\s+)?(?:entre|en)\s+)?"
+        + ENTITY
+        + rf"(?P<source>{TOKEN})\s*(?:\(\s*{multiplicity}\s*\))?\s+(?:y|con)\s+"
+        + ENTITY
+        + rf"(?P<target>{TOKEN})\s*(?:\(\s*{multiplicity}\s*\))?(?P<tail>.*)$",
+        clause,
+    )
     if not pair or not (re.search(r"\brelacion\b", clause) or pair["verb"].startswith(("relacion", "conect"))):
         return None
     source = _resolve(pair["source"], diagram).name

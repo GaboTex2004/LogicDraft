@@ -47,6 +47,41 @@ class AgentService:
         if plan is not None and not plan.operations:
             return AgentAskResponse(answer="La accion ya esta satisfecha en el diagrama; no se requieren cambios.",
                                     operations=[], intent="MUTATION", outcome="ALREADY_SATISFIED")
+        
+        # Si el planificador ya resolvio la orden, no pedirle
+        # a Ollama que vuelva a generar las mismas operaciones.
+        if plan is not None:
+            resolved = InterpretResponse.model_validate({
+                "operations": list(plan.operations)
+            })
+
+            # Mantener la autorizacion semantica, especialmente
+            # para eliminaciones y operaciones destructivas.
+            validate_semantic_safety(request.message, diagram, resolved)
+
+            # Evitar propuestas incompletas.
+            missing = action_coverage_error(request.message, resolved)
+            if missing:
+                return _clarification(missing)
+
+            count = len(resolved.operations)
+
+            logger.info(
+                "Agent execution planner=deterministic outcome=PROPOSAL operations=%d",
+                count,
+            )
+
+            return AgentAskResponse(
+                answer=(
+                    f"Propuesta de modificaciones: {count} operaciones. "
+                    "Revisa cada cambio y confirma para aplicarlo."
+                ),
+                operations=resolved.operations,
+                intent="MUTATION",
+                outcome="PROPOSAL",
+                repairAttempts=0,
+            )
+
         prompt = build_agent_prompt(request, list(plan.operations) if plan is not None else None)
         schema = AgentAskResponse.model_json_schema()
         if plan is not None:
