@@ -68,3 +68,75 @@ class AgentSemanticSafetyTests(unittest.IsolatedAsyncioTestCase):
             "elimina de Producto el atributo precio de venta"))
         assert [op.type for op in result.operations] == ["DELETE_ATTRIBUTE"]
         generate.assert_awaited_once()
+
+    async def test_real_b6_multi_operation_delete_and_create_attribute_survives_service(self):
+        prompt = "@LogicDraft elimina el atributo Precio de venta de la clase Producto y crea un atributo CANTIDAD de tipo INTEGER en la clase compra"
+        body = {
+            "answer": "Propuesta",
+            "operations": [
+                {"type": "DELETE_ATTRIBUTE", "entityName": "Producto", "attributeName": "Precio de venta"},
+                {
+                    "type": "ADD_ATTRIBUTE",
+                    "entityName": "compra",
+                    "attribute": {"name": "CANTIDAD", "dataType": "INTEGER", "primaryKey": False, "nullable": True},
+                },
+            ],
+        }
+        generate = AsyncMock(return_value=json.dumps(body))
+        result = await AgentService(SimpleNamespace(generate=generate)).ask(request(prompt))
+        assert [op.type for op in result.operations] == ["DELETE_ATTRIBUTE", "ADD_ATTRIBUTE"]
+        assert result.operations[0].entityName == "Producto"
+        assert result.operations[0].attributeName == "Precio de venta"
+        assert result.operations[1].entityName == "compra"
+        assert result.operations[1].attribute.name == "CANTIDAD"
+        assert result.operations[1].attribute.dataType == "Integer"
+        generate.assert_awaited_once()
+
+    async def test_uml_v2_classifiers_methods_parameters_literals_and_relationships_contract(self):
+        req_data = request(
+            "@LogicDraft elimina la interfaz Auditable, elimina el literal BORRADOR de la enumeracion EstadoVenta, "
+            "crea la interfaz Notificador y haz que Venta implemente Notificador"
+        ).model_dump(mode="json")
+        req_data["context"]["projectDescription"] = (
+            "Sistema de ventas | Elementos UML de solo consulta: Auditable (INTERFACE), EstadoVenta (ENUMERATION) | "
+            "Relaciones UML estructurales: REALIZATION Venta -> Auditable"
+        )
+        req = AgentAskRequest.model_validate(req_data)
+        body = {
+            "answer": "Propuesta UML v2",
+            "operations": [
+                {"type": "DELETE_ENTITY", "entityName": "Auditable"},
+                {"type": "DELETE_ENUM_LITERAL", "entityName": "EstadoVenta", "literal": "BORRADOR"},
+                {
+                    "type": "ADD_ENTITY",
+                    "entity": {
+                        "name": "Notificador",
+                        "kind": "INTERFACE",
+                        "methods": [
+                            {
+                                "name": "enviar",
+                                "returnType": "Boolean",
+                                "visibility": "PUBLIC",
+                                "parameters": [{"name": "mensaje", "dataType": "String"}],
+                            }
+                        ],
+                    },
+                },
+                {
+                    "type": "ADD_RELATIONSHIP",
+                    "relationship": {
+                        "sourceEntity": "Venta",
+                        "targetEntity": "Notificador",
+                        "kind": "REALIZATION",
+                    },
+                },
+            ],
+        }
+        generate = AsyncMock(return_value=json.dumps(body))
+        result = await AgentService(SimpleNamespace(generate=generate)).ask(req)
+        assert [op.type for op in result.operations] == [
+            "DELETE_ENTITY",
+            "DELETE_ENUM_LITERAL",
+            "ADD_ENTITY",
+            "ADD_RELATIONSHIP",
+        ]

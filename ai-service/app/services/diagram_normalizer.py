@@ -54,9 +54,13 @@ def normalize_operations(document: InterpretResponse) -> InterpretResponse:
             seen_attributes.add(key)
         elif isinstance(operation, AddRelationship):
             relationship = operation.relationship
-            key = (*tuple(sorted(((relationship.sourceEntity.casefold(), relationship.sourceCardinality),
-                                  (relationship.targetEntity.casefold(), relationship.targetCardinality)))),
-                   ((relationship.name or "").casefold(), "name"))
+            rel_kind = (relationship.kind or "ASSOCIATION").casefold()
+            src_card = relationship.sourceCardinality or "NONE"
+            tgt_card = relationship.targetCardinality or "NONE"
+            key = (*tuple(sorted(((relationship.sourceEntity.casefold(), src_card),
+                                  (relationship.targetEntity.casefold(), tgt_card)))),
+                   ((relationship.name or "").casefold(), "name"),
+                   (rel_kind, "kind"))
             if key in seen_relationships:
                 continue
             seen_relationships.add(key)

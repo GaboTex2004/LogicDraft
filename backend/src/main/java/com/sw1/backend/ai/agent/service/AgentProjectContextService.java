@@ -5,10 +5,13 @@ import com.sw1.backend.ai.agent.dto.AgentProjectContext.AgentEntity;
 import com.sw1.backend.ai.agent.dto.AgentProjectContext.AgentRelationship;
 import com.sw1.backend.ai.client.AiServiceException;
 import com.sw1.backend.ai.client.AiServiceException.ErrorCategory;
+import com.sw1.backend.ai.diagram.dto.MethodDefinition;
+import com.sw1.backend.ai.diagram.dto.ParameterDefinition;
 import com.sw1.backend.ai.diagram.validation.DiagramContextMapper;
 import com.sw1.backend.ai.diagram.validation.DiagramContextMapper.DiagramSemanticSnapshot;
 import com.sw1.backend.ai.diagram.validation.DiagramContextMapper.ReadOnlyUmlElement;
 import com.sw1.backend.ai.diagram.validation.DiagramContextMapper.ReadOnlyUmlRelation;
+import com.sw1.backend.ai.diagram.validation.DiagramContextMapper.SemanticNode;
 import com.sw1.backend.common.exception.RecursoNoEncontradoException;
 import com.sw1.backend.diagrama.model.Diagrama;
 import com.sw1.backend.diagrama.repository.DiagramaRepository;
@@ -113,7 +116,10 @@ public class AgentProjectContextService {
                 .toList();
 
         String enrichedDescription = enrichDescriptionWithReadOnlyUml(
-                projectDescription, snapshot.readOnlyElements(), snapshot.readOnlyRelations());
+                projectDescription,
+                snapshot.semanticNodes(),
+                snapshot.readOnlyElements(),
+                snapshot.readOnlyRelations());
 
         log.info("Agent UML context loaded projectId={} diagramId={} version={} semanticEntities={} relationships={} associations={} readOnlyUmlElements={}",
                 projectId,
@@ -135,14 +141,23 @@ public class AgentProjectContextService {
                 associations,
                 List.copyOf(request.recentEvents()),
                 enrichedDescription,
-                snapshot.readOnlyElementNames());
+                snapshot.readOnlyElementNames(),
+                snapshot.diagramContext());
     }
 
     private static String enrichDescriptionWithReadOnlyUml(
             String baseDescription,
+            List<SemanticNode> semanticNodes,
             List<ReadOnlyUmlElement> readOnlyElements,
             List<ReadOnlyUmlRelation> readOnlyRelations) {
-        if (readOnlyElements.isEmpty() && readOnlyRelations.isEmpty()) {
+        List<String> classMethods = new ArrayList<>();
+        for (SemanticNode node : semanticNodes) {
+            if (node.methods() != null && !node.methods().isEmpty()) {
+                classMethods.add(node.kind() + " " + node.name() + " ("
+                        + formatMethods(node.methods()) + ")");
+            }
+        }
+        if (readOnlyElements.isEmpty() && readOnlyRelations.isEmpty() && classMethods.isEmpty()) {
             return baseDescription;
         }
         StringBuilder summary = new StringBuilder();
@@ -159,6 +174,9 @@ public class AgentProjectContextService {
                 if ("ENUMERATION".equals(element.kind()) && !element.literals().isEmpty()) {
                     parts.add(element.kind() + " " + element.name() + " ["
                             + String.join(", ", element.literals()) + "]");
+                } else if (element.methods() != null && !element.methods().isEmpty()) {
+                    parts.add(element.kind() + " " + element.name() + " ("
+                            + formatMethods(element.methods()) + ")");
                 } else if (!element.methodNames().isEmpty()) {
                     parts.add(element.kind() + " " + element.name() + " ("
                             + String.join(", ", element.methodNames()) + ")");
@@ -167,6 +185,12 @@ public class AgentProjectContextService {
                 }
             }
             summary.append(String.join("; ", parts));
+        }
+        if (!classMethods.isEmpty()) {
+            if (!summary.isEmpty()) {
+                summary.append(" | ");
+            }
+            summary.append("Metodos UML: ").append(String.join("; ", classMethods));
         }
         if (!readOnlyRelations.isEmpty()) {
             if (!summary.isEmpty()) {
@@ -183,5 +207,21 @@ public class AgentProjectContextService {
         return combined.length() <= MAX_DESCRIPTION_LENGTH
                 ? combined
                 : combined.substring(0, MAX_DESCRIPTION_LENGTH - 3) + "...";
+    }
+
+    private static String formatMethods(List<MethodDefinition> methods) {
+        List<String> formatted = new ArrayList<>(methods.size());
+        for (MethodDefinition method : methods) {
+            if (method.parameters() == null || method.parameters().isEmpty()) {
+                formatted.add(method.name());
+            } else {
+                List<String> params = new ArrayList<>(method.parameters().size());
+                for (ParameterDefinition param : method.parameters()) {
+                    params.add(param.name() + ": " + param.type());
+                }
+                formatted.add(method.name() + "(" + String.join(", ", params) + "): " + method.returnType());
+            }
+        }
+        return String.join(", ", formatted);
     }
 }

@@ -970,6 +970,67 @@ class UmlV2AgentContextAndProposalRegressionTest {
         assertTrue(context.relationships().isEmpty());
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void case19_realMultiOperationDeleteAndCreateAttributeProposalRejectAcceptAndCollaboratorSync() {
+        storedDiagram.get().setContenido(project3WithCompoundAttribute());
+        var before = ServerDiagramOperationApplier.deepCopyMap(storedDiagram.get().getContenido());
+
+        upstreamBody.set("""
+                {"answer":"Preparé una propuesta con 2 cambios.",
+                 "operations":[
+                   {"type":"DELETE_ATTRIBUTE","entityName":"Producto","attributeName":"Precio de venta"},
+                   {"type":"ADD_ATTRIBUTE","entityName":"compra","attribute":{"name":"CANTIDAD","dataType":"Integer","primaryKey":false,"nullable":true}}
+                 ]}
+                """);
+
+        var conv = as("gabriel@logicdraft.test", () -> conversationService.crearConversacion(
+                3L, new CreateConversationRequest("Multi-operación B6", "tab-g")));
+
+        // Scenario 40: Generate proposal and reject without mutating diagram
+        var send1 = as("gabriel@logicdraft.test", () -> conversationService.enviarMensaje(3L, conv.id(),
+                new SendConversationMessageRequest(
+                        "@LogicDraft elimina el atributo Precio de venta de la clase Producto y crea un atributo CANTIDAD de tipo INTEGER en la clase compra",
+                        "multi-op-reject", false, null, null, List.of(), "tab-g")));
+        assertNotNull(send1.agentMessage().proposal());
+        assertEquals(AgentProposalState.PENDING, send1.agentMessage().proposal().estado());
+        assertEquals(2, send1.agentMessage().proposal().operations().size());
+
+        var rejected = as("gabriel@logicdraft.test", () -> conversationService.rechazarPropuesta(
+                3L, conv.id(), send1.agentMessage().proposal().id(), new ProposalDecisionRequest("tab-g", "Prueba rechazo")));
+        assertEquals(AgentProposalState.REJECTED, rejected.estado());
+        assertEquals(98L, storedDiagram.get().getRevision());
+        assertEquals(before, storedDiagram.get().getContenido());
+
+        // Scenario 39, 41, 42: Generate proposal, accept it, verify revision 98->99, STOMP broadcast, and manual editor compatibility
+        var send2 = as("gabriel@logicdraft.test", () -> conversationService.enviarMensaje(3L, conv.id(),
+                new SendConversationMessageRequest(
+                        "@LogicDraft elimina el atributo Precio de venta de la clase Producto y crea un atributo CANTIDAD de tipo INTEGER en la clase compra",
+                        "multi-op-accept", false, null, null, List.of(), "tab-g")));
+        var proposal = send2.agentMessage().proposal();
+        assertNotNull(proposal);
+        assertEquals(AgentProposalState.PENDING, proposal.estado());
+
+        var accepted = as("carlos@logicdraft.test", () -> conversationService.aceptarPropuesta(
+                3L, conv.id(), proposal.id(), new ProposalDecisionRequest("tab-e", null)));
+        assertEquals(AgentProposalState.ACCEPTED, accepted.estado());
+        assertEquals(99L, accepted.aplicadaRevision());
+        assertEquals(99L, storedDiagram.get().getRevision());
+        assertDoesNotThrow(() -> DiagramDocumentValidator.validate(storedDiagram.get().getContenido()));
+
+        var updatedContext = DiagramContextMapper.fromDocument(storedDiagram.get().getContenido());
+        var producto = updatedContext.entities().stream().filter(e -> "Producto".equals(e.name())).findFirst().orElseThrow();
+        assertTrue(producto.attributes().stream().noneMatch(a -> "precio de venta".equalsIgnoreCase(a.name())));
+        var compra = updatedContext.entities().stream().filter(e -> "compra".equals(e.name())).findFirst().orElseThrow();
+        assertTrue(compra.attributes().stream().anyMatch(a -> "CANTIDAD".equals(a.name()) && a.dataType() == DiagramDataType.Integer));
+
+        ArgumentCaptor<CollaborationEvent> wsCaptor = ArgumentCaptor.forClass(CollaborationEvent.class);
+        verify(messaging, atLeast(2)).convertAndSend(eq("/topic/proyectos/3"), wsCaptor.capture());
+        List<CollaborationEventType> emittedTypes = wsCaptor.getAllValues().stream().map(CollaborationEvent::type).toList();
+        assertTrue(emittedTypes.contains(CollaborationEventType.DIAGRAM_COMMITTED));
+        assertTrue(emittedTypes.contains(CollaborationEventType.CONVERSATION_PROPOSAL_UPDATED));
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> project3WithCompoundAttribute() {
         var document = project3RealUmlV2Document();

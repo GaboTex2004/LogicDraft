@@ -77,6 +77,15 @@ public class DiagramaService {
     }
 
     public DiagramaResponse guardar(Long proyectoId, GuardarDiagramaRequest request) {
+        return guardar(proyectoId, request, true);
+    }
+
+    /** Image proposals are tied to an exact snapshot; never merge a stale proposal. */
+    public DiagramaResponse guardarSinRebase(Long proyectoId, GuardarDiagramaRequest request) {
+        return guardar(proyectoId, request, false);
+    }
+
+    private DiagramaResponse guardar(Long proyectoId, GuardarDiagramaRequest request, boolean allowRebase) {
         Proyecto proyecto = obtenerProyecto(proyectoId);
         workspaceAccessService.verificarRol(proyecto.getWorkspace().getId(), RolWorkspace.OWNER, RolWorkspace.EDITOR);
         Map<String, Object> incomingContenido = crearYValidarContenido(request);
@@ -101,7 +110,7 @@ public class DiagramaService {
             } else if (baseRevision.equals(currentRevision)) {
                 verifyLocksForDiff(proyectoId, currentContenido, incomingContenido, request.getClientId());
                 contenidoToPersist = incomingContenido;
-            } else if (currentRevision != null && baseRevision < currentRevision) {
+            } else if (allowRebase && currentRevision != null && baseRevision < currentRevision) {
                 Optional<Map<String, Object>> baseSnapshot = revisionHistory.find(proyectoId, baseRevision);
                 if (baseSnapshot.isEmpty()) {
                     throw new DiagramConflictException(proyectoId, currentRevision);

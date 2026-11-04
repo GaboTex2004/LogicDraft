@@ -5,10 +5,13 @@ from dataclasses import dataclass
 
 from app.schemas.diagram import (
     AddAttribute, AddEntity, AddRelationship, ConvertManyToManyAssociation,
-    CreateAssociation, DeleteEntity, DeleteRelationship, DiagramContext, InterpretResponse,
+    CreateAssociation, DeleteAttribute, DeleteEntity, DeleteRelationship,
+    DiagramContext, InterpretResponse,
 )
 from app.services.providers.base import ProviderResponseError
-from app.skills.diagram.semantic_safety import validate_semantic_safety
+from app.skills.diagram.semantic_safety import (
+    ATTRIBUTE, DELETE, ENTITY, PREFIX, named, statements, validate_semantic_safety,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,12 +96,21 @@ _NUMBER_WORDS = {
     "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
 }
 _COUNT_TOKEN = r"(?:\d{1,2}|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)"
+_CLASSIFIER_KEYWORDS = {
+    "clase", "clases", "entidad", "entidades", "interfaz", "interfaces",
+    "interface", "enumeracion", "enumeraciones", "enumeration", "enum",
+    "asociacion", "uml", "asociativa",
+}
+_CLASSIFIER_NO_ASSOC = (
+    r"(?:entidad(?!\s+asociativa)|clase(?:\s+uml)?(?!\s+asociativa)|"
+    r"interfaz|interface|enumeracion|enumeration|enum)"
+)
 
 
 def _requested_entity_names(plain_prompt: str) -> list[str]:
     names: list[str] = []
     plural = re.search(
-        rf"{_CREATE_VERB}\s+(?:exactamente\s+)?(?:(?:las?|los?|{_COUNT_TOKEN})\s+)*(?:entidades|clases)\s*:?\s*"
+        rf"{_CREATE_VERB}\s+(?:exactamente\s+)?(?:(?:las?|los?|{_COUNT_TOKEN})\s+)*(?:entidades|clases(?:\s+uml)?)\s*:?\s*"
         r"(.+?)(?=\s+(?:y|con)\s+(?:una\s+)?relacion\b|\s+relacionad[ao]s?\b|\s+conectad[ao]s?\b|[.;]|$)",
         plain_prompt,
     )
@@ -107,16 +119,17 @@ def _requested_entity_names(plain_prompt: str) -> list[str]:
             candidate = candidate.strip(" '\"")
             if (re.fullmatch(r"[a-z][\w-]{0,99}", candidate)
                     and candidate not in _NUMBER_WORDS
-                    and candidate not in {"entidad", "entidades", "clase", "clases"}
+                    and candidate not in _CLASSIFIER_KEYWORDS
                     and candidate not in names):
                 names.append(candidate)
     for match in re.finditer(
-            rf"{_CREATE_VERB}\s+(?:(?:una?|la|otra|otro|nueva|nuevo)\s+)*(?:entidad|clase)\s+"
+            rf"{_CREATE_VERB}\s+(?:(?:una?|la|el|otra|otro|nueva|nuevo)\s+)*{_CLASSIFIER_NO_ASSOC}\s+"
             r"(?:(?:llamad[ao]|denominad[ao]|con\s+nombre|named|called)\s+)?"
             r"[\"']?([a-z][\w-]{0,99})",
             plain_prompt):
-        if match.group(1) not in names:
-            names.append(match.group(1))
+        candidate = match.group(1)
+        if candidate not in _CLASSIFIER_KEYWORDS and candidate not in names:
+            names.append(candidate)
     return names
 
 
@@ -127,7 +140,7 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
         prefix = plain_prompt[max(0, start.start() - 45):start.start()]
         if re.search(
             r"(?:\b(?:renombra\w*|cambia\w*|elimina\w*|borra\w*|quita\w*|modifica\w*|"
-            r"edita\w*|actualiza\w*|suprime\w*|delete\w*|remove\w*|rename\w*|update\w*|edit\w*|change\w*)\s+"
+            r"edita\w*|actualiza\w*|suprime\w*|remueve\w*|delete\w*|remove\w*|rename\w*|update\w*|edit\w*|change\w*)\s+"
             r"(?:el\s+|la\s+|un\s+|una\s+|los\s+|las\s+)?$"
             r"|\bcon\s+(?:un\s+|una\s+|los\s+|las\s+)?$)",
             prefix,
@@ -140,18 +153,19 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
             clause,
         )
         target = re.search(
-            r"\b(?:a|en|to|in)\s+(?:la\s+|the\s+)?(?:entidad\s+|entity\s+)?"
+            r"\b(?:a|en|to|in|para)\s+(?:(?:la|el|the)\s+)?"
+            r"(?:(?:entidad|entity|clase(?:\s+uml|\s+asociativa)?|class|asociacion)\s+)?"
             r"[\"']?([a-z_][\w-]{0,99})",
             clause,
         )
-        if attribute and target and target.group(1) not in {
-            "muchos", "uno", "una", "cero", "ambas", "ambos", "si", "n", "m",
-        }:
+        if attribute and target and target.group(1) not in (
+            {"muchos", "uno", "una", "cero", "ambas", "ambos", "si", "n", "m"} | _CLASSIFIER_KEYWORDS
+        ) and attribute.group(1) not in _CLASSIFIER_KEYWORDS:
             request = (target.group(1), attribute.group(1))
             if request not in requests:
                 requests.append(request)
     creation_starts = list(re.finditer(
-        rf"{_CREATE_VERB}\s+(?:(?:una?|la|otra|otro|nueva|nuevo)\s+)*(?:entidad|clase)\s+"
+        rf"{_CREATE_VERB}\s+(?:(?:una?|la|el|otra|otro|nueva|nuevo)\s+)*{_CLASSIFIER_NO_ASSOC}\s+"
         r"(?:(?:llamad[ao]|denominad[ao]|con\s+nombre|named|called)\s+)?"
         r"[\"']?([a-z][\w-]{0,99})[\"']?",
         plain_prompt,
@@ -160,10 +174,12 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
         end = creation_starts[index + 1].start() if index + 1 < len(creation_starts) else len(plain_prompt)
         clause = plain_prompt[creation.end():end]
         entity = creation.group(1)
+        if entity in _CLASSIFIER_KEYWORDS:
+            continue
         for attribute in re.finditer(
                 r"\b(?:atributo|attribute)\s+(?:(?:llamado|named)\s+)?[\"']?([a-z_][\w-]{0,99})",
                 clause):
-            if attribute.group(1) not in {"de", "tipo", "con"}:
+            if attribute.group(1) not in ({"de", "tipo", "con"} | _CLASSIFIER_KEYWORDS):
                 request = (entity, attribute.group(1))
                 if request not in requests:
                     requests.append(request)
@@ -174,7 +190,7 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
     multiple_attributes = re.finditer(
         rf"{_CREATE_VERB}\s+"
         rf"(?:exactamente\s+)?(?:{_COUNT_TOKEN})\s+atributos?\s+"
-        r"(?:en|a)\s+(?:la\s+)?entidad\s+"
+        r"(?:en|a)\s+(?:(?:la|el)\s+)?(?:entidad|clase(?:\s+uml|\s+asociativa)?|asociacion)\s+"
         r"[\"']?([a-z_][\w-]{0,99})[\"']?\s*:?\s*"
         r"(.+?)(?=[.;]|$)",
         plain_prompt,
@@ -208,7 +224,7 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
     # crea 2 entidades "Mecanico" atributos: ID Integer y Nombre Varchar
     # y la otra entidad "Especialidad" atributos: Id Integer Nombre Varchar
     entity_blocks = list(re.finditer(
-        r"""\bentidad(?:es)?\s+["']([a-z][\w-]{0,99})["']""",
+        r"""\b(?:entidad(?:es)?|clases?(?:\s+uml|\s+asociativa)?)\s+["']([a-z][\w-]{0,99})["']""",
         plain_prompt,
     ))
 
@@ -258,14 +274,32 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
 def _requested_deleted_entities(plain_prompt: str) -> list[str]:
     deleted: list[str] = []
     for match in re.finditer(
-        r"\b(?:elimina\w*|borra\w*|quita\w*|suprime\w*|delete\w*|remove\w*)\s+"
-        r"(?:la\s+|una\s+|el\s+)?(?:entidad|clase)\s+[\"']?([a-z][\w-]{0,99})",
+        r"\b(?:elimina\w*|borra\w*|quita\w*|suprime\w*|remueve\w*|delete\w*|remove\w*)\s+"
+        rf"(?:la\s+|una\s+|el\s+|un\s+)?{_CLASSIFIER_NO_ASSOC}\s+[\"']?([a-z][\w-]{0,99})",
         plain_prompt,
     ):
         name = match.group(1)
-        if name not in deleted:
+        if name not in _CLASSIFIER_KEYWORDS and name not in deleted:
             deleted.append(name)
     return deleted
+
+
+def _requested_deleted_attributes(prompt: str, diagram: DiagramContext | None) -> list[tuple[str, str]]:
+    if not diagram or not diagram.entities:
+        return []
+    clauses = statements(prompt)
+    requested: list[tuple[str, str]] = []
+    for entity in diagram.entities:
+        ent_pat = ENTITY + named(entity.name)
+        for attr in entity.attributes:
+            attr_pat = named(attr.name)
+            body1 = PREFIX + DELETE + r"\s+" + ATTRIBUTE + attr_pat + r"\s+(?:de|en)\s+" + ent_pat
+            body2 = PREFIX + DELETE + r"\s+de\s+" + ent_pat + r"\s+" + ATTRIBUTE + attr_pat
+            if any(re.fullmatch(body1, c) or re.fullmatch(body2, c) for c in clauses):
+                pair = (entity.name, attr.name)
+                if pair not in requested:
+                    requested.append(pair)
+    return requested
 
 
 def _non_mutating_request(plain_prompt: str) -> bool:
@@ -281,7 +315,7 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
         return CompletenessExpectation(None, (), (), ())
     count_match = re.search(
         rf"{_CREATE_VERB}\s+(?:exactamente\s+)?({_COUNT_TOKEN})\s+"
-        r"(?:clases?|entidades?)\b",
+        r"(?:clases?(?:\s+uml)?|entidades?)\b",
         plain_prompt,
     )
     if count_match:
@@ -294,10 +328,13 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
             r"\b(?:nombre|llamad[ao]|denominad[ao])\s+[\"']?"
             r"([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ-]{0,99})",
             prompt):
-        if match.group(1) not in names and match.group(1).casefold() not in _TYPE_ALIASES:
-            names.append(match.group(1))
+        candidate = match.group(1)
+        if (candidate not in names
+                and candidate.casefold() not in _TYPE_ALIASES
+                and _key(candidate) not in _CLASSIFIER_KEYWORDS):
+            names.append(candidate)
     for name in _requested_entity_names(plain_prompt):
-        if _key(name) not in {_key(item) for item in names}:
+        if _key(name) not in _CLASSIFIER_KEYWORDS and _key(name) not in {_key(item) for item in names}:
             names.append(name)
     # Reconocer una o varias entidades con atributos en una misma oración.
     # Ejemplo: Crea las entidades Autor con ID Integer y Nombre String,
@@ -305,19 +342,19 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
     inline_attributes: list[tuple[str, str]] = []
 
     inline_match = re.search(
-        rf"{_CREATE_VERB}\s+(?:exactamente\s+)?(?:(?:una?|las?|los?|otra|otro|nueva|nuevo|{_COUNT_TOKEN})\s+)*(?:entidad(?:es)?|clases?)\s*:?\s*(.+)",
+        rf"{_CREATE_VERB}\s+(?:exactamente\s+)?(?:(?:una?|las?|los?|otra|otro|nueva|nuevo|{_COUNT_TOKEN})\s+)*(?:entidad(?:es)?|clases?(?:\s+uml)?)\s*:?\s*(.+)",
         plain_prompt,
     )
 
     if inline_match:
         blocks = re.split(
-            r"(?:\s*[;.]\s*|\s*,\s*(?:y\s+)?|\s+y\s+)(?=(?:(?:la|una|otra)\s+(?:entidad|clase)\s+)?[\"']?[a-z][\w-]*[\"']?\s+(?:con(?!\s+nombre\b)|atributos?\s*:)\b)",
+            r"(?:\s*[;.]\s*|\s*,\s*(?:y\s+)?|\s+y\s+)(?=(?:(?:la|una|otra)\s+(?:entidad|clase(?:\s+uml)?)\s+)?[\"']?[a-z][\w-]*[\"']?\s+(?:con(?!\s+nombre\b)|atributos?\s*:)\b)",
             inline_match.group(1),
         )
 
         for block in blocks:
             match = re.match(
-                r"\s*(?:(?:la|una|otra)\s+(?:entidad|clase)\s+)?(?:(?:llamad[ao]|denominad[ao])\s+)?[\"']?([a-z][\w-]*)[\"']?\s+(?:con(?!\s+nombre\b)\s+(?:los?\s+|un\s+)?(?:atributos?\s*:?\s*)?|atributos?\s*:\s*)(.+)",
+                r"\s*(?:(?:la|una|otra)\s+(?:entidad|clase(?:\s+uml)?)\s+)?(?:(?:llamad[ao]|denominad[ao])\s+)?[\"']?([a-z][\w-]*)[\"']?\s+(?:con(?!\s+nombre\b)\s+(?:los?\s+|un\s+)?(?:atributos?\s*:?\s*)?|atributos?\s*:\s*)(.+)",
                 block,
             )
 
@@ -325,7 +362,7 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
                 continue
 
             entity_name, attributes_text = match.groups()
-            if entity_name in {"una", "un", "uno", "otra", "otro", "la", "el", "las", "los"}:
+            if entity_name in ({"una", "un", "uno", "otra", "otro", "la", "el", "las", "los"} | _CLASSIFIER_KEYWORDS):
                 continue
 
             if _key(entity_name) not in {_key(item) for item in names}:
@@ -337,7 +374,7 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
                     or attribute.group("single")
                     or attribute.group("bare")
                 )
-                if attribute_name in {"con", "atributo", "atributos", "tipo", "de", "un", "una"}:
+                if attribute_name in ({"con", "atributo", "atributos", "tipo", "de", "un", "una"} | _CLASSIFIER_KEYWORDS):
                     continue
 
                 target = (entity_name, attribute_name)
@@ -347,7 +384,7 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
 
     if requested_count and len(names) < requested_count:
         quoted_entities = re.findall(
-            r"""\bentidad(?:es)?\s+["']([a-z][\w-]{0,99})["']""",
+            r"""\b(?:entidad(?:es)?|clases?(?:\s+uml)?)\s+["']([a-z][\w-]{0,99})["']""",
             plain_prompt,
         )
         if len(quoted_entities) < requested_count:
@@ -357,11 +394,11 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
 
         if len(quoted_entities) >= requested_count:
             for q in quoted_entities[:requested_count]:
-                if _key(q) not in {_key(item) for item in names}:
+                if _key(q) not in _CLASSIFIER_KEYWORDS and _key(q) not in {_key(item) for item in names}:
                     names.append(q)
         else:
             tail_match = re.search(
-                r"\b(?:clases?|entidades?)\s*:?\s*(.+)",
+                r"\b(?:clases?(?:\s+uml)?|entidades?)\s*:?\s*(.+)",
                 plain_prompt,
             )
 
@@ -371,7 +408,7 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
                     "string", "decimal", "double", "boolean", "bool", "long", "bigint",
                     "atributo", "atributos", "con", "una", "un", "la", "el", "las", "los",
                     "relacion", "entre", "de", "tipo",
-                }
+                } | _CLASSIFIER_KEYWORDS
 
                 candidates = re.findall(
                     r"\b[a-z][\w-]{0,99}\b",
@@ -384,12 +421,20 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
                             names.append(name)
                         if len(names) >= requested_count:
                             break
-    existing = {_key(entity.name) for entity in diagram.entities} if diagram else set()
+    existing = (
+        {_key(entity.name) for entity in diagram.entities}
+        | {_key(assoc.entityName) for assoc in diagram.associations}
+    ) if diagram else set()
     deleted_keys = {_key(name) for name in _requested_deleted_entities(plain_prompt)}
     all_attributes = list(dict.fromkeys(_requested_attributes(plain_prompt, names) + inline_attributes))
     if re.search(_CREATE_VERB, plain_prompt):
         for ent_name, _ in all_attributes:
-            if _key(ent_name) not in existing and _key(ent_name) not in deleted_keys and _key(ent_name) not in {_key(item) for item in names}:
+            if (
+                _key(ent_name) not in existing
+                and _key(ent_name) not in deleted_keys
+                and _key(ent_name) not in _CLASSIFIER_KEYWORDS
+                and _key(ent_name) not in {_key(item) for item in names}
+            ):
                 names.append(ent_name)
 
     pairs: list[tuple[str, str]] = []
@@ -411,7 +456,7 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
         ignored_targets = {
             "una", "un", "uno", "la", "el", "los", "las", "ambas", "ambos",
             "si", "atributo", "atributos", "nombre", "id", "tipo",
-        }
+        } | _CLASSIFIER_KEYWORDS
         existing_pair_keys = [{_key(a), _key(b)} for a, b in pairs]
         for pattern in target_patterns:
             for match in re.finditer(pattern, plain_prompt):
@@ -484,15 +529,21 @@ def _sanitize_requested_operations(
     # These operations already passed semantic_safety against exact user targets.
     # A deletion verb by itself never grants authority to delete any entity.
     deleted_entity_keys = {_key(op.entityName) for op in response.operations if isinstance(op, DeleteEntity)}
+    deleted_attr_keys = {
+        (_key(op.entityName), _key(op.attributeName))
+        for op in response.operations if isinstance(op, DeleteAttribute)
+    }
     mentions_attributes = bool(attribute_keys) or re.search(
-        r"\b(?:atributos?|attributes?|campos?|fields?)\b",
+        r"\b(?:atributos?|attributes?|campos?|fields?|propiedad(?:es)?)\b",
         plain_prompt,
     ) is not None
     mentions_relationship = bool(relationship_keys) or re.search(
-        r"\b(?:relacion|relaciones|relaciona|relacionar|relacione|conecta|conectar|conecte|pertenece)\b",
+        r"\b(?:relacion|relaciones|relaciona|relacionar|relacione|conecta|conectar|conecte|pertenece|"
+        r"asociacion|herencia|hereda|heredar|herede|extiende|extender|generalizacion|realizacion|"
+        r"implementa|implementar|implemente|agregacion|composicion|dependencia|depende|depender)\b",
         plain_prompt,
     ) is not None
-    confident = bool(entity_keys or attribute_keys or relationship_keys or deleted_entity_keys)
+    confident = bool(entity_keys or attribute_keys or relationship_keys or deleted_entity_keys or deleted_attr_keys)
     if not confident:
         return response
 
@@ -568,7 +619,7 @@ _TYPED_ATTRIBUTE = re.compile(
     r'''(?P<pk>\s*(?:\(\s*pk\s*\)|\bpk\b|\b(?:como\s+)?clave\s+primaria\b|\b(?:como\s+)?primary\s+key\b))?'''
 )
 _ENTITY_HEADER = re.compile(
-    r'''\b(?:entidad(?:es)?|clases?)\s+(?:(?:llamad[ao]|denominad[ao])\s+)?(?:"(?P<double>[^"\n]+)"|'''
+    r'''\b(?:entidad(?:es)?|clases?(?:\s+uml|\s+asociativa)?)\s+(?:(?:llamad[ao]|denominad[ao])\s+)?(?:"(?P<double>[^"\n]+)"|'''
     r''''(?P<single>[^'\n]+)'|(?P<bare>[a-z][\w-]{0,99}))'''
 )
 
@@ -642,12 +693,15 @@ def validate_completeness(
 
     expected = extract_expectation(prompt, diagram)
     response = _sanitize_requested_operations(prompt, expected, response)
-    existing_entities = {_key(entity.name) for entity in diagram.entities} if diagram else set()
+    existing_entities = (
+        {_key(entity.name) for entity in diagram.entities}
+        | {_key(assoc.entityName) for assoc in diagram.associations}
+    ) if diagram else set()
     expected_new = {_key(name) for name in expected.entity_names if _key(name) not in existing_entities}
     added_entities = [operation.entity.name for operation in response.operations if isinstance(operation, AddEntity)]
     if conversion_expected is not None:
         added_entities.append(conversion_expected.association)
-    available = {_key(entity.name) for entity in diagram.entities} if diagram else set()
+    available = set(existing_entities)
     available.update(_key(name) for name in added_entities)
     if conversion_expected is not None:
         available.add(_key(conversion_expected.association))
@@ -670,6 +724,22 @@ def validate_completeness(
     missing_deletes = [name for name in requested_deletes if _key(name) not in deleted_in_ops]
     if missing_deletes:
         raise DiagramIncompleteError("falta eliminar entidades solicitadas: " + ", ".join(missing_deletes), response)
+
+    requested_deleted_attrs = _requested_deleted_attributes(prompt, diagram)
+    deleted_attrs_in_ops = {
+        (_key(op.entityName), _key(op.attributeName))
+        for op in response.operations if isinstance(op, DeleteAttribute)
+    }
+    missing_attr_deletes = [
+        f"{ent}.{attr}"
+        for ent, attr in requested_deleted_attrs
+        if (_key(ent), _key(attr)) not in deleted_attrs_in_ops
+    ]
+    if missing_attr_deletes:
+        raise DiagramIncompleteError(
+            "falta eliminar atributos solicitados: " + ", ".join(missing_attr_deletes),
+            response,
+        )
 
     # Keep full definitions rather than only names: completeness includes
     # explicitly requested data types and primary-key properties.
@@ -775,7 +845,7 @@ def validate_completeness(
                     f"la relacion entre {source} y {target} debe ser N:M",
                     response,
                 )
-            
+
     for index, operation in enumerate(response.operations):
         if not isinstance(operation, AddRelationship):
             continue

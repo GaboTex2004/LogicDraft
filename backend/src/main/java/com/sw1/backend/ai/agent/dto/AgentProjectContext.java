@@ -2,6 +2,7 @@ package com.sw1.backend.ai.agent.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sw1.backend.ai.diagram.dto.AttributeDefinition;
+import com.sw1.backend.ai.diagram.dto.DiagramContext;
 import com.sw1.backend.ai.diagram.model.DiagramCardinality;
 import java.util.List;
 import java.util.Set;
@@ -17,7 +18,8 @@ public record AgentProjectContext(
         List<AgentAssociation> associations,
         List<AgentEventInput> recentEvents,
         String projectDescription,
-        @JsonIgnore Set<String> readOnlyElementNames) {
+        @JsonIgnore Set<String> readOnlyElementNames,
+        @JsonIgnore DiagramContext semanticContext) {
 
     public AgentProjectContext {
         readOnlyElementNames = readOnlyElementNames == null ? Set.of() : Set.copyOf(readOnlyElementNames);
@@ -26,9 +28,18 @@ public record AgentProjectContext(
     public AgentProjectContext(Long projectId, String projectName, Long diagramId, String selectedNodeId,
                                String selectedEdgeId, List<AgentEntity> entities,
                                List<AgentRelationship> relationships, List<AgentAssociation> associations,
+                               List<AgentEventInput> recentEvents, String projectDescription,
+                               Set<String> readOnlyElementNames) {
+        this(projectId, projectName, diagramId, selectedNodeId, selectedEdgeId,
+                entities, relationships, associations, recentEvents, projectDescription, readOnlyElementNames, null);
+    }
+
+    public AgentProjectContext(Long projectId, String projectName, Long diagramId, String selectedNodeId,
+                               String selectedEdgeId, List<AgentEntity> entities,
+                               List<AgentRelationship> relationships, List<AgentAssociation> associations,
                                List<AgentEventInput> recentEvents, String projectDescription) {
         this(projectId, projectName, diagramId, selectedNodeId, selectedEdgeId,
-                entities, relationships, associations, recentEvents, projectDescription, Set.of());
+                entities, relationships, associations, recentEvents, projectDescription, Set.of(), null);
     }
 
     public AgentProjectContext(Long projectId, String projectName, Long diagramId, String selectedNodeId,
@@ -36,20 +47,26 @@ public record AgentProjectContext(
                                List<AgentRelationship> relationships, List<AgentAssociation> associations,
                                List<AgentEventInput> recentEvents) {
         this(projectId, projectName, diagramId, selectedNodeId, selectedEdgeId,
-                entities, relationships, associations, recentEvents, null, Set.of());
+                entities, relationships, associations, recentEvents, null, Set.of(), null);
     }
 
     public AgentProjectContext(Long projectId, String projectName, Long diagramId, String selectedNodeId,
                                String selectedEdgeId, List<AgentEntity> entities,
                                List<AgentRelationship> relationships, List<AgentEventInput> recentEvents) {
         this(projectId, projectName, diagramId, selectedNodeId, selectedEdgeId,
-                entities, relationships, List.of(), recentEvents, null, Set.of());
+                entities, relationships, List.of(), recentEvents, null, Set.of(), null);
     }
 
     @Override
     @JsonIgnore
     public Set<String> readOnlyElementNames() {
         return readOnlyElementNames;
+    }
+
+    @Override
+    @JsonIgnore
+    public DiagramContext semanticContext() {
+        return semanticContext;
     }
 
     public record AgentEntity(String id, String name, List<AttributeDefinition> attributes) {}

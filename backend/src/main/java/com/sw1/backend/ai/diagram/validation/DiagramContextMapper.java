@@ -24,7 +24,18 @@ public final class DiagramContextMapper {
             String name,
             String kind,
             boolean modifiable,
-            List<AttributeDefinition> attributes) {}
+            List<AttributeDefinition> attributes,
+            Boolean isAbstract,
+            List<MethodDefinition> methods) {
+        public SemanticNode(
+                String id,
+                String name,
+                String kind,
+                boolean modifiable,
+                List<AttributeDefinition> attributes) {
+            this(id, name, kind, modifiable, attributes, null, List.of());
+        }
+    }
 
     public record SemanticRelationship(
             String id,
@@ -43,7 +54,18 @@ public final class DiagramContextMapper {
             String name,
             String kind,
             List<String> literals,
-            List<String> methodNames) {}
+            List<String> methodNames,
+            Boolean isAbstract,
+            List<MethodDefinition> methods) {
+        public ReadOnlyUmlElement(
+                String id,
+                String name,
+                String kind,
+                List<String> literals,
+                List<String> methodNames) {
+            this(id, name, kind, literals, methodNames, null, List.of());
+        }
+    }
 
     public record ReadOnlyUmlRelation(
             String id,
@@ -108,6 +130,8 @@ public final class DiagramContextMapper {
                     throw new InvalidDocumentDetailException("nombre de elemento UML duplicado: " + name);
                 }
                 allNodeKindsById.put(id, kind);
+                Boolean isAbstract = optionalBool(data.get("abstract"), "node.data.abstract");
+                List<MethodDefinition> parsedMethods = extractMethods(data.get("methods"));
 
                 if (READ_ONLY_CLASSIFIER_KINDS.contains(kind)) {
                     if (data.get("association") != null) {
@@ -115,8 +139,9 @@ public final class DiagramContextMapper {
                                 "clasificador " + kind + " no puede declarar metadatos asociativos: " + name);
                     }
                     List<String> literals = extractLiterals(data.get("literals"));
-                    List<String> methodNames = extractMethodNames(data.get("methods"));
-                    readOnlyElements.add(new ReadOnlyUmlElement(id, name, kind, literals, methodNames));
+                    List<String> methodNames = parsedMethods.stream().map(MethodDefinition::name).toList();
+                    readOnlyElements.add(new ReadOnlyUmlElement(
+                            id, name, kind, literals, methodNames, isAbstract, parsedMethods));
                     readOnlyNames.add(name);
                     continue;
                 }
@@ -138,7 +163,8 @@ public final class DiagramContextMapper {
                             attributeName, dataType(text(a.get("type"), "attribute.type")), pk, nullable));
                 }
                 List<AttributeDefinition> immutableAttributes = List.copyOf(attributes);
-                SemanticNode semanticNode = new SemanticNode(id, name, kind, true, immutableAttributes);
+                SemanticNode semanticNode = new SemanticNode(
+                        id, name, kind, true, immutableAttributes, isAbstract, parsedMethods);
                 modifiableNodesById.put(id, semanticNode);
                 semanticNodes.add(semanticNode);
                 entities.add(new EntityDefinition(name, immutableAttributes));
@@ -278,19 +304,27 @@ public final class DiagramContextMapper {
             }
 
             Set<String> immutableReadOnlyNames = Set.copyOf(readOnlyNames);
+            List<SemanticNode> immutableSemanticNodes = List.copyOf(semanticNodes);
+            List<SemanticRelationship> immutableSemanticRelationships = List.copyOf(semanticRelationships);
+            List<ReadOnlyUmlElement> immutableReadOnlyElements = List.copyOf(readOnlyElements);
+            List<ReadOnlyUmlRelation> immutableReadOnlyRelations = List.copyOf(readOnlyRelations);
             DiagramContext diagramContext = new DiagramContext(
                     List.copyOf(entities),
                     List.copyOf(relationships),
                     List.copyOf(associations),
-                    immutableReadOnlyNames);
+                    immutableReadOnlyNames,
+                    immutableSemanticNodes,
+                    immutableSemanticRelationships,
+                    immutableReadOnlyElements,
+                    immutableReadOnlyRelations);
 
             return new DiagramSemanticSnapshot(
                     version,
                     diagramContext,
-                    List.copyOf(semanticNodes),
-                    List.copyOf(semanticRelationships),
-                    List.copyOf(readOnlyElements),
-                    List.copyOf(readOnlyRelations),
+                    immutableSemanticNodes,
+                    immutableSemanticRelationships,
+                    immutableReadOnlyElements,
+                    immutableReadOnlyRelations,
                     immutableReadOnlyNames);
         } catch (InvalidDocumentDetailException e) {
             throw new AiServiceException(
@@ -341,14 +375,32 @@ public final class DiagramContextMapper {
         return List.copyOf(literals);
     }
 
-    private static List<String> extractMethodNames(Object rawMethods) {
+    private static List<MethodDefinition> extractMethods(Object rawMethods) {
         if (rawMethods == null) {
             return List.of();
         }
-        List<String> methods = new ArrayList<>();
+        List<MethodDefinition> methods = new ArrayList<>();
         for (Object item : list(rawMethods, "methods")) {
             Map<?, ?> method = map(item, "method");
-            methods.add(text(method.get("name"), "method.name"));
+            String methodName = text(method.get("name"), "method.name");
+            String returnType = optionalText(method.get("returnType"), "method.returnType");
+            if (returnType == null) {
+                returnType = "void";
+            }
+            String visibility = optionalText(method.get("visibility"), "method.visibility");
+            Boolean isStatic = optionalBool(method.get("static"), "method.static");
+            Boolean isAbstract = optionalBool(method.get("abstract"), "method.abstract");
+            List<ParameterDefinition> parameters = new ArrayList<>();
+            if (method.get("parameters") != null) {
+                for (Object rawParam : list(method.get("parameters"), "method.parameters")) {
+                    Map<?, ?> param = map(rawParam, "method.parameter");
+                    String paramName = text(param.get("name"), "method.parameter.name");
+                    String paramType = optionalText(param.get("type"), "method.parameter.type");
+                    parameters.add(new ParameterDefinition(paramName, paramType != null ? paramType : "String"));
+                }
+            }
+            methods.add(new MethodDefinition(
+                    methodName, returnType, visibility, isStatic, isAbstract, List.copyOf(parameters)));
         }
         return List.copyOf(methods);
     }
@@ -371,13 +423,13 @@ public final class DiagramContextMapper {
 
     private static DiagramDataType dataType(String value) {
         return switch (value.toUpperCase(Locale.ROOT)) {
-            case "VARCHAR", "TEXT", "STRING" -> DiagramDataType.String;
+            case "VARCHAR", "TEXT", "STRING", "CHAR", "CHARACTER", "UUID" -> DiagramDataType.String;
             case "BIGINT", "LONG" -> DiagramDataType.Long;
-            case "INTEGER", "INT" -> DiagramDataType.Integer;
-            case "DECIMAL", "DOUBLE", "FLOAT" -> DiagramDataType.Double;
+            case "INTEGER", "INT", "SMALLINT", "SHORT" -> DiagramDataType.Integer;
+            case "DECIMAL", "NUMERIC", "DOUBLE", "FLOAT", "BIGDECIMAL" -> DiagramDataType.Double;
             case "BOOLEAN", "BOOL" -> DiagramDataType.Boolean;
-            case "DATE" -> DiagramDataType.Date;
-            case "TIMESTAMP", "DATETIME" -> DiagramDataType.DateTime;
+            case "DATE", "LOCALDATE" -> DiagramDataType.Date;
+            case "TIMESTAMP", "DATETIME", "LOCALDATETIME" -> DiagramDataType.DateTime;
             default -> throw new InvalidDocumentDetailException("tipo de atributo no soportado: " + value);
         };
     }
@@ -408,6 +460,10 @@ public final class DiagramContextMapper {
             throw new InvalidDocumentDetailException("booleano invalido en " + field);
         }
         return b;
+    }
+
+    private static Boolean optionalBool(Object value, String field) {
+        return value == null ? null : bool(value, field);
     }
 
     private static String optionalText(Object value, String field) {

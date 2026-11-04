@@ -1,11 +1,13 @@
 import { api } from "../../../shared/api/api";
+import type { DiagramaResponse } from "../types/diagram.types";
+import { parseImageProposal, type ImageProposal } from "../services/imageProposal";
 
 export async function interpretDiagramImage(
   projectId: number,
   image: File,
   prompt: string,
   signal?: AbortSignal,
-): Promise<unknown> {
+): Promise<ImageProposal> {
   const form = new FormData();
 
   form.append("image", image);
@@ -20,5 +22,10 @@ export async function interpretDiagramImage(
     },
   );
 
+  return parseImageProposal(response.data);
+}
+
+export async function acceptDiagramImage(projectId: number, proposalId: string, clientId: string): Promise<DiagramaResponse> {
+  const response = await api.post<DiagramaResponse>(`/proyectos/${projectId}/ai/image/accept`, { proposalId, clientId });
   return response.data;
 }

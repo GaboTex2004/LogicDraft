@@ -16,13 +16,18 @@ class SemanticSafetyError(ProviderResponseError):
     """Not repairable: never feed a rejected destructive plan back to the model."""
 
 
-DELETE = r"(?:elimina|eliminar|elimine|elimines|borra|borrar|borre|borres|quita|quitar|quite|quites|suprime|suprimir|suprimas)"
-CREATE = r"(?:crea|crear|creame|cree|agrega|agregar|anade|genera)"
-ACTION = rf"(?:{DELETE}|{CREATE}|renombra|cambia|actualiza|modifica|relaciona|conecta)"
+DELETE = r"(?:elimina|eliminar|elimine|elimines|borra|borrar|borre|borres|quita|quitar|quite|quites|suprime|suprimir|suprimas|remueve|remover|remueva)"
+CREATE = r"(?:crea|crear|creame|cree|agrega|agregar|agregame|anade|anadir|genera|generar|incluye|incluir|define|definir)"
+UPDATE = r"(?:renombra|renombrar|cambia|cambiar|actualiza|actualizar|modifica|modificar|edita|editar|relaciona|relacionar|conecta|conectar|marca|marcar|establece|establecer|asigna|asignar|convierte|convertir|transforma|transformar|implementa|implementar|hereda|heredar|extiende|extender)"
+ACTION = rf"(?:{DELETE}|{CREATE}|{UPDATE})"
 CONVERT = r"(?:convierte|convertir|convierta|transforma|transformar|transforme)"
 PREFIX = r"(?:(?:por favor)\s+|(?:quiero|necesito)\s+que\s+)?"
-ENTITY = r"(?:(?:la|el|una|un)\s+)?(?:(?:entidad|clase(?:\s+uml)?)\s+)?"
-ATTRIBUTE = r"(?:(?:el|un)\s+)?(?:atributo|campo)\s+"
+CLASSIFIER = r"(?:(?:la|el|una|un)\s+)?(?:(?:entidad|clase(?:\s+uml)?|interfaz|interface|enumeracion|enumeration|enum)\s+)?"
+ENTITY = r"(?:(?:la|el|una|un)\s+)?(?:(?:entidad|clase(?:\s+uml|\s+asociativa)?|asociacion)\s+)?"
+ATTRIBUTE = r"(?:(?:el|un)\s+)?(?:atributo|campo|propiedad)\s+"
+METHOD = r"(?:(?:el|un)\s+)?(?:metodo|operacion|funcion)\s+"
+PARAMETER = r"(?:(?:el|un)\s+)?parametro\s+"
+LITERAL = r"(?:(?:el|un)\s+)?(?:literal|valor)\s+"
 
 
 def plain(value: str) -> str:
@@ -42,7 +47,7 @@ def statements(message: str) -> list[str]:
     for match in re.finditer(r"\"[^\"]*\"|'[^']*'", text):
         quoted.update(range(match.start(), match.end()))
     parts, start = [], 0
-    for match in re.finditer(rf"[;]+|\s*,?\s+\by\s+(?={ACTION}\b)|,\s*(?={ACTION}\b)", text):
+    for match in re.finditer(rf"[;]+|\s*,?\s+\by\s+(?={PREFIX}{ACTION}\b)|,\s*(?={PREFIX}{ACTION}\b)", text):
         if match.start() not in quoted:
             parts.append(text[start:match.start()].strip(" .!"))
             start = match.end()
@@ -72,7 +77,7 @@ def validate_semantic_safety(prompt: str, diagram: DiagramContext | None,
         if op.type == "DELETE_ENTITY":
             matches = [e for e in entities if plain(e.name) == plain(op.entityName)]
             is_association = any(plain(a.entityName) == plain(op.entityName) for a in associations)
-            authorized = len(matches) == 1 and not is_association and allows(ENTITY + named(op.entityName))
+            authorized = len(matches) == 1 and not is_association and allows(CLASSIFIER + named(op.entityName))
         elif op.type == "DELETE_ASSOCIATION":
             matches = [a for a in associations if plain(a.entityName) == plain(op.associationEntityName)]
             authorized = len(matches) == 1 and allows(
@@ -85,21 +90,48 @@ def validate_semantic_safety(prompt: str, diagram: DiagramContext | None,
             authorized = len(matches) == 1 and len(attrs) == 1 and (
                 allows(ATTRIBUTE + attr + r"\s+(?:de|en)\s+" + entity)
                 or allows(r"de\s+" + entity + r"\s+" + ATTRIBUTE + attr))
+        elif op.type == "DELETE_METHOD":
+            matches = [e for e in entities if plain(e.name) == plain(op.entityName)]
+            method_target = named(op.methodName) + r"(?:\s*\([^)]*\))?"
+            target_classifier = CLASSIFIER + named(op.entityName)
+            authorized = len(matches) == 1 and (
+                allows(METHOD + method_target + r"\s+(?:de|en)\s+" + target_classifier)
+                or allows(r"de\s+" + target_classifier + r"\s+" + METHOD + method_target))
+        elif op.type == "DELETE_METHOD_PARAMETER":
+            matches = [e for e in entities if plain(e.name) == plain(op.entityName)]
+            param_target = named(op.parameterName)
+            method_target = r"(?:(?:del|de\s+el|en\s+el)\s+)?(?:metodo\s+)?" + named(op.methodName) + r"(?:\s*\([^)]*\))?"
+            target_classifier = rf"(?:\s+(?:de|en)\s+{CLASSIFIER}{named(op.entityName)})?"
+            authorized = len(matches) == 1 and allows(PARAMETER + param_target + r"\s+" + method_target + target_classifier)
+        elif op.type == "DELETE_ENUM_LITERAL":
+            matches = [e for e in entities if plain(e.name) == plain(op.entityName)]
+            lit_target = named(op.literal)
+            target_classifier = CLASSIFIER + named(op.entityName)
+            authorized = len(matches) == 1 and (
+                allows(LITERAL + lit_target + r"\s+(?:de|en)\s+" + target_classifier)
+                or allows(r"de\s+" + target_classifier + r"\s+" + LITERAL + lit_target))
         elif op.type == "DELETE_RELATIONSHIP":
             rel = op.relationship
             pair = {plain(rel.sourceEntity), plain(rel.targetEntity)}
             matches = [r for r in (diagram.relationships if diagram else [])
                        if {plain(r.sourceEntity), plain(r.targetEntity)} == pair
-                       and (rel.name is None or (r.name and plain(r.name) == plain(rel.name)))]
+                       and (rel.name is None or (r.name and plain(r.name) == plain(rel.name)))
+                       and (rel.kind is None or r.kind is None or plain(r.kind) == plain(rel.kind))]
             relation_name = (named(rel.name) + r"\s+") if rel.name else ""
-            body = r"(?:(?:la|una)\s+)?relacion\s+" + relation_name + r"entre\s+"
+            body = (
+                r"(?:(?:la|una)\s+)?(?:relacion|asociacion|herencia|generalizacion|realizacion|"
+                r"implementacion|agregacion|composicion|dependencia)"
+                r"(?:\s+de\s+(?:herencia|generalizacion|realizacion|implementacion|agregacion|composicion|dependencia))?\s+"
+                + relation_name + r"(?:entre|de)\s+"
+            )
+            sep = r"(?:\s+y\s+|\s+a\s+|\s+hacia\s+|\s+con\s+)"
             authorized = len(matches) == 1 and any(
-                allows(body + named(a) + r"\s+y\s+" + named(b))
+                allows(body + CLASSIFIER + named(a) + sep + CLASSIFIER + named(b))
                 for a, b in [(rel.sourceEntity, rel.targetEntity), (rel.targetEntity, rel.sourceEntity)])
         elif op.type in {"CREATE_ASSOCIATION", "CONVERT_MANY_TO_MANY_ASSOCIATION"}:
             # Both can consume an existing N:M edge in the server applier.
             ref = op.association if op.type == "CREATE_ASSOCIATION" else op.conversion
-            pair = rf"entre\s+{named(ref.sourceEntity)}\s+y\s+{named(ref.targetEntity)}"
+            pair = rf"entre\s+{CLASSIFIER}{named(ref.sourceEntity)}\s+y\s+{CLASSIFIER}{named(ref.targetEntity)}"
             association = r"(?:(?:una|la)\s+)?(?:(?:clase|entidad)\s+asociativa\s+)?(?:llamada\s+)?" + named(ref.associationEntityName)
             if op.type == "CREATE_ASSOCIATION":
                 explicit_association = r"(?:(?:una|la)\s+)?(?:asociacion|(?:clase|entidad)\s+asociativa)\s+(?:llamada\s+)?" + named(ref.associationEntityName)
@@ -112,11 +144,11 @@ def validate_semantic_safety(prompt: str, diagram: DiagramContext | None,
                 command = PREFIX + CONVERT + r"\s+(?:la\s+)?(?:relacion\s+)?n\s*:\s*m" + scoped + r"\s+en\s+" + association
             authorized = any(re.fullmatch(command + r"(?:,?\s+con\s+.+)?", c) for c in clauses)
         elif op.type == "ADD_ENTITY":
-            # Until kind is supported end-to-end, never downgrade explicit UML
-            # types to ENTITY. Legacy generic 'clase' remains compatible.
-            unsupported = PREFIX + CREATE + r"\s+(?:(?:una?|la)\s+)?(?:clase\s+uml|class|interfaz|interface|enumeracion|enumeration|clase\s+asociativa)\b"
-            if any(re.match(unsupported, clause) for clause in clauses):
-                raise SemanticSafetyError("La creación de ese tipo UML aún no está soportada por el contrato del agente; usa el editor.")
+            actual_kind = op.entity.kind or "ENTITY"
+            if actual_kind == "ENTITY":
+                unsupported = PREFIX + CREATE + r"\s+(?:(?:una?|la)\s+)?(?:clase\s+uml|class|interfaz|interface|enumeracion|enumeration|enum|clase\s+asociativa)\b"
+                if any(re.match(unsupported, clause) for clause in clauses):
+                    raise SemanticSafetyError("La creación de ese tipo UML aún no está soportada por el contrato del agente; usa el editor.")
         if not authorized:
             raise SemanticSafetyError(
                 "Propuesta bloqueada: la eliminación no coincide con un objetivo explícito y único de tu solicitud. "

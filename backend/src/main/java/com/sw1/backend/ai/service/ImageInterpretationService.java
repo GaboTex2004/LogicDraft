@@ -2,9 +2,7 @@ package com.sw1.backend.ai.service;
 
 import tools.jackson.databind.ObjectMapper;
 import com.sw1.backend.ai.client.AiServiceException;
-import com.sw1.backend.ai.diagram.dto.DiagramInterpretResponse;
-import com.sw1.backend.ai.diagram.validation.ContextualOperationValidator;
-import com.sw1.backend.ai.diagram.validation.DiagramOperationValidator;
+import com.sw1.backend.ai.image.ImageProposalService;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -12,6 +10,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -30,21 +30,23 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class ImageInterpretationService {
 
+    private static final Logger log = LoggerFactory.getLogger(ImageInterpretationService.class);
+
     private static final long MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
     private static final Set<String> EXTENSIONS =
             Set.of(".png", ".jpg", ".jpeg", ".webp");
 
-    private final ProjectDiagramContextService context;
+    private final ImageProposalService proposals;
     private final ObjectMapper objectMapper;
     private final RestClient client;
 
     public ImageInterpretationService(
-            ProjectDiagramContextService context,
+            ImageProposalService proposals,
             ObjectMapper objectMapper,
             @Value("${ai.service.url}") String aiServiceUrl
     ) {
-        this.context = context;
+        this.proposals = proposals;
         this.objectMapper = objectMapper;
 
         var factory = new SimpleClientHttpRequestFactory();
@@ -57,13 +59,13 @@ public class ImageInterpretationService {
                 .build();
     }
 
-    public DiagramInterpretResponse interpret(
+    public ImageProposalService.Proposal interpret(
             Long projectId,
             MultipartFile image,
             String prompt
     ) {
         // Comprueba el proyecto y los permisos OWNER/EDITOR.
-        var initial = context.load(projectId);
+        var initial = proposals.load(projectId);
 
         if (image == null || image.isEmpty()) {
             throw new AiServiceException(
@@ -139,13 +141,7 @@ public class ImageInterpretationService {
             HttpEntity<ByteArrayResource> imagePart =
                     new HttpEntity<>(resource, partHeaders);
 
-            // FastAPI no admite el campo associations en DiagramContext.
-            String diagramJson = objectMapper.writeValueAsString(
-                    Map.of(
-                            "entities", initial.entities(),
-                            "relationships", initial.relationships()
-                    )
-            );
+            String diagramJson = objectMapper.writeValueAsString(initial.document());
 
             MultiValueMap<String, Object> body =
                     new LinkedMultiValueMap<>();
@@ -163,16 +159,8 @@ public class ImageInterpretationService {
                     .retrieve()
                     .body(Map.class);
 
-            // Primera validación: estructura y tipos de operaciones.
-            DiagramInterpretResponse response =
-                    DiagramOperationValidator.validate(raw);
-
-            // Segunda validación: contexto actualizado y referencias.
-            // Este método no guarda ni aplica cambios.
-            return ContextualOperationValidator.validate(
-                    context.load(projectId),
-                    response
-            );
+            // Strict additive allowlist and UML reconciliation; no persistence during interpretation.
+            return proposals.prepare(initial, raw);
 
         } catch (IOException exception) {
             throw new AiServiceException(
@@ -182,52 +170,79 @@ public class ImageInterpretationService {
 
         } catch (RestClientResponseException exception) {
             int status = exception.getStatusCode().value();
+            String detail = extractErrorDetail(exception);
+            log.warn("Error desde ai-service en interpretacion de imagen (projectId={}, status={}, detail={})",
+                    projectId, status, detail != null ? detail : exception.getStatusText());
+
+            if (status == 400) {
+                throw new AiServiceException(
+                        HttpStatus.BAD_REQUEST,
+                        detail != null ? detail : "Selecciona una imagen válida."
+                );
+            }
 
             if (status == 413) {
                 throw new AiServiceException(
                         HttpStatus.PAYLOAD_TOO_LARGE,
-                        "La imagen supera el tamaño permitido."
+                        detail != null ? detail : "La imagen supera el tamaño permitido."
                 );
             }
 
             if (status == 415) {
                 throw new AiServiceException(
                         HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                        "El formato de imagen no es válido."
+                        detail != null ? detail : "El formato de imagen no es válido."
                 );
             }
 
             if (status == 422) {
                 throw new AiServiceException(
                         HttpStatus.UNPROCESSABLE_ENTITY,
-                        "No se pudo interpretar la imagen."
+                        detail != null ? detail : "No se pudo interpretar la imagen."
                 );
             }
 
             if (status == 429 || status == 503) {
                 throw new AiServiceException(
                         HttpStatus.SERVICE_UNAVAILABLE,
-                        "Gemini no está disponible o alcanzó su cuota."
+                        detail != null ? detail : "Gemini no está disponible o alcanzó su cuota."
                 );
             }
 
             if (status == 504) {
                 throw new AiServiceException(
                         HttpStatus.GATEWAY_TIMEOUT,
-                        "La interpretación excedió el tiempo de espera."
+                        detail != null ? detail : "La interpretación excedió el tiempo de espera."
                 );
             }
 
             throw new AiServiceException(
                     HttpStatus.BAD_GATEWAY,
-                    "FastAPI no devolvió una interpretación válida."
+                    detail != null ? detail : "FastAPI no devolvió una interpretación válida."
             );
 
         } catch (ResourceAccessException exception) {
+            log.warn("No se pudo conectar con ai-service para interpretar imagen (projectId={})", projectId);
             throw new AiServiceException(
                     HttpStatus.SERVICE_UNAVAILABLE,
                     "No se pudo conectar con FastAPI."
             );
         }
+    }
+
+    private String extractErrorDetail(RestClientResponseException exception) {
+        try {
+            String raw = exception.getResponseBodyAsString();
+            if (raw != null && !raw.isBlank()) {
+                Map<?, ?> parsed = objectMapper.readValue(raw, Map.class);
+                Object detail = parsed.get("detail");
+                if (detail instanceof String text && !text.isBlank() && text.length() <= 300) {
+                    return text;
+                }
+            }
+        } catch (Exception ignored) {
+            // Fall back to default status message if response is not a JSON object with string detail.
+        }
+        return null;
     }
 }

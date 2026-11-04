@@ -1,16 +1,20 @@
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from google.genai import errors as gemini_errors
+import httpx
+from pydantic import ValidationError
 
-from app.schemas.diagram import DiagramContext, InterpretResponse
+from app.schemas.image import ImageDocument, ImageRecognition
 from app.services.diagram_ai_service import (
     DiagramJsonError,
     DiagramStructureError,
 )
 from app.services.diagram_normalizer import DiagramConflictError
 from app.services.gemini_vision_service import GeminiVisionService
-import httpx
-from google.genai import errors as gemini_errors
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai/image", tags=["image"])
 
@@ -41,12 +45,12 @@ def detect_image_type(content: bytes) -> str | None:
     return None
 
 
-@router.post("/interpret", response_model=InterpretResponse)
+@router.post("/interpret", response_model=ImageRecognition, response_model_exclude_none=True)
 async def interpret_image(
     image: UploadFile = File(...),
     prompt: str = Form(""),
     diagram: str | None = Form(None),
-) -> InterpretResponse:
+) -> ImageRecognition:
 
     extension = Path(image.filename or "").suffix.lower()
 
@@ -91,7 +95,9 @@ async def interpret_image(
 
     if diagram:
         try:
-            context = DiagramContext.model_validate_json(diagram)
+            if len(diagram) > 1_000_000:
+                raise ValueError("Contexto demasiado grande")
+            context = ImageDocument.model_validate_json(diagram)
         except ValueError:
             raise HTTPException(
                 status_code=422,
@@ -106,24 +112,38 @@ async def interpret_image(
             diagram=context,
         )
     except DiagramConflictError:
+        logger.warning("Image interpretation conflict in AI response")
         raise HTTPException(
             status_code=502,
             detail="La respuesta de IA contiene definiciones de atributos en conflicto.",
         ) from None
 
     except DiagramJsonError:
+        logger.warning("Gemini Vision returned invalid JSON")
         raise HTTPException(
             status_code=502,
             detail="La IA devolvió una respuesta que no es JSON válido.",
         ) from None
 
-    except DiagramStructureError:
+    except (DiagramStructureError, ValidationError) as exception:
+        logger.warning(
+            "Gemini Vision response failed image-v1 validation (%s)",
+            type(exception).__name__,
+        )
         raise HTTPException(
             status_code=502,
-            detail="La IA devolvió JSON que no cumple el contrato de operaciones.",
+            detail="Gemini devolvió una respuesta que no cumple el contrato image-v1.",
         ) from None
+
     except gemini_errors.APIError as exception:
         code = exception.code
+        logger.warning(
+            "Gemini Vision APIError (code=%s, status=%s, mime=%s, bytes=%d)",
+            code,
+            getattr(exception, "status", None),
+            detected_type,
+            len(content),
+        )
 
         if code == 429:
             raise HTTPException(
@@ -161,17 +181,27 @@ async def interpret_image(
         ) from None
 
     except (httpx.TimeoutException, TimeoutError):
+        logger.warning("Gemini Vision request timed out (mime=%s, bytes=%d)", detected_type, len(content))
         raise HTTPException(
             status_code=504,
             detail="Se agotó el tiempo de conexión con Gemini.",
         ) from None
 
-    except httpx.RequestError:
+    except httpx.RequestError as exception:
+        logger.warning("Gemini Vision network error (%s)", type(exception).__name__)
         raise HTTPException(
             status_code=503,
             detail="No se pudo establecer conexión con Gemini.",
         ) from None
-    except ValueError:
+
+    except ValueError as exception:
+        if "no esta configurado" in str(exception).lower():
+            logger.warning("Gemini Vision is not configured")
+            raise HTTPException(
+                status_code=503,
+                detail="Gemini no está configurado en el servicio de IA.",
+            ) from None
+        logger.warning("Gemini Vision returned invalid value (%s)", type(exception).__name__)
         raise HTTPException(
             status_code=502,
             detail="Gemini no devolvió una interpretación válida.",

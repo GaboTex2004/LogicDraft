@@ -10,7 +10,8 @@ class AgentIntent(StrEnum):
 
 
 def _plain(value: str) -> str:
-    normalized = unicodedata.normalize("NFD", value.casefold())
+    stripped = re.sub(r"^\s*@logicdraft\b\s*", "", value, flags=re.I)
+    normalized = unicodedata.normalize("NFD", stripped.casefold())
     without_accents = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
     return " ".join(without_accents.replace("¿", " ").replace("¡", " ").split())
 
@@ -20,7 +21,7 @@ def classify_agent_intent(message: str) -> AgentIntent:
     plain = _plain(message).strip()
     interrogative = bool(re.match(
         r"^(?:que|cual|cuales|cuanto|cuantos|cuanta|cuantas|como|por que|explica(?:me)?|"
-        r"describe|dime|muestra(?:me)?|opinas|lee|leer|lista|listar|enumera|sugiere|sugerir|"
+        r"describe|dime|muestra(?:me)?|opinas|lee|leer|lista|listar|enumera|consulta|consultar|sugiere|sugerir|"
         r"recomienda|recomendar|analiza|analizar|revisa|revisar|evalua|evaluar|que pasaria si)\b",
         plain,
     )) or "?" in plain
@@ -50,16 +51,18 @@ def classify_agent_intent(message: str) -> AgentIntent:
         r"renombra|renombrar|renombre|"
         r"elimina|eliminar|elimine|"
         r"borra|borrar|borre|"
-        r"quita|quitar|quite|suprime|suprimir"
+        r"quita|quitar|quite|suprime|suprimir|remueve|remover|remueva|"
+        r"marca|marcar|marque|establece|establecer|establezca|define|definir|defina|"
+        r"asigna|asignar|asigne|implementa|implementar|implemente|hereda|heredar|herede|"
+        r"extiende|extender|extienda"
         r")\b",
         plain,
     ) or re.match(
         r"^(?:quiero|necesito)\s+que\s+(?:"
         r"agregues|anadas|crees|generes|incluyas|conectes|relaciones|unas|"
         r"conviertas|transformes|edites|modifiques|actualices|cambies|renombres|"
-        r"elimines|borres|quites|suprimas"
+        r"elimines|borres|quites|suprimas|remuevas|marques|establezcas|definas"
         r")\b",
         plain,
     )
     return AgentIntent.MODIFICATION if explicit else AgentIntent.AMBIGUOUS
-

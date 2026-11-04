@@ -5,6 +5,8 @@ import com.sw1.backend.ai.diagram.dto.AssociationCreationDefinition;
 import com.sw1.backend.ai.diagram.dto.AttributeDefinition;
 import com.sw1.backend.ai.diagram.dto.DiagramOperation;
 import com.sw1.backend.ai.diagram.dto.EntityDefinition;
+import com.sw1.backend.ai.diagram.dto.MethodDefinition;
+import com.sw1.backend.ai.diagram.dto.ParameterDefinition;
 import com.sw1.backend.ai.diagram.dto.RelationshipDefinition;
 import com.sw1.backend.ai.diagram.validation.DiagramOperationValidator;
 
@@ -73,6 +75,15 @@ public final class ProposalJsonCodec {
                 map.put("entityName", op.entityName());
                 map.put("newName", op.newName());
             }
+            case UPDATE_CLASSIFIER -> {
+                map.put("entityName", op.entityName());
+                if (op.kind() != null) {
+                    map.put("kind", op.kind());
+                }
+                if (op.abstractValue() != null) {
+                    map.put("abstract", op.abstractValue());
+                }
+            }
             case ADD_ATTRIBUTE -> {
                 map.put("entityName", op.entityName());
                 map.put("attribute", encodeAttribute(op.attribute()));
@@ -91,10 +102,93 @@ public final class ProposalJsonCodec {
                 map.put("attributeName", op.attributeName());
                 map.put("dataType", op.dataType().name());
             }
-            case SET_ATTRIBUTE_PRIMARY_KEY, SET_ATTRIBUTE_NULLABLE -> {
+            case SET_ATTRIBUTE_PRIMARY_KEY, SET_ATTRIBUTE_NULLABLE, SET_ATTRIBUTE_STATIC -> {
                 map.put("entityName", op.entityName());
                 map.put("attributeName", op.attributeName());
-                map.put("value", op.value());
+                map.put("value", op.value() != null ? op.value() : op.staticValue());
+            }
+            case SET_ATTRIBUTE_VISIBILITY -> {
+                map.put("entityName", op.entityName());
+                map.put("attributeName", op.attributeName());
+                map.put("visibility", op.visibility());
+            }
+            case ADD_METHOD -> {
+                map.put("entityName", op.entityName());
+                map.put("method", encodeMethod(op.method()));
+            }
+            case UPDATE_METHOD -> {
+                map.put("entityName", op.entityName());
+                map.put("methodName", op.methodName());
+                if (op.parameterTypes() != null) {
+                    map.put("parameterTypes", op.parameterTypes());
+                }
+                if (op.newName() != null) {
+                    map.put("newName", op.newName());
+                }
+                if (op.returnType() != null) {
+                    map.put("returnType", op.returnType());
+                }
+                if (op.visibility() != null) {
+                    map.put("visibility", op.visibility());
+                }
+                if (op.staticValue() != null) {
+                    map.put("static", op.staticValue());
+                }
+                if (op.abstractValue() != null) {
+                    map.put("abstract", op.abstractValue());
+                }
+                if (op.method() != null) {
+                    map.put("method", encodeMethod(op.method()));
+                }
+            }
+            case DELETE_METHOD -> {
+                map.put("entityName", op.entityName());
+                map.put("methodName", op.methodName());
+                if (op.parameterTypes() != null) {
+                    map.put("parameterTypes", op.parameterTypes());
+                }
+            }
+            case ADD_METHOD_PARAMETER -> {
+                map.put("entityName", op.entityName());
+                map.put("methodName", op.methodName());
+                if (op.parameterTypes() != null) {
+                    map.put("parameterTypes", op.parameterTypes());
+                }
+                map.put("parameter", encodeParameter(op.parameter()));
+            }
+            case UPDATE_METHOD_PARAMETER -> {
+                map.put("entityName", op.entityName());
+                map.put("methodName", op.methodName());
+                if (op.parameterTypes() != null) {
+                    map.put("parameterTypes", op.parameterTypes());
+                }
+                map.put("parameterName", op.parameterName());
+                if (op.newName() != null) {
+                    map.put("newName", op.newName());
+                }
+                if (op.newType() != null) {
+                    map.put("newType", op.newType());
+                }
+                if (op.parameter() != null) {
+                    map.put("parameter", encodeParameter(op.parameter()));
+                }
+            }
+            case DELETE_METHOD_PARAMETER -> {
+                map.put("entityName", op.entityName());
+                map.put("methodName", op.methodName());
+                if (op.parameterTypes() != null) {
+                    map.put("parameterTypes", op.parameterTypes());
+                }
+                map.put("parameterName", op.parameterName());
+            }
+            case ADD_ENUM_LITERAL, DELETE_ENUM_LITERAL -> {
+                map.put("entityName", op.entityName());
+                map.put("literal", op.literal());
+            }
+            case RENAME_ENUM_LITERAL -> {
+                map.put("entityName", op.entityName());
+                map.put("literal", op.literal());
+                map.put("newLiteral", op.newLiteral() != null ? op.newLiteral() : op.newName());
             }
             case ADD_RELATIONSHIP, DELETE_RELATIONSHIP, UPDATE_RELATIONSHIP ->
                     map.put("relationship", encodeRelationship(op.relationship()));
@@ -109,6 +203,18 @@ public final class ProposalJsonCodec {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("name", entity.name());
         map.put("attributes", entity.attributes().stream().map(ProposalJsonCodec::encodeAttribute).toList());
+        if (entity.kind() != null) {
+            map.put("kind", entity.kind());
+        }
+        if (entity.isAbstract() != null) {
+            map.put("abstract", entity.isAbstract());
+        }
+        if (entity.methods() != null) {
+            map.put("methods", entity.methods().stream().map(ProposalJsonCodec::encodeMethod).toList());
+        }
+        if (entity.literals() != null) {
+            map.put("literals", entity.literals());
+        }
         return map;
     }
 
@@ -118,6 +224,42 @@ public final class ProposalJsonCodec {
         map.put("dataType", attr.dataType().name());
         map.put("primaryKey", attr.primaryKey());
         map.put("nullable", attr.nullable());
+        if (attr.visibility() != null) {
+            map.put("visibility", attr.visibility());
+        }
+        if (attr.isStatic() != null) {
+            map.put("static", attr.isStatic());
+        }
+        return map;
+    }
+
+    private static Map<String, Object> encodeMethod(MethodDefinition method) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("name", method.name());
+        if (method.returnType() != null) {
+            map.put("returnType", method.returnType());
+        }
+        if (method.visibility() != null) {
+            map.put("visibility", method.visibility());
+        }
+        if (method.isStatic() != null) {
+            map.put("static", method.isStatic());
+        }
+        if (method.isAbstract() != null) {
+            map.put("abstract", method.isAbstract());
+        }
+        if (method.parameters() != null) {
+            map.put("parameters", method.parameters().stream().map(ProposalJsonCodec::encodeParameter).toList());
+        }
+        return map;
+    }
+
+    private static Map<String, Object> encodeParameter(ParameterDefinition parameter) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("name", parameter.name());
+        if (parameter.type() != null) {
+            map.put("type", parameter.type());
+        }
         return map;
     }
 
@@ -136,6 +278,21 @@ public final class ProposalJsonCodec {
         }
         if (rel.joinTableName() != null) {
             map.put("joinTableName", rel.joinTableName());
+        }
+        if (rel.id() != null) {
+            map.put("id", rel.id());
+        }
+        if (rel.kind() != null) {
+            map.put("kind", rel.kind());
+        }
+        if (rel.sourceMultiplicity() != null) {
+            map.put("sourceMultiplicity", rel.sourceMultiplicity());
+        }
+        if (rel.targetMultiplicity() != null) {
+            map.put("targetMultiplicity", rel.targetMultiplicity());
+        }
+        if (rel.aggregationEnd() != null) {
+            map.put("aggregationEnd", rel.aggregationEnd());
         }
         return map;
     }

@@ -13,11 +13,15 @@ def build_repair_prompt(
         "Devuelve SOLO JSON válido que cumpla el schema proporcionado.",
         'La raiz debe ser exactamente {"operations":[...]}. '
         'Cada operacion necesita obligatoriamente un campo "type" con uno de estos valores: '
-        'ADD_ENTITY, DELETE_ENTITY, RENAME_ENTITY, ADD_ATTRIBUTE, DELETE_ATTRIBUTE, '
+        'ADD_ENTITY, DELETE_ENTITY, RENAME_ENTITY, UPDATE_CLASSIFIER, ADD_ATTRIBUTE, DELETE_ATTRIBUTE, '
         'RENAME_ATTRIBUTE, CHANGE_ATTRIBUTE_TYPE, SET_ATTRIBUTE_PRIMARY_KEY, SET_ATTRIBUTE_NULLABLE, '
+        'SET_ATTRIBUTE_VISIBILITY, SET_ATTRIBUTE_STATIC, ADD_METHOD, UPDATE_METHOD, DELETE_METHOD, '
+        'ADD_METHOD_PARAMETER, UPDATE_METHOD_PARAMETER, DELETE_METHOD_PARAMETER, '
+        'ADD_ENUM_LITERAL, RENAME_ENUM_LITERAL, DELETE_ENUM_LITERAL, '
         'ADD_RELATIONSHIP, DELETE_RELATIONSHIP, UPDATE_RELATIONSHIP, CREATE_ASSOCIATION, '
         'DELETE_ASSOCIATION o CONVERT_MANY_TO_MANY_ASSOCIATION.',
         'Formato DELETE_ENTITY: {"type":"DELETE_ENTITY","entityName":"Temporal"}.',
+        'Formato DELETE_ATTRIBUTE: {"type":"DELETE_ATTRIBUTE","entityName":"Producto","attributeName":"Precio de venta"}.',
         'Formato ADD_ENTITY: {"type":"ADD_ENTITY","entity":{"name":"Cliente",'
         '"attributes":[{"name":"id","dataType":"Integer","primaryKey":true,"nullable":false}]}}.',
         'Formato ADD_ATTRIBUTE: {"type":"ADD_ATTRIBUTE","entityName":"Cliente",'
@@ -30,7 +34,7 @@ def build_repair_prompt(
         "Devuelve el lote COMPLETO de operaciones, no solamente las operaciones faltantes.",
         "Conserva las operaciones correctas del lote anterior y agrega las operaciones faltantes indicadas en Error detectado. "
         "No elimines entidades que no se haya pedido eliminar.",
-        "Incluye todas las entidades, todos sus atributos y todas las relaciones solicitadas.",
+        "Incluye todas las entidades, todos sus atributos, eliminaciones y todas las relaciones solicitadas.",
         "No uses Markdown, explicaciones, SQL ni campos adicionales.",
         "Tipos permitidos: String, Long, Integer, Double, Boolean, Date, DateTime.",
         "No recrees entidades que ya existan en el contexto.",

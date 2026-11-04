@@ -100,6 +100,13 @@ import {
 } from "../services/applyDiagramOperations";
 import { AiPromptBar } from "../components/AiPromptBar";
 import { DiagramAiProposalDialog } from "../components/DiagramAiProposalDialog";
+import { DiagramImageProposalDialog } from "../components/DiagramImageProposalDialog";
+import {
+  imageProposalAcceptanceError,
+  parseImageProposal,
+  resolveAiPromptErrorMessage,
+  type ImageProposal,
+} from "../services/imageProposal";
 import { AssociationConversionDialog } from "../components/AssociationConversionDialog";
 import { DiagramImportDialog } from "../components/DiagramImportDialog";
 import { DiagramPropertiesPanel } from "../components/DiagramPropertiesPanel";
@@ -138,7 +145,7 @@ import type {
 } from "../types/diagram.types";
 import type { DiagramAiOperation } from "../types/diagramAi.types";
 import "../diagram.css";
-import { interpretDiagramImage } from "../api/diagramImageApi";
+import { acceptDiagramImage, interpretDiagramImage } from "../api/diagramImageApi";
 import { destructivePlanImpact } from "../services/diagramActionPresentation";
 import { validateDiagramDocument } from "../services/diagramDocumentValidation";
 import {
@@ -283,6 +290,9 @@ function DiagramEditorCanvas({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiMessage, setAiMessage] = useState("");
+  const [pendingImageProposal, setPendingImageProposal] = useState<(ImageProposal & { localRevision: number }) | null>(null);
+  const [imageAccepting, setImageAccepting] = useState(false);
+  const imageAcceptingRef = useRef(false);
   const [exportStatus, setExportStatus] = useState<ExportStatus>(null);
   const [exportMessage, setExportMessage] = useState("");
   const [conversionOpen, setConversionOpen] = useState(false);
@@ -1291,6 +1301,16 @@ function DiagramEditorCanvas({
         setAiError("El diagrama cambió durante la consulta. Solicita una propuesta nueva.");
         return;
       }
+      if (image) {
+        const proposal = parseImageProposal(response);
+        if (proposal.baseRevision !== serverRevisionRef.current) {
+          setAiError("La imagen fue analizada sobre otra revision. Vuelve a enviarla.");
+          return;
+        }
+        setPendingImageProposal({ ...proposal, localRevision: revisionRef.current });
+        setAiMessage("Reconocimiento listo: revisa las altas y los conflictos antes de confirmar.");
+        return;
+      }
       const { operations, preview: result } = prepareDiagramAiProposal(
         response,
         nodesRef.current,
@@ -1339,35 +1359,52 @@ function DiagramEditorCanvas({
       else if (axios.isAxiosError(error)) {
         const code = error.response?.status;
         const data = record(error.response?.data);
-        if (code === 409)
+        if (code === 502 && !image)
           setAiError(
             typeof data?.mensaje === "string"
               ? data.mensaje
-              : "El diagrama cambió o la operación entra en conflicto.",
+              : "No se pudo interpretar la instrucción.",
           );
-        else if (code === 422)
-          setAiError(
-            typeof data?.mensaje === "string"
-              ? data.mensaje
-              : "La IA devolvió un lote incompleto; no se aplicaron cambios.",
-          );
-        else if (code === 502)
-          setAiError("No se pudo interpretar la instrucción.");
-        else if (
-          code === 503 ||
-          code === 504 ||
-          error.code === "ECONNABORTED"
-        ) {
-          setAiError(
-            typeof data?.mensaje === "string"
-              ? data.mensaje
-              : "El servicio IA no pudo completar la solicitud. Inténtalo de nuevo.",
-          );
-        } else setAiError("No se pudo interpretar el cambio solicitado.");
-      } else setAiError("No se pudo interpretar el cambio solicitado.");
+        else setAiError(resolveAiPromptErrorMessage(error, Boolean(image)));
+      } else setAiError(resolveAiPromptErrorMessage(error, Boolean(image)));
     } finally {
       aiRequest.current = null;
-      if (!request.signal.aborted) setAiLoading(false);
+      setAiLoading(false);
+    }
+  }
+
+  async function acceptImageProposal() {
+    const proposal = pendingImageProposal;
+    if (!proposal || imageAcceptingRef.current) return;
+    imageAcceptingRef.current = true;
+    setImageAccepting(true);
+    setAiError("");
+    try {
+      await synchronizerRef.current?.refresh();
+      const error = imageProposalAcceptanceError(proposal, serverRevisionRef.current,
+        revisionRef.current, proposal.localRevision, persistedRevisionRef.current,
+        saveStatus === "forbidden" || conflictRef.current || !!saveInFlightRef.current || nodesRef.current.some(node => node.dragging));
+      if (error) { setAiError(error); return; }
+      // No optimistic canvas mutation or generic operation application. The server validates and commits.
+      const saved = await acceptDiagramImage(project.id, proposal.proposalId, clientIdRef.current);
+      setPendingImageProposal(null);
+      await synchronizerRef.current?.refresh();
+      setAiMessage(serverRevisionRef.current === saved.revision
+        ? "Altas guardadas y sincronizadas."
+        : "Altas guardadas en el servidor. La sincronizacion del editor esta pendiente.");
+    } catch (error: unknown) {
+      if (isUnauthorizedError(error)) {
+        localStorage.removeItem("token"); window.location.assign("/login");
+      } else if (isForbiddenError(error)) setAiError("No tienes permisos para confirmar cambios.");
+      else if (axios.isAxiosError(error)) {
+        const data = record(error.response?.data);
+        setAiError(typeof data?.mensaje === "string" ? data.mensaje
+          : error.response?.status === 409 ? "La revision o los locks cambiaron. Revisa el diagrama y vuelve a analizar la imagen."
+          : "No se pudo confirmar el guardado. El editor no aplico cambios locales; sincroniza antes de reintentar.");
+      } else setAiError("No se pudo confirmar la propuesta de imagen.");
+    } finally {
+      imageAcceptingRef.current = false;
+      setImageAccepting(false);
     }
   }
 
@@ -3065,6 +3102,13 @@ function DiagramEditorCanvas({
           releaseUnusedOwnedLocks();
         }}
         onConfirm={(entityName) => void confirmAssociationConversion(entityName)}
+      />
+      <DiagramImageProposalDialog
+        proposal={pendingImageProposal}
+        busy={imageAccepting}
+        error={aiError}
+        onAccept={() => { void acceptImageProposal(); }}
+        onCancel={() => { setPendingImageProposal(null); setAiError(""); }}
       />
       <DiagramAiProposalDialog
         operations={pendingProposal?.operations ?? []}

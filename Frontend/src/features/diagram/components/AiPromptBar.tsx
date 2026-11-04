@@ -41,6 +41,7 @@ export function AiPromptBar({ projectId, onImageSelected, onSubmit, loading, mes
   async function submitText(text: string) {
     const value = text.trim()
     if (!value || processingRef.current || loading || disabledReason) return
+    setAudioError('')
     processingRef.current = true
     try {
       await onSubmit(value)

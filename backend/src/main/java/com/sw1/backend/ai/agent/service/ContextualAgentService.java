@@ -31,16 +31,19 @@ public class ContextualAgentService {
             return new AgentAskResponse(answer, java.util.List.of());
         }
         if (!proposed.operations().isEmpty()) contexts.requireEditAccess(projectId);
-        var diagramContext = new com.sw1.backend.ai.diagram.dto.DiagramContext(
-                context.entities().stream().map(entity -> new com.sw1.backend.ai.diagram.dto.EntityDefinition(
-                        entity.name(), entity.attributes())).toList(),
-                context.relationships().stream().map(relation -> new com.sw1.backend.ai.diagram.dto.RelationshipDefinition(
-                        relation.sourceEntity(), relation.targetEntity(), relation.sourceCardinality(),
-                        relation.targetCardinality(), relation.name(), relation.joinTableName(), relation.id())).toList(),
-                context.associations().stream().map(association ->
-                        new com.sw1.backend.ai.diagram.dto.DiagramAssociationContext(association.entityName(),
-                                association.tableName(), association.endpointEntityNames(),
-                                association.structuralRelationshipIds())).toList());
+        var diagramContext = context.semanticContext() != null
+                ? context.semanticContext()
+                : new com.sw1.backend.ai.diagram.dto.DiagramContext(
+                        context.entities().stream().map(entity -> new com.sw1.backend.ai.diagram.dto.EntityDefinition(
+                                entity.name(), entity.attributes())).toList(),
+                        context.relationships().stream().map(relation -> new com.sw1.backend.ai.diagram.dto.RelationshipDefinition(
+                                relation.sourceEntity(), relation.targetEntity(), relation.sourceCardinality(),
+                                relation.targetCardinality(), relation.name(), relation.joinTableName(), relation.id())).toList(),
+                        context.associations().stream().map(association ->
+                                new com.sw1.backend.ai.diagram.dto.DiagramAssociationContext(association.entityName(),
+                                        association.tableName(), association.endpointEntityNames(),
+                                        association.structuralRelationshipIds())).toList(),
+                        context.readOnlyElementNames());
         com.sw1.backend.ai.diagram.validation.SemanticOperationValidator.validate(
                 request.message(), diagramContext, proposed.operations());
         var validated = com.sw1.backend.ai.diagram.validation.ContextualOperationValidator.validate(
