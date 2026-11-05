@@ -80,7 +80,7 @@ def test_exact_compound_preserves_association_class_and_case():
 @pytest.mark.parametrize("word", ["muchos", "varios", "hartos", "artos"])
 def test_spanish_quantifiers_are_not_classifiers(word):
     assert cardinalities(f"una categoria tiene {word} productos y un producto pertenece obligatoriamente a una categoria",
-                         "Producto", "Categoria") == ("ZERO_MANY", "ONE_ONE")
+                        "Producto", "Categoria") == ("ZERO_MANY", "ONE_ONE")
 
 
 @pytest.mark.parametrize("notation,expected", [
@@ -201,4 +201,66 @@ async def test_existing_crud_families_survive_agent_pipeline(message, operation)
     result = await AgentService(SimpleNamespace(generate=generate)).ask(request(message))
     assert result.outcome == "PROPOSAL", result.answer
     assert [op.type for op in result.operations] == [operation["type"]]
-    generate.assert_awaited_once()
+    if message == "Crea la clase Nueva":
+        generate.assert_not_awaited()
+    else:
+        generate.assert_awaited_once()
+    
+@pytest.mark.anyio
+async def test_create_class_without_ollama():
+    message = "@LogicDraft agrega una clase con el nombre categoria"
+    req = request(message)
+
+    # Retirar Categoria y la clase asociativa que la referencia.
+    # Asi el contexto UML de la prueba permanece consistente.
+    req.context.uml.nodes = [
+        node for node in req.context.uml.nodes
+        if node.id not in {"c", "a"}
+    ]
+
+    generate = AsyncMock()
+    result = await AgentService(
+        SimpleNamespace(generate=generate)
+    ).ask(req)
+
+    assert result.outcome == "PROPOSAL"
+    assert len(result.operations) == 1
+    assert result.operations[0].type == "ADD_ENTITY"
+    assert result.operations[0].entity.name == "categoria"
+    assert result.operations[0].entity.kind == "CLASS"
+    generate.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_create_class_and_relationship_in_one_plan():
+    message = (
+        "@LogicDraft crea una clase categoria y hace una "
+        "relacion con producto de (1..N) a (1..1)"
+    )
+    req = request(message)
+
+    # Retirar Categoria y la clase asociativa que la referencia.
+    # Asi el contexto UML de la prueba permanece consistente.
+    req.context.uml.nodes = [
+        node for node in req.context.uml.nodes
+        if node.id not in {"c", "a"}
+    ]
+
+    generate = AsyncMock()
+    result = await AgentService(
+        SimpleNamespace(generate=generate)
+    ).ask(req)
+
+    assert result.outcome == "PROPOSAL"
+    assert [op.type for op in result.operations] == [
+        "ADD_ENTITY",
+        "ADD_RELATIONSHIP",
+    ]
+
+    relation = result.operations[1].relationship
+    assert relation.sourceEntity == "categoria"
+    assert relation.targetEntity == "Producto"
+    assert relation.sourceCardinality == "ONE_MANY"
+    assert relation.targetCardinality == "ONE_ONE"
+
+    generate.assert_not_awaited()

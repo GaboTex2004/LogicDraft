@@ -104,6 +104,17 @@ def cardinalities(clause: str, source: str, target: str) -> tuple[str, str]:
 
 
 def _relationship(clause: str, diagram: DiagramContext):
+    # Una creacion de clase con instrucciones adicionales
+    # no debe interpretarse como una relacion aislada.
+    if (
+        re.match(
+            rf"{PREFIX}{CREATE}\s+"
+            r"(?:(?:una?|la|nueva|nuevo)\s+)*clase\b",
+            clause,
+        )
+        and re.search(r"\brelacion\b", clause)
+    ):
+        return None
     prefix = rf"{PREFIX}(?P<verb>{CREATE}|{DELETE}|relaciona|relacionar|conecta|conectar|modifica|actualiza|cambia)\s+"
     multiplicity = r"(?:0\.\.1|1\.\.1|0\.\.(?:n|\*)|1\.\.(?:n|\*))"
 
@@ -156,6 +167,116 @@ def _relationship(clause: str, diagram: DiagramContext):
         raise Clarification("La relacion que deseas modificar no existe.")
     return [{"type": "ADD_RELATIONSHIP", "relationship": {**reference, "sourceCardinality": sc, "targetCardinality": tc}}]
 
+def _class_command(
+    clause: str,
+    diagram: DiagramContext,
+    original: str,
+):
+    pattern = (
+        rf"{PREFIX}{CREATE}\s+"
+        r"(?:(?:una?|la|nueva|nuevo)\s+)*"
+        r"(?P<kind>clase|entidad)\s+"
+        r"(?:(?:con\s+(?:el\s+)?nombre(?:\s+de)?"
+        r"|llamad[ao]|denominad[ao])\s+)?"
+        rf"(?P<name>{TOKEN})"
+    )
+
+    match = re.fullmatch(pattern, clause)
+    if match is None:
+        return None
+
+    name = _surface(match["name"], original)
+    kind = "CLASS" if match["kind"] == "clase" else "ENTITY"
+
+    existing = [
+        entity for entity in diagram.entities
+        if plain(entity.name) == plain(name)
+    ]
+
+    if existing:
+        if len(existing) != 1 or existing[0].kind != kind:
+            raise Clarification(
+                f"Ya existe un clasificador llamado {name}. "
+                "No se creara otro con un tipo distinto."
+            )
+        return []
+
+    return [{
+        "type": "ADD_ENTITY",
+        "entity": {
+            "name": name,
+            "kind": kind,
+            "attributes": [],
+            "methods": [],
+        },
+    }]
+
+def _class_relationship_command(
+    clause: str,
+    diagram: DiagramContext,
+    original: str,
+):
+    multiplicity = r"(?:0\.\.1|1\.\.1|0\.\.(?:n|\*)|1\.\.(?:n|\*))"
+
+    pattern = (
+        rf"{PREFIX}{CREATE}\s+"
+        r"(?:(?:una?|la|nueva|nuevo)\s+)*clase\s+"
+        r"(?:(?:con\s+(?:el\s+)?nombre(?:\s+de)?"
+        r"|llamad[ao]|denominad[ao])\s+)?"
+        rf"(?P<new_name>{TOKEN})\s+y\s+"
+        r"(?:hace|crea|agrega|genera|define|establece)\s+"
+        r"(?:(?:una|la)\s+)?relacion\s+con\s+"
+        r"(?:(?:el|la)\s+)?(?:(?:clase|entidad)\s+)?"
+        rf"(?P<other_name>{TOKEN})\s+de\s*\(\s*"
+        rf"(?P<src>{multiplicity})\s*\)\s+a\s*\(\s*"
+        rf"(?P<dst>{multiplicity})\s*\)"
+    )
+
+    match = re.fullmatch(pattern, clause)
+    if match is None:
+        return None
+
+    new_name = _surface(match["new_name"], original)
+    other = _resolve(match["other_name"], diagram)
+
+    if any(
+        plain(entity.name) == plain(new_name)
+        for entity in diagram.entities
+    ):
+        raise Clarification(
+            f"La clase {new_name} ya existe. "
+            "Solicita solamente la relacion o utiliza otro nombre."
+        )
+
+    card_map = {
+        "0..1": "ZERO_ONE",
+        "1..1": "ONE_ONE",
+        "0..n": "ZERO_MANY",
+        "0..*": "ZERO_MANY",
+        "1..n": "ONE_MANY",
+        "1..*": "ONE_MANY",
+    }
+
+    return [
+        {
+            "type": "ADD_ENTITY",
+            "entity": {
+                "name": new_name,
+                "kind": "CLASS",
+                "attributes": [],
+                "methods": [],
+            },
+        },
+        {
+            "type": "ADD_RELATIONSHIP",
+            "relationship": {
+                "sourceEntity": new_name,
+                "targetEntity": other.name,
+                "sourceCardinality": card_map[match["src"]],
+                "targetCardinality": card_map[match["dst"]],
+            },
+        },
+    ]
 
 def _attribute_command(clause: str, diagram: DiagramContext, original: str):
     patterns = [
@@ -186,12 +307,42 @@ def _attribute_command(clause: str, diagram: DiagramContext, original: str):
 
 def plan_execution(message: str, diagram: DiagramContext) -> ExecutionPlan | None:
     operations = []
+
     try:
-        for clause in statements(message):
-            planned = _attribute_command(clause, diagram, message)
-            if planned is None: planned = _relationship(clause, diagram)
-            if planned is None: return None  # Existing general planner handles other CRUD operations.
-            operations.extend(planned)
+        clauses = statements(message)
+
+        # Resolver conjuntamente la creacion de una clase
+        # y una relacion que depende de ella.
+        combined = _class_relationship_command(
+            " y ".join(clauses),
+            diagram,
+            message,
+        )
+
+        if combined is not None:
+            operations.extend(combined)
+        else:
+            for clause in clauses:
+                planned = _class_command(
+                    clause, diagram, message
+                )
+
+                if planned is None:
+                    planned = _attribute_command(
+                        clause, diagram, message
+                    )
+
+                if planned is None:
+                    planned = _relationship(
+                        clause, diagram
+                    )
+
+                # Una orden desconocida vuelve al camino
+                # de Ollama; no aplicamos lotes parciales.
+                if planned is None:
+                    return None
+
+                operations.extend(planned)
         if len(operations) > 50:
             raise Clarification("El lote supera el limite de 50 operaciones.")
         # Reuse the existing operation schema instead of another executor/contract.

@@ -42,7 +42,7 @@ class StructuredGenerationTests(unittest.IsolatedAsyncioTestCase):
         structured = instances[0].post.await_args.kwargs["json"]
         generic = instances[1].post.await_args.kwargs["json"]
         self.assertEqual(structured["format"], schema)
-        self.assertEqual(structured["options"], {"temperature": 0, "num_predict": 1200})
+        self.assertEqual(structured["options"], {"temperature": 0, "num_predict": 3000})
         self.assertNotIn("format", generic)
         self.assertEqual(generic["options"], {"temperature": 0.2, "num_predict": 300})
 

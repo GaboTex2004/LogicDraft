@@ -95,12 +95,99 @@ class AgentIntentAuthorizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_explicit_edit_still_uses_structured_schema(self):
         generated = json.dumps({
             "answer": "Propuesta.",
-            "operations": [{"type": "ADD_ENTITY", "entity": {"name": "Profesor", "attributes": []}}],
+            "operations": [
+                {
+                    "type": "RENAME_ENTITY",
+                    "entityName": "Alumno",
+                    "newName": "Estudiante",
+                }
+            ],
         })
+
         provider = AsyncMock(return_value=generated)
-        result = await AgentService(SimpleNamespace(generate=provider)).ask(request("Agrega una entidad Profesor"))
+
+        result = await AgentService(
+            SimpleNamespace(generate=provider)
+        ).ask(
+            request("Renombra la entidad Alumno a Estudiante")
+        )
+
+        self.assertEqual(result.outcome, "PROPOSAL")
         self.assertEqual(len(result.operations), 1)
+        self.assertEqual(result.operations[0].type, "RENAME_ENTITY")
+
+        # Esta instruccion usa Ollama porque todavia no
+        # tiene un plan determinista.
+        provider.assert_awaited_once()
+
+        # El proveedor debe recibir el prompt y el esquema JSON.
         self.assertEqual(len(provider.call_args.args), 2)
+        self.assertEqual(len(provider.call_args.args), 2)
+
+    
+    async def test_ollama_creates_two_classes_from_natural_language(self):
+        cases = [
+            (
+                "crea una clase categoria y una clase permiso",
+                ["categoria", "permiso"],
+            ),
+            (
+                'crea 2 clases con nombre "categora" y "precio"',
+                ["categora", "precio"],
+            ),
+        ]
+
+        for message, names in cases:
+            with self.subTest(message=message):
+                provider = AsyncMock(
+                    return_value=json.dumps({"names": names})
+                )
+
+                result = await AgentService(
+                    SimpleNamespace(generate=provider)
+                ).ask(request(message))
+
+                self.assertEqual(result.outcome, "PROPOSAL")
+                self.assertEqual(
+                    [op.type for op in result.operations],
+                    ["ADD_ENTITY", "ADD_ENTITY"],
+                )
+                self.assertEqual(
+                    [op.entity.name for op in result.operations],
+                    names,
+                )
+
+                provider.assert_awaited_once()
+
+                schema = provider.call_args.args[1]
+                self.assertEqual(
+                    set(schema["properties"]),
+                    {"names"},
+                )
+                self.assertEqual(
+                    schema["properties"]["names"]["minItems"],
+                    2,
+                )
+
+    async def test_ollama_incomplete_class_batch_is_rejected(self):
+        provider = AsyncMock(
+            return_value=json.dumps({
+                "names": ["categoria"]
+            })
+        )
+
+        result = await AgentService(
+            SimpleNamespace(generate=provider)
+        ).ask(request(
+            "crea una clase categoria y una clase permiso"
+        ))
+
+        self.assertEqual(
+            result.outcome,
+            "NEEDS_CLARIFICATION",
+        )
+        self.assertEqual(result.operations, [])
+        self.assertEqual(provider.await_count, 2)
 
     def test_classifier_requires_explicit_imperative(self):
         cases = {
@@ -127,7 +214,120 @@ class AgentIntentAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         for message, expected in cases.items():
             with self.subTest(message=message):
                 self.assertEqual(classify_agent_intent(message), expected)
+    async def test_ollama_creates_class_with_attributes(self):
+        message = (
+            "crea una clase CategoriaNueva con los atributos: "
+            "ID integer, nombre Varchar"
+        )
 
+        generated = json.dumps({
+            "classes": [{
+                "name": "CategoriaNueva",
+                "attributes": [
+                    {
+                        "name": "ID",
+                        "dataType": "Integer",
+                        "primaryKey": False,
+                    },
+                    {
+                        "name": "nombre",
+                        "dataType": "String",
+                        "primaryKey": False,
+                    },
+                ],
+            }],
+            "relationships": [],
+        })
+
+        provider = AsyncMock(return_value=generated)
+
+        result = await AgentService(
+            SimpleNamespace(generate=provider)
+        ).ask(request(message))
+
+        self.assertEqual(result.outcome, "PROPOSAL")
+        self.assertEqual(len(result.operations), 1)
+
+        entity = result.operations[0].entity
+        self.assertEqual(entity.name, "CategoriaNueva")
+        self.assertEqual(
+            [(a.name, a.dataType) for a in entity.attributes],
+            [("ID", "Integer"), ("nombre", "String")],
+        )
+
+        provider.assert_awaited_once()
+
+    async def test_ollama_creates_classes_and_relationship(self):
+        message = (
+            "crea 2 clases con nombre CategoriaNueva y "
+            "PrecioNuevo que esten una relacion "
+            "de (1..1) y (1..N)"
+        )
+
+        generated = json.dumps({
+            "classes": [
+                {"name": "CategoriaNueva", "attributes": []},
+                {"name": "PrecioNuevo", "attributes": []},
+            ],
+            "relationships": [{
+                "source": "CategoriaNueva",
+                "target": "PrecioNuevo",
+                "sourceCardinality": "ONE_ONE",
+                "targetCardinality": "ONE_MANY",
+            }],
+        })
+
+        provider = AsyncMock(return_value=generated)
+
+        result = await AgentService(
+            SimpleNamespace(generate=provider)
+        ).ask(request(message))
+
+        self.assertEqual(result.outcome, "PROPOSAL")
+        self.assertEqual(
+            [op.type for op in result.operations],
+            ["ADD_ENTITY", "ADD_ENTITY", "ADD_RELATIONSHIP"],
+        )
+
+        relation = result.operations[2].relationship
+        self.assertEqual(
+            relation.sourceCardinality, "ONE_ONE"
+        )
+        self.assertEqual(
+            relation.targetCardinality, "ONE_MANY"
+        )
+
+        provider.assert_awaited_once()
+
+    async def test_ollama_cannot_omit_requested_attribute(self):
+        message = (
+            "crea una clase CategoriaNueva con los atributos: "
+            "ID integer, nombre Varchar"
+        )
+
+        generated = json.dumps({
+            "classes": [{
+                "name": "CategoriaNueva",
+                "attributes": [{
+                    "name": "ID",
+                    "dataType": "Integer",
+                    "primaryKey": False,
+                }],
+            }],
+            "relationships": [],
+        })
+
+        provider = AsyncMock(return_value=generated)
+
+        result = await AgentService(
+            SimpleNamespace(generate=provider)
+        ).ask(request(message))
+
+        self.assertEqual(
+            result.outcome, "NEEDS_CLARIFICATION"
+        )
+        self.assertEqual(result.operations, [])
+        self.assertEqual(provider.await_count, 2)
 
 if __name__ == "__main__":
     unittest.main()

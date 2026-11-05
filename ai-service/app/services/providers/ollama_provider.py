@@ -42,7 +42,7 @@ class OllamaProvider(BaseAIProvider):
                         "format": json_schema,
                         "options": {
                             "temperature": 0,
-                            "num_predict": 1200,
+                            "num_predict": 3000,
                         },
                     })
                 response = await client.post(

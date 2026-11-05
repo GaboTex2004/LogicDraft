@@ -70,12 +70,32 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_prompt_contains_bounded_conversation(self):
         body = payload()
-        body["message"] = "Agrega una entidad Profesor"
-        body["conversation"] = [{"role": "user", "text": "¿Qué contiene mi diagrama?"}]
-        model = AsyncMock(return_value='{"answer":"Propuesta preparada","operations":['
-                                      '{"type":"ADD_ENTITY","entity":{"name":"Profesor","attributes":[]}}]}')
-        await AgentService(SimpleNamespace(generate=model)).ask(AgentAskRequest.model_validate(body))
-        self.assertIn('"conversation":[{"role":"user"', model.call_args.args[0])
+
+        body["message"] = "¿Qué contiene mi diagrama?"
+
+        body["conversation"] = [
+            {
+                "role": "user",
+                "text": "¿Qué contiene mi diagrama?",
+            }
+        ]
+
+        model = AsyncMock(
+            return_value="El diagrama contiene Producto y Categoria."
+        )
+
+        await AgentService(
+            SimpleNamespace(generate=model)
+        ).ask(AgentAskRequest.model_validate(body))
+
+        model.assert_awaited_once()
+
+        prompt = model.call_args.args[0]
+
+        self.assertIn(
+            '"conversation":[{"role":"user"',
+            prompt,
+        )
 
     async def test_provider_error_is_controlled(self):
         with patch("app.services.ai_service.AIService.generate", new=AsyncMock(side_effect=ProviderConnectionError("private"))):
