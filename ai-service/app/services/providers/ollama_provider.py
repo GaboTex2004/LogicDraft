@@ -1,6 +1,10 @@
 from typing import Any
+import logging
+from time import perf_counter
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from app.services.providers.base import (
     BaseAIProvider,
@@ -19,6 +23,7 @@ class OllamaProvider(BaseAIProvider):
         self._timeout = timeout
 
     async def generate(self, prompt: str, json_schema: dict[str, Any] | None = None) -> str:
+        started = perf_counter()
         if not self._model:
             raise ProviderConfigurationError(
                 "OLLAMA_MODEL is not configured. Set it in ai-service/.env before generating."
@@ -75,6 +80,12 @@ class OllamaProvider(BaseAIProvider):
 
         if not isinstance(result, str):
             raise ProviderResponseError("Ollama returned an invalid response.")
+        metrics = {key: value for key in ("prompt_eval_count", "eval_count", "load_duration", "eval_duration")
+                   if isinstance(value := payload.get(key), (int, float)) and not isinstance(value, bool)}
+        logger.info("Ollama generation elapsedMs=%d promptChars=%d outputChars=%d structured=%s metrics=%s",
+                    (perf_counter() - started) * 1000, len(prompt), len(result), json_schema is not None, metrics)
+        if payload.get("done_reason") == "length":
+            logger.warning("Ollama output reached token limit; normal validation must reject incomplete JSON")
         return result
 
     async def is_available(self) -> bool:

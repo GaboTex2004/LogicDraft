@@ -26,7 +26,9 @@ public class ContextualAgentService {
                 request.message().strip(), context,
                 request.conversation() == null ? java.util.List.of() : request.conversation()));
         if (intent != AgentIntentClassifier.Intent.MODIFICATION) {
-            String answer = AgentIntentClassifier.containsTechnicalOperation(proposed.answer())
+            String answer = !proposed.operations().isEmpty()
+                    ? "No se preparo ninguna propuesta: el mensaje original no autoriza modificaciones. Expresa la accion de forma explicita."
+                    : AgentIntentClassifier.containsTechnicalOperation(proposed.answer())
                     ? "Puedo darte sugerencias en lenguaje natural, pero necesito más contexto de los requisitos del proyecto."
                     : proposed.answer();
             boolean informational = intent == AgentIntentClassifier.Intent.INFORMATIONAL;

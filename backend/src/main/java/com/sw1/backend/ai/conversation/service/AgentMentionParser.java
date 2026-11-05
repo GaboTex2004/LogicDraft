@@ -23,7 +23,7 @@ public final class AgentMentionParser {
         if (message == null || message.isBlank()) {
             return false;
         }
-        return MENTION_TOKEN.matcher(message).find();
+        return MENTION_TOKEN.matcher(com.sw1.backend.ai.agent.service.AgentIntentClassifier.normalizeLeadingMention(message)).find();
     }
 
     public static boolean shouldInvokeAgent(String message, boolean invokeAgentFlag) {
@@ -34,7 +34,8 @@ public final class AgentMentionParser {
         if (rawMessage == null) {
             throw new ConversationValidationException("El mensaje para el agente no puede estar vacío");
         }
-        String withoutLeading = LEADING_MENTION.matcher(rawMessage).replaceFirst("");
+        String withoutLeading = LEADING_MENTION.matcher(
+                com.sw1.backend.ai.agent.service.AgentIntentClassifier.normalizeLeadingMention(rawMessage)).replaceFirst("");
         Matcher inlineMatcher = MENTION_TOKEN.matcher(withoutLeading);
         String cleaned = inlineMatcher.replaceAll(" ").replaceAll("[ \\t]{2,}", " ").strip();
         if (cleaned.isEmpty()) {

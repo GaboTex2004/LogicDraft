@@ -182,7 +182,7 @@ def _requested_attributes(plain_prompt: str, entity_names: list[str]) -> list[tu
     ))
     for index, creation in enumerate(creation_starts):
         end = creation_starts[index + 1].start() if index + 1 < len(creation_starts) else len(plain_prompt)
-        clause = plain_prompt[creation.end():end]
+        clause = statements(plain_prompt[creation.end():end])[0]
         entity = creation.group(1)
         if entity in _CLASSIFIER_KEYWORDS:
             continue
@@ -367,7 +367,7 @@ def extract_expectation(prompt: str, diagram: DiagramContext | None) -> Complete
     if inline_match:
         blocks = re.split(
             r"(?:\s*[;.]\s*|\s*,\s*(?:y\s+)?|\s+y\s+)(?=(?:(?:la|una|otra)\s+(?:entidad|clase(?:\s+uml)?)\s+)?[\"']?[a-z][\w-]*[\"']?\s+(?:con(?!\s+nombre\b)|atributos?\s*:)\b)",
-            inline_match.group(1),
+            statements(inline_match.group(1))[0],
         )
 
         for block in blocks:
@@ -667,6 +667,17 @@ def _typed_attribute_expectations(
         for match in _TYPED_ATTRIBUTE.finditer(section):
             name = match.group("double") or match.group("single") or match.group("bare")
             key = (entity, _key(name))
+            if key in requested:
+                specs[key] = (_TYPE_ALIASES[match.group("type")], bool(match.group("pk")))
+    # A separately requested member may put its owner AFTER its type. Resolve
+    # only clauses containing a unique requested owner, never a global name match.
+    for clause in statements(prompt):
+        owners = [entity for entity in requested_entities if re.search(rf"(?<!\w){re.escape(entity)}(?!\w)", clause)]
+        if len(owners) != 1:
+            continue
+        for match in _TYPED_ATTRIBUTE.finditer(clause):
+            name = match.group("double") or match.group("single") or match.group("bare")
+            key = (owners[0], _key(name))
             if key in requested:
                 specs[key] = (_TYPE_ALIASES[match.group("type")], bool(match.group("pk")))
     return specs

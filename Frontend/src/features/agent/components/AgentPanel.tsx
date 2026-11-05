@@ -1,3 +1,4 @@
+import { SharedProposalCard, proposalMessageText } from './SharedProposalCard'
 import {
   useCallback,
   useEffect,
@@ -12,7 +13,6 @@ import type { CollaborationStatus } from '../../collaboration/types/collaboratio
 import type { SaveStatus } from '../../diagram/components/DiagramToolbar'
 import {
   destructivePlanImpact,
-  diagramOperationLabel,
 } from '../../diagram/services/diagramActionPresentation'
 import type { DiagramEdge, EntityFlowNode } from '../../diagram/types/diagram.types'
 import {
@@ -32,7 +32,6 @@ import {
   hasExplicitAgentMention,
   insertAgentMention,
   messageAuthorColor,
-  proposalStateBadge,
 } from '../services/agentConversationStore'
 import type {
   AgentAskResponse,
@@ -1019,7 +1018,6 @@ function MessageBubble({
   const isSystem = message.autorTipo === 'SYSTEM'
 
   const proposal = message.proposal
-  const badge = proposal ? proposalStateBadge(proposal) : null
   const impact = useMemo(
     () =>
       proposal && proposal.estado === 'PENDING'
@@ -1046,68 +1044,10 @@ function MessageBubble({
         {timeLabel && <time className="agent-msg-time">{timeLabel}</time>}
       </div>
 
-      <div className="agent-msg-text">{renderHighlightedContent(message.contenido)}</div>
+      <div className="agent-msg-text">{renderHighlightedContent(proposal ? proposalMessageText(proposal) : message.contenido)}</div>
 
-      {proposal && badge && (
-        <div className={`agent-proposal-card tone-${badge.tone}`}>
-          <div className="agent-proposal-header">
-            <span>Propuesta UML · rev. base #{proposal.baseRevision}</span>
-            <span className={`agent-proposal-badge tone-${badge.tone}`}>{badge.label}</span>
-          </div>
-
-          <ul className="agent-proposal-ops">
-            {proposal.operations.map((op, index) => (
-              <li key={index}>{diagramOperationLabel(op)}</li>
-            ))}
-          </ul>
-
-          {impact.length > 0 && (
-            <div className="diagram-ai-impact agent-proposal-impact">
-              <strong>Impacto adicional:</strong>
-              <ul>
-                {impact.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {proposal.resultadoAplicacion && (
-            <small className="agent-proposal-result">{proposal.resultadoAplicacion}</small>
-          )}
-
-          {proposal.estado === 'PENDING' && (
-            <div className="agent-proposal-actions">
-              {canEdit ? (
-                <>
-                  <button
-                    type="button"
-                    className="accept"
-                    disabled={decidingProposalId !== null}
-                    onClick={() => void onAcceptProposal(proposal)}
-                  >
-                    {decidingProposalId === proposal.id
-                      ? 'Aplicando…'
-                      : 'Aceptar propuesta'}
-                  </button>
-                  <button
-                    type="button"
-                    className="reject"
-                    disabled={decidingProposalId !== null}
-                    onClick={() => void onRejectProposal(proposal)}
-                  >
-                    Rechazar
-                  </button>
-                </>
-              ) : (
-                <small className="agent-muted">
-                  Solo OWNER o EDITOR en una conversación activa pueden decidir esta propuesta.
-                </small>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      {proposal && <SharedProposalCard proposal={proposal} canEdit={canEdit} decidingProposalId={decidingProposalId}
+        impact={impact} onAcceptProposal={onAcceptProposal} onRejectProposal={onRejectProposal} />}
     </article>
   )
 }

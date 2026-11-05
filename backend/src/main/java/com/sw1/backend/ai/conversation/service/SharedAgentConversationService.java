@@ -735,6 +735,9 @@ public class SharedAgentConversationService {
             if (proposalResponse == null && aiResponse.operations() != null && !aiResponse.operations().isEmpty()) {
                 savedAgentMsg.setContenido("No se requieren cambios: la propuesta ya esta satisfecha en el diagrama actual.");
                 mensajeRepository.saveAndFlush(savedAgentMsg);
+            } else if (proposalResponse != null) {
+                savedAgentMsg.setContenido(proposalMessage(proposalResponse));
+                mensajeRepository.saveAndFlush(savedAgentMsg);
             }
 
             ConversationMessageResponse agentResponse = toMessageResponse(savedAgentMsg, proposalResponse);
@@ -760,6 +763,9 @@ public class SharedAgentConversationService {
                 ? diagramaRepository.findByProyectoId(proyecto.getId()).orElse(null)
                 : null;
         Long currentRevision = currentDiagram != null ? currentDiagram.getRevision() : null;
+        log.info("UML proposal stage=preview projectId={} conversationId={} count={} types={} baseRevision={} currentRevision={}",
+                proyecto.getId(), conversacion.getId(), aiResponse.operations().size(),
+                aiResponse.operations().stream().map(op -> op.type().name()).toList(), snapshotRevision, currentRevision);
         Map<String, Object> baseDoc = (currentDiagram != null && currentDiagram.getContenido() != null)
                 ? currentDiagram.getContenido()
                 : ServerDiagramOperationApplier.emptyDocument();
@@ -779,6 +785,7 @@ public class SharedAgentConversationService {
             ServerDiagramOperationApplier.ApplierResult preview =
                     ServerDiagramOperationApplier.apply(baseDoc, aiResponse.operations());
             if (!preview.changed()) {
+                log.info("UML proposal stage=no_change projectId={} conversationId={}", proyecto.getId(), conversacion.getId());
                 return null;
             }
             propuesta.setElementosAfectadosJson(
@@ -792,6 +799,9 @@ public class SharedAgentConversationService {
                 propuesta.setEstado(AgentProposalState.PENDING);
             }
         } catch (DiagramValidationException invalid) {
+            // Exact domain reason is stored in resultadoAplicacion, not model text or logs.
+            log.warn("UML proposal stage=preview_rejected projectId={} conversationId={} reasonType={}",
+                    proyecto.getId(), conversacion.getId(), invalid.getClass().getSimpleName());
             propuesta.setEstado(AgentProposalState.INVALID);
             propuesta.setElementosAfectadosJson(ProposalJsonCodec.encodeAffectedIds(List.of()));
             propuesta.setResumen(ServerDiagramOperationApplier.summarizeOperations(aiResponse.operations()));
@@ -800,6 +810,8 @@ public class SharedAgentConversationService {
         }
 
         PropuestaUmlAgente savedProposal = propuestaRepository.saveAndFlush(propuesta);
+        log.info("UML proposal stage=stored projectId={} conversationId={} proposalId={} state={} baseRevision={}",
+                proyecto.getId(), conversacion.getId(), savedProposal.getId(), savedProposal.getEstado(), savedProposal.getBaseRevision());
         return toProposalResponse(savedProposal);
     }
 
@@ -944,6 +956,17 @@ public class SharedAgentConversationService {
                 conversacion.getFechaActualizacion());
     }
 
+    private String proposalMessage(SharedProposalResponse proposal) {
+        return switch (proposal.estado()) {
+            case PENDING -> "Propuesta preparada con " + proposal.operations().size()
+                    + " operaciones. Revisa los cambios y acepta o rechaza; todavia no se aplicaron.";
+            case INVALID -> "No se puede aplicar la propuesta. " + proposal.resultadoAplicacion();
+            case STALE -> "La propuesta esta obsoleta: el diagrama cambio. Solicita una nueva propuesta.";
+            case ACCEPTED -> "Propuesta aplicada en la revision " + proposal.aplicadaRevision();
+            case REJECTED -> "Propuesta rechazada; no se aplicaron sus cambios.";
+        };
+    }
+
     ConversationMessageResponse toMessageResponse(
             MensajeConversacionAgente mensaje,
             SharedProposalResponse proposal) {
@@ -956,7 +979,7 @@ public class SharedAgentConversationService {
                 mensaje.getAutorNombre(),
                 mensaje.getSolicitadoPor() != null ? mensaje.getSolicitadoPor().getId() : null,
                 mensaje.getSolicitadoPorNombre(),
-                mensaje.getContenido(),
+                proposal != null ? proposalMessage(proposal) : mensaje.getContenido(),
                 mensaje.getEstado(),
                 mensaje.getClientMessageId(),
                 mensaje.getMensajeOrigen() != null ? mensaje.getMensajeOrigen().getId() : null,

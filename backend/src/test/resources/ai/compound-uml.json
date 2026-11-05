@@ -1,0 +1,16 @@
+{
+  "message": "@LogicDraft crea cuatro clases UML: Cliente, Pedido, Producto y DetallePedido. Cliente: ID Integer clave primaria, nombre String, email String. Pedido: ID Integer, fecha Date, total Double. Producto: ID Integer, nombre String, precio Double. DetallePedido: ID Integer, cantidad Integer, subtotal Double. Crea tres relaciones: Cliente(1..1) con Pedido(0..N); Pedido(1..1) con DetallePedido(0..N); Producto(1..1) con DetallePedido(0..N).",
+  "structure": {
+    "classes": [
+      {"name":"Cliente","attributes":[{"name":"ID","dataType":"Integer","primaryKey":true},{"name":"nombre","dataType":"String","primaryKey":false},{"name":"email","dataType":"String","primaryKey":false}]},
+      {"name":"Pedido","attributes":[{"name":"ID","dataType":"Integer","primaryKey":false},{"name":"fecha","dataType":"Date","primaryKey":false},{"name":"total","dataType":"Double","primaryKey":false}]},
+      {"name":"Producto","attributes":[{"name":"ID","dataType":"Integer","primaryKey":false},{"name":"nombre","dataType":"String","primaryKey":false},{"name":"precio","dataType":"Double","primaryKey":false}]},
+      {"name":"DetallePedido","attributes":[{"name":"ID","dataType":"Integer","primaryKey":false},{"name":"cantidad","dataType":"Integer","primaryKey":false},{"name":"subtotal","dataType":"Double","primaryKey":false}]}
+    ],
+    "relationships": [
+      {"source":"Cliente","target":"Pedido","sourceCardinality":"ONE_ONE","targetCardinality":"ZERO_MANY"},
+      {"source":"Pedido","target":"DetallePedido","sourceCardinality":"ONE_ONE","targetCardinality":"ZERO_MANY"},
+      {"source":"Producto","target":"DetallePedido","sourceCardinality":"ONE_ONE","targetCardinality":"ZERO_MANY"}
+    ]
+  }
+}

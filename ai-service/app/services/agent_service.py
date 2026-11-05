@@ -19,10 +19,10 @@ from app.skills.diagram.completeness import (
     validate_completeness,
 )
 from app.skills.diagram.semantic_safety import (
-    CREATE, PREFIX, plain, validate_semantic_safety,
+    CREATE, PREFIX, plain, statements, validate_semantic_safety,
 )
-from app.schemas.data_types import normalize_data_type
 from app.skills.agent.execution_plan import cardinalities
+from app.skills.agent.structure_grounding import TYPED_ATTRIBUTE, owned_attributes
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,11 @@ def _requested_class_count(
         token = match.group(1)
         explicit = int(token) if token.isdigit() else words[token]
 
-    repeated = len(re.findall(r"\bclase\b", text))
+    # References to existing classifiers do not increase the requested creation count.
+    creation_text = text
+    for entity in diagram.entities:
+        creation_text = re.sub(rf"\bclase\s+{re.escape(plain(entity.name))}(?!\w)", "referencia", creation_text)
+    repeated = len(re.findall(r"\bclase\b", creation_text))
     expected = extract_expectation(message, diagram)
 
     return max(
@@ -119,7 +123,10 @@ def _structured_class_request(message: str) -> bool:
         text,
     ))
 
-    return creates and has_details and not destructive
+    mixed_member_creation = any(re.match(
+        rf"{PREFIX}{CREATE}\s+(?:(?:un|nuevo|el)\s+)*(?:atributo|campo)\b", clause)
+        for clause in statements(message))
+    return creates and has_details and not destructive and not mixed_member_creation
 
 def _normalize_agent_mention(message: str) -> str:
     """Quita Markdown alrededor de la mencion inicial."""
@@ -389,33 +396,9 @@ class AgentService:
             text,
         ))
 
-        # Identificar atributos tipados expresamente en la orden.
-        type_pattern = (
-            r"(?<!\w)([\w-]+)\s*:?\s*(?:de\s+tipo\s+|tipo\s+)?"
-            r"(datetime|timestamp|varchar|integer|string|bigint|"
-            r"double|decimal|boolean|long|int|bool|date)(?!\w)"
-        )
-
-        source_attrs = []
-
-        for match in re.finditer(type_pattern, text):
-            tail = text[match.end():match.end() + 35]
-
-            is_pk = bool(re.match(
-                r"\s*[,;]?\s*(?:\(\s*pk\s*\)|pk\b|"
-                r"clave\s+primaria\b|primary\s+key\b)",
-                tail,
-            ))
-
-            source_attrs.append((
-                plain(match[1]),
-                normalize_data_type(match[2]),
-                is_pk,
-            ))
-
         if (
             re.search(r"\b(?:atributos?|campos?)\b", text)
-            and not source_attrs
+            and not TYPED_ATTRIBUTE.search(text)
         ):
             return _clarification(
                 "Indica el nombre y tipo de cada atributo."
@@ -587,6 +570,7 @@ class AgentService:
 
             return found.group(0)
 
+        reason = "No se pudo resolver la estructura completa."
         for attempt in range(2):
             raw = await self.ai.generate(prompt, schema)
 
@@ -621,6 +605,7 @@ class AgentService:
                 new_names = []
                 operations = []
                 actual_attrs = []
+                source_attrs = owned_attributes(request.message, [literal_name(entry["name"]) for entry in entries])
 
                 for entry in entries:
                     if (
@@ -688,8 +673,8 @@ class AgentService:
                         matching_source = [
                             source
                             for source in source_attrs
-                            if source[0] == plain(attr_name)
-                            and source[1] == data_type
+                            if source[0] == key and source[1] == plain(attr_name)
+                            and source[2] == data_type
                         ]
 
                         if not matching_source:
@@ -700,10 +685,11 @@ class AgentService:
                         # Si el usuario indico PK explicitamente,
                         # respetarlo. Si no, no inventarlo.
                         primary_key = any(
-                            source[2] for source in matching_source
+                            source[3] for source in matching_source
                         )
 
                         actual_attrs.append((
+                            key,
                             plain(attr_name),
                             data_type,
                             primary_key,
@@ -737,26 +723,11 @@ class AgentService:
                     expected = Counter(source_attrs)
                     received = Counter(actual_attrs)
 
-                    logger.warning(
-                        "UML ATTRIBUTE MISMATCH "
-                        "missing=%s unexpected=%s "
-                        "classes=%s",
-                        list((expected - received).elements()),
-                        list((received - expected).elements()),
-                        [
-                            {
-                                "class": entry["name"],
-                                "attributes": [
-                                    attr["name"]
-                                    for attr in entry["attributes"]
-                                ],
-                            }
-                            for entry in entries
-                        ],
-                    )
+                    logger.warning("UML attribute ownership mismatch missing=%d unexpected=%d",
+                                   sum((expected - received).values()), sum((received - expected).values()))
 
                     raise ValueError(
-                        "Atributos incompletos o diferentes"
+                        "Atributos incompletos o asignados a otra clase. Indica los atributos de cada clase por separado."
                     )
 
                 actual_cards = []
@@ -930,12 +901,12 @@ class AgentService:
                 )
 
             except (ValueError, TypeError, KeyError) as error:
+                reason = str(error) if type(error) is ValueError else "Estructura UML fuera del contrato."
                 logger.warning(
                     "Structured UML interpretation rejected "
-                    "attempt=%d error_type=%s reason=%s",
+                    "attempt=%d error_type=%s",
                     attempt + 1,
                     type(error).__name__,
-                    str(error)[:300],
                 )
 
                 if attempt == 0:
@@ -943,12 +914,12 @@ class AgentService:
                         "\nLa interpretacion anterior fue rechazada. "
                         "Revisa el numero de clases, todos los "
                         "atributos con sus tipos y las multiplicidades. "
-                        "Devuelve el lote COMPLETO."
+                        "Devuelve el lote COMPLETO. Motivo: " + reason
                     )
 
         return _clarification(
             "Ollama no identifico una propuesta completa "
-            "de clases, atributos y relaciones.",
+            "de clases, atributos y relaciones. " + reason,
             1,
         )
 

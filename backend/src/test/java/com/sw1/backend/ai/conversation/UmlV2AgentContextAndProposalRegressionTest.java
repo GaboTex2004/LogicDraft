@@ -1093,6 +1093,78 @@ class UmlV2AgentContextAndProposalRegressionTest {
         assertTrue(events.getAllValues().stream().anyMatch(e -> e.type() == CollaborationEventType.DIAGRAM_COMMITTED));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+            "@LogicDraft|4|3", "**@LogicDraft**|4|3", "\\*\\*@LogicDraft\\*\\*|4|3",
+            "@LogicDraft|1|4", "@LogicDraft|2|4"})
+    void compoundProposalSurvivesHttpPreviewPersistenceAcceptanceAndReload(String mention, int classCount, int attributeCount) throws Exception {
+        var fixture = objectMapper.readTree(getClass().getResourceAsStream("/ai/compound-uml.json"));
+        var operations = new java.util.ArrayList<Map<String, Object>>();
+        var classNames = new java.util.ArrayList<String>();
+        for (var node : fixture.path("structure").path("classes")) {
+            if (classNames.size() == classCount) break;
+            String className = classCount == 4 ? node.path("name").asText()
+                    : node.path("name").asText() + (classCount == 1 ? "Prueba" : "Test");
+            classNames.add(className);
+            var attributes = new java.util.ArrayList<Map<String, Object>>();
+            for (var attr : node.path("attributes")) attributes.add(Map.of("name", attr.path("name").asText(),
+                    "dataType", attr.path("dataType").asText(), "primaryKey", attr.path("primaryKey").asBoolean(),
+                    "nullable", !attr.path("primaryKey").asBoolean()));
+            if (attributeCount == 4) attributes.add(Map.of("name", "codigo", "dataType", "String", "primaryKey", false, "nullable", true));
+            operations.add(Map.of("type", "ADD_ENTITY", "entity", Map.of("name", className,
+                    "kind", "CLASS", "attributes", attributes)));
+        }
+        for (var rel : fixture.path("structure").path("relationships")) {
+            if (operations.size() >= classCount * 2 - 1) break;
+            operations.add(Map.of("type", "ADD_RELATIONSHIP",
+                "relationship", Map.of("sourceEntity", rel.path("source").asText(), "targetEntity", rel.path("target").asText(),
+                        "sourceCardinality", rel.path("sourceCardinality").asText(), "targetCardinality", rel.path("targetCardinality").asText())));
+        }
+        if (classCount == 2) operations.set(2, Map.of("type", "ADD_RELATIONSHIP", "relationship", Map.of(
+                "sourceEntity", classNames.get(0), "targetEntity", classNames.get(1), "sourceCardinality", "ONE_ONE", "targetCardinality", "ZERO_MANY")));
+        storedDiagram.get().setContenido(Map.of("version", 2, "nodes", List.of(), "edges", List.of()));
+        var before = ServerDiagramOperationApplier.deepCopyMap(storedDiagram.get().getContenido());
+        upstreamBody.set(objectMapper.writeValueAsString(Map.of("answer", "He preparado siete operaciones.",
+                "operations", operations, "intent", "MUTATION", "outcome", "PROPOSAL")));
+        var conv = as("gabriel@logicdraft.test", () -> conversationService.crearConversacion(
+                3L, new CreateConversationRequest("Lote compuesto", "tab-g")));
+        String humanMessage = classCount == 4 ? fixture.path("message").asText().replace("@LogicDraft", mention)
+                : mention + " crea " + classCount + " clases UML: " + String.join(", ", classNames)
+                    + ". " + classNames.getFirst() + ": ID Integer clave primaria, nombre String, email String, codigo String."
+                    + (classCount == 2 ? " PedidoTest: ID Integer, fecha Date, total Double, codigo String. ClienteTest(1..1) con PedidoTest(0..N)." : "");
+        var sent = as("gabriel@logicdraft.test", () -> conversationService.enviarMensaje(3L, conv.id(),
+                new SendConversationMessageRequest(humanMessage,
+                        "compound-seven", true, null, null, List.of(), "tab-g")));
+        assertNull(sent.agentError());
+        var pending = sent.agentMessage().proposal();
+        assertNotNull(pending, sent.agentMessage().contenido());
+        assertEquals(AgentProposalState.PENDING, pending.estado());
+        assertEquals(classCount * 2 - 1, pending.operations().size());
+        assertEquals(before, storedDiagram.get().getContenido());
+        assertEquals(98L, pending.baseRevision());
+        var wireMapper = tools.jackson.databind.json.JsonMapper.builder().findAndAddModules().build();
+        var wire = wireMapper.readTree(wireMapper.writeValueAsString(sent));
+        assertEquals("PENDING", wire.path("agentMessage").path("proposal").path("estado").asText());
+        var accepted = as("carlos@logicdraft.test", () -> conversationService.aceptarPropuesta(3L, conv.id(), pending.id(),
+                new ProposalDecisionRequest("tab-e", null)));
+        assertEquals(AgentProposalState.ACCEPTED, accepted.estado());
+        assertEquals(99L, accepted.aplicadaRevision());
+        var saved = storedDiagram.get().getContenido();
+        assertEquals(classCount, ((List<?>) saved.get("nodes")).size());
+        assertEquals(classCount - 1, ((List<?>) saved.get("edges")).size());
+        var context = DiagramContextMapper.fromDocument(saved);
+        assertEquals(classCount * attributeCount, context.entities().stream().mapToInt(e -> e.attributes().size()).sum());
+        assertEquals(1, context.entities().stream().flatMap(e -> e.attributes().stream()).filter(a -> a.primaryKey()).count());
+        assertDoesNotThrow(() -> DiagramDocumentValidator.validate(saved));
+        var reloaded = as("carlos@logicdraft.test", () -> conversationService.listarMensajes(3L, conv.id(), null, 50));
+        assertTrue(reloaded.messages().stream().anyMatch(m -> m.proposal() != null
+                && m.proposal().estado() == AgentProposalState.ACCEPTED && m.proposal().operations().size() == classCount * 2 - 1
+                && m.contenido().equals("Propuesta aplicada en la revision 99")));
+        ArgumentCaptor<CollaborationEvent> events = ArgumentCaptor.forClass(CollaborationEvent.class);
+        verify(messaging, atLeastOnce()).convertAndSend(eq("/topic/proyectos/3"), events.capture());
+        assertTrue(events.getAllValues().stream().anyMatch(e -> e.type() == CollaborationEventType.DIAGRAM_COMMITTED));
+    }
+
     private static Map<String, Object> project3RealUmlV2Document() {
         Map<String, Object> producto = classNode(
                 "entity-8a0d0094-0c00-4409-8652-b338a6aa9cb1",

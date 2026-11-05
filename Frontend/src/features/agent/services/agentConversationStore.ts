@@ -293,6 +293,7 @@ export class AgentConversationStore {
   private conversationsValue: ConversationSummary[] = []
   private activeConversationIdValue: number | null
   private timelines = new Map<number, InternalTimeline>()
+  private knownProposals = new Map<number, SharedProposal>()
   private aiStatusMap = new Map<number, AiTypingStatus>()
   private drafts = new Map<number, string>()
   private unreadMap = new Map<number, number>()
@@ -517,7 +518,7 @@ export class AgentConversationStore {
   replaceInitialMessagesPage(page: ConversationMessagesPageResponse): void {
     const timeline = this.ensureTimeline(page.conversationId)
     const hadLoadedBefore = timeline.loadedInitial
-    timeline.messages = mergeConfirmedMessages(timeline.messages, page.messages)
+    timeline.messages = mergeConfirmedMessages(timeline.messages, page.messages.map(message => this.withKnownProposal(message)))
 
     // Remove any optimistic messages that are now confirmed
     const confirmedKeys = new Set(
@@ -542,7 +543,7 @@ export class AgentConversationStore {
 
   prependOlderMessagesPage(page: ConversationMessagesPageResponse): void {
     const timeline = this.ensureTimeline(page.conversationId)
-    timeline.messages = mergeConfirmedMessages(timeline.messages, page.messages)
+    timeline.messages = mergeConfirmedMessages(timeline.messages, page.messages.map(message => this.withKnownProposal(message)))
     timeline.hasMore = page.hasMore
     timeline.nextBeforeId = page.nextBeforeId
     timeline.loadedInitial = true
@@ -606,6 +607,7 @@ export class AgentConversationStore {
   }
 
   private ingestConfirmedMessage(message: ConversationMessage, bumpTimestamp = true): void {
+    message = this.withKnownProposal(message)
     const timeline = this.ensureTimeline(message.conversationId)
     timeline.messages = mergeConfirmedMessages(timeline.messages, [message])
     if (message.clientMessageId) {
@@ -660,6 +662,9 @@ export class AgentConversationStore {
 
   upsertProposal(proposal: SharedProposal): void {
     if (proposal.projectId !== this.projectId) return
+    const previous = this.knownProposals.get(proposal.messageId)
+    if (previous?.id === proposal.id && previous.estado !== 'PENDING' && proposal.estado === 'PENDING') return
+    this.knownProposals.set(proposal.messageId, proposal)
     const timeline = this.timelines.get(proposal.conversationId)
     if (!timeline) return
     let touched = false
@@ -673,6 +678,19 @@ export class AgentConversationStore {
     if (touched) {
       this.emit()
     }
+  }
+
+  private withKnownProposal(message: ConversationMessage): ConversationMessage {
+    if (message.projectId !== this.projectId) return message
+    const previous = this.knownProposals.get(message.id)
+    const incoming = message.proposal
+    const proposal = previous && (!incoming || (previous.id === incoming.id && previous.estado !== 'PENDING' && incoming.estado === 'PENDING'))
+      ? previous : incoming
+    if (proposal && proposal.projectId === this.projectId && proposal.conversationId === message.conversationId) {
+      this.knownProposals.set(message.id, proposal)
+      return { ...message, proposal }
+    }
+    return message
   }
 
   applyCollaborationEvent(event: CollaborationEvent, ownClientId?: string): boolean {

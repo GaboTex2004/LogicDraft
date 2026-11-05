@@ -42,8 +42,13 @@ public final class AgentIntentClassifier {
 
     private AgentIntentClassifier() {}
 
+    public static String normalizeLeadingMention(String message) {
+        if (message == null) return "";
+        return message.replaceFirst("(?i)^\\s*(?:\\\\?\\*){1,2}\\s*(@logicdraft)\\s*(?:\\\\?\\*){1,2}", "$1");
+    }
+
     public static Intent classify(String message) {
-        String stripped = message == null ? "" : message.replaceFirst("(?i)^\\s*@logicdraft\\b\\s*", "");
+        String stripped = normalizeLeadingMention(message).replaceFirst("(?i)^\\s*@logicdraft\\b\\s*", "");
         String plain = Normalizer.normalize(stripped.toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "").replace('¿', ' ').replace('¡', ' ').strip();
         if (stripped.strip().startsWith("¿") || QUESTION.matcher(plain).find()

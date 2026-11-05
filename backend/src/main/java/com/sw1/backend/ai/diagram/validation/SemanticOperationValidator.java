@@ -33,7 +33,7 @@ public final class SemanticOperationValidator {
 
     public static void validate(String message, DiagramContext context, List<DiagramOperation> operations) {
         if (operations.isEmpty()) return;
-        String text = message == null ? "" : message.replaceFirst("(?i)^\\s*@logicdraft\\b\\s*", "");
+        String text = AgentIntentClassifier.normalizeLeadingMention(message).replaceFirst("(?i)^\\s*@logicdraft\\b\\s*", "");
         if (AgentIntentClassifier.classify(text) == AgentIntentClassifier.Intent.INFORMATIONAL) {
             throw rejected("Una consulta no autoriza cambios. Aclara la modificación solicitada.");
         }

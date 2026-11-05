@@ -1,6 +1,46 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { SharedProposalCard, proposalMessageText } from '../src/features/agent/components/SharedProposalCard.ts'
+
+test('seven-operation server proposal renders real controls and all terminal states', () => {
+  const fixture = JSON.parse(readFileSync(new URL('../../backend/src/test/resources/ai/compound-uml.json', import.meta.url), 'utf8'))
+  const operations = [
+    ...fixture.structure.classes.map(entity => ({ type: 'ADD_ENTITY', entity: { ...entity, kind: 'CLASS' } })),
+    ...fixture.structure.relationships.map(rel => ({ type: 'ADD_RELATIONSHIP', relationship: {
+      sourceEntity: rel.source, targetEntity: rel.target, sourceCardinality: rel.sourceCardinality, targetCardinality: rel.targetCardinality,
+    } })),
+  ]
+  for (const estado of ['PENDING', 'INVALID', 'STALE', 'ACCEPTED', 'REJECTED']) {
+    const proposal = makeProposal(9, 1, 2, { estado, operations, aplicadaRevision: 2, resultadoAplicacion: 'Motivo del servidor' })
+    const store = new AgentConversationStore(101)
+    store.upsertConversation(makeConversation(1), true)
+    store.reconcileSendResult({ userMessage: makeMessage(1, 1), agentMessage: makeMessage(2, 1, { proposal }), agentError: null })
+    const actual = store.getSnapshot().activeTimeline.messages.find(m => m.id === 2).proposal
+    assert.equal(actual.operations.length, 7)
+    const markup = renderToStaticMarkup(createElement(SharedProposalCard, { proposal: actual, canEdit: true,
+      decidingProposalId: null, impact: [], onAcceptProposal: async () => {}, onRejectProposal: async () => {} }))
+    assert.match(markup, /4 clases · 12 atributos · 3 relaciones nuevas/)
+    assert.match(markup, /Motivo del servidor/)
+    const expectedText = { PENDING: /todavía no se aplicaron/, INVALID: /No se puede aplicar.*Motivo del servidor/,
+      STALE: /diagrama cambió/, ACCEPTED: /aplicada en la revisión 2/, REJECTED: /rechazada/ }
+    assert.match(proposalMessageText(actual), expectedText[estado])
+    if (estado === 'PENDING') assert.match(markup, /Aceptar propuesta/)
+    else assert.doesNotMatch(markup, /<button/)
+  }
+})
+
+test('proposal update preceding message is retained and stale HTTP cannot restore PENDING', () => {
+  const store = new AgentConversationStore(101)
+  store.upsertConversation(makeConversation(1), true)
+  const pending = makeProposal(9, 1, 2)
+  const accepted = { ...pending, estado: 'ACCEPTED', aplicadaRevision: 2 }
+  store.applyCollaborationEvent(makeStompEvent('CONVERSATION_PROPOSAL_UPDATED', { proposal: accepted }))
+  store.reconcileSendResult({ userMessage: makeMessage(1, 1), agentMessage: makeMessage(2, 1, { proposal: pending }), agentError: null })
+  assert.equal(store.getSnapshot().activeTimeline.messages.find(m => m.id === 2).proposal.estado, 'ACCEPTED')
+})
 import {
   AgentConversationStore,
   formatMessageAuthorAndTime,
@@ -436,8 +476,10 @@ test('cableado STOMP y UI preservan cursores/bloqueos de 3.2A-3.2B e integran co
   assert.match(collabService, /CONVERSATION_PROPOSAL_UPDATED/)
   assert.match(useCollab, /isConversationCollaborationEvent\(event\.type\)/)
   assert.match(agentPanel, /LogicDraft está respondiendo/)
-  assert.match(agentPanel, /Aceptar propuesta/)
-  assert.match(agentPanel, /Rechazar/)
+  assert.match(agentPanel, /<SharedProposalCard/)
+  const card = readFileSync(new URL('../src/features/agent/components/SharedProposalCard.ts', import.meta.url), 'utf8')
+  assert.match(card, /Aceptar propuesta/)
+  assert.match(card, /Rechazar/)
   assert.match(agentPanel, /Cargar mensajes anteriores/)
   assert.match(agentPanel, /@LogicDraft/)
   assert.match(editorPage, /onLockConflict/)

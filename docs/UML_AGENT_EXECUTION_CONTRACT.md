@@ -26,6 +26,10 @@ Los rechazos semánticos de FastAPI usan HTTP 422 con `detail.code=AGENT_SEMANTI
 
 ## Aplicación y verificaciones
 
+La interpretación de creaciones compuestas sigue a cargo de Ollama con la representación compacta `classes/relationships`. `structure_grounding.py` comprueba la evidencia del mensaje por propietario: la identidad de un atributo solicitado es `(clase, nombre, tipo, PK)`. No se comparte el PK de un `ID` con otra clase. Si no se pueden asociar los atributos a un propietario, se pide aclaración; no se reparte por similitud. Una solicitud que solo indique cantidades, sin nombres y tipos de atributos, no autoriza inventarlos. Se conserva un máximo de una reparación, con motivo específico, y métricas de tiempo/tokens de Ollama sin registrar contenido del prompt.
+
+Las menciones iniciales con Markdown se normalizan también en Spring y React. Un desacuerdo de intención nunca conserva una afirmación de propuesta preparada sin operaciones. La presentación del mensaje se deriva del estado persistido (`PENDING`, `INVALID`, `STALE`), no del texto de Ollama. React conserva actualizaciones recibidas antes del mensaje e impide que un HTTP atrasado restaure `PENDING` sobre un estado final. La tarjeta se renderiza exclusivamente desde `proposal` y muestra atributos por clase. El fixture compartido `backend/src/test/resources/ai/compound-uml.json` verifica siete operaciones desde HTTP hasta aceptación y recuperación con persistencia simulada, además de renderizado real de la tarjeta con React DOM Server.
+
 Se conservan permisos OWNER/EDITOR, VIEWER de solo lectura, revisión base, locks, validación documental, persistencia atómica y eventos posteriores a commit. Ninguna respuesta del proveedor constituye confirmación del usuario. No hay migración de datos ni cambios en imágenes o generadores.
 
 Regresiones principales: `tests/agent/test_execution_plan.py`, `ContextualAgentServiceTest`, `AiServiceClientTest`, `UmlV2AgentContextAndProposalRegressionTest` y `Frontend/tests/agentAuthorization.test.mjs`. Las pruebas Java de integración usan repositorios simulados y HTTP local simulado; no PostgreSQL real.
