@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTutorTargets } from '../../tutor/hooks/useTutorTargets';
 
 export type SaveStatus =
   | "clean"
@@ -64,6 +65,7 @@ export function DiagramToolbar({
   sidebarOpen,
   propertiesOpen,
 }: DiagramToolbarProps) {
+  const target = useTutorTargets();
   const [exportOpen, setExportOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -91,10 +93,10 @@ export function DiagramToolbar({
         <small>{statusLabels[saveStatus]}</small>
       </div>
       <div className="diagram-toolbar-actions">
-        <button className="diagram-panel-toggle" type="button" aria-pressed={sidebarOpen} onClick={onToggleSidebar}>
+        <button ref={target('editor.tools', null, 'Herramientas', false)} className="diagram-panel-toggle" type="button" aria-pressed={sidebarOpen} onClick={onToggleSidebar}>
           Herramientas
         </button>
-        <button className="diagram-panel-toggle" type="button" aria-pressed={propertiesOpen} onClick={onToggleProperties}>
+        <button ref={target('editor.properties', null, 'Propiedades', false)} className="diagram-panel-toggle" type="button" aria-pressed={propertiesOpen} onClick={onToggleProperties}>
           Propiedades
         </button>
         <button className="toolbar-fit-action" type="button" onClick={onFitView}>
@@ -177,6 +179,7 @@ export function DiagramToolbar({
           type="button"
           disabled={saveStatus === "saving" || saveStatus === "clean" || saveStatus === "conflict"}
           onClick={onSave}
+          ref={target('diagram.save')}
         >
           {saveStatus === "saving" ? "Guardando..." : "Guardar"}
         </button>

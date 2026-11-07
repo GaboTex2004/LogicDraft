@@ -82,6 +82,7 @@ import {
 import { triggerBlobDownload } from "../services/generatorDownload";
 import { obtenerProyecto } from "../../project/api/projectApi";
 import type { Proyecto } from "../../project/types/project.types";
+import { TutorScope } from '../../tutor/components/TutorTargetProvider';
 import {
   guardarDiagrama,
   obtenerDiagrama,
@@ -2453,6 +2454,7 @@ function DiagramEditorCanvas({
   );
 
   return (
+    <TutorScope screen="editor" workspaceId={project.workspaceId} projectId={project.id} blocked={saveStatus === 'forbidden'}>
     <ElementLocksProvider store={lockStore}>
     <div
       className={`diagram-editor${sidebarOpen ? " is-sidebar-open" : ""}${propertiesOpen ? " is-properties-open" : ""}`}
@@ -2776,6 +2778,7 @@ function DiagramEditorCanvas({
         </ReactFlow>
       </section>
       <DiagramPropertiesPanel
+        tutorNodeId={displaySelectedNode?.id ?? null}
         onClose={() => {
           setPropertiesOpen(false);
           releaseUnusedOwnedLocks();
@@ -3135,6 +3138,7 @@ function DiagramEditorCanvas({
       )}
     </div>
     </ElementLocksProvider>
+    </TutorScope>
   );
 }
 

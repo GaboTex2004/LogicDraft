@@ -6,7 +6,7 @@ Fecha: 7 de noviembre de 2026. Catálogo v1, idioma español.
 
 El instructor enseñará a utilizar LogicDraft: mostrará instrucciones, señalará controles y esperará que el usuario complete las acciones. No ejecutará modificaciones por él ni inventará tutoriales.
 
-**Implementado en E1:** once tutoriales, textos, parámetros, destinos lógicos, condiciones declarativas y un recorrido de bienvenida. **E2:** burbuja arrastrable y panel para consultar las fichas, pendientes de revisión visual del usuario. **Pendiente:** conexión de controles, motor que compruebe condiciones, narración y resolución de peticiones. Por tanto, los comportamientos descritos a continuación son el contrato de implementación, no recorridos que ya se ejecuten en la web. El catálogo mantiene `runtimeAvailable: false` y sus destinos están marcados como pendientes de integración.
+**Implementado en E1:** once tutoriales, textos, parámetros, destinos lógicos, condiciones declarativas y un recorrido de bienvenida. **E2:** burbuja y fichas, probadas por el usuario. **E3.1/E3.2:** registro de controles y refs de React; las fichas permiten ubicar y resaltar controles visibles del contexto actual. **Pendiente:** motor que compruebe condiciones, narración y resolución de peticiones. Los recorridos siguientes siguen siendo el contrato de ejecución futura. El catálogo mantiene `runtimeAvailable: false`; `integration: 'registered'` sólo acredita que se instrumentaron controles, no que señalar uno complete un paso.
 
 Fuentes del contenido actual:
 

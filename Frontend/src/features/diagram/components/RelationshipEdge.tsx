@@ -7,6 +7,7 @@ import {
   type EdgeProps,
 } from "@xyflow/react";
 import type { DiagramEdge, EntityFlowNode } from "../types/diagram.types";
+import { useTutorTargets } from '../../tutor/hooks/useTutorTargets';
 import { deriveJoinTable } from "../services/derivedJoinTable";
 import {
   useRef,
@@ -395,6 +396,7 @@ function DerivedAssociationClassPreview({
 }
 
 export function RelationshipEdge(props: EdgeProps<DiagramEdge>) {
+  const target = useTutorTargets();
   const flow = useReactFlow<EntityFlowNode, DiagramEdge>();
   const edgeLock = useElementLock(props.id);
   const remoteLock = edgeLock && !edgeLock.ownedBySelf ? edgeLock : null;
@@ -527,6 +529,7 @@ export function RelationshipEdge(props: EdgeProps<DiagramEdge>) {
         </marker>
       </defs>
 
+      <g ref={target('relation.select', props.id, `Relación ${props.data?.name || props.id}`, false, !remoteLock)}>
       <BaseEdge
         id={props.id}
         path={path}
@@ -544,6 +547,7 @@ export function RelationshipEdge(props: EdgeProps<DiagramEdge>) {
         }}
         interactionWidth={24}
       />
+      </g>
 
       <EdgeLabelRenderer>
         {remoteLock && (

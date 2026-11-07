@@ -14,7 +14,7 @@ test('catalog and first diagram have valid dependencies, bindings and parameters
   assert.equal(tutorialCatalog.runtimeAvailable, false)
   for (const target of Object.values(tutorialCatalog.targets)) {
     assert.ok(existsSync(new URL(`../${target.sourceFile}`, import.meta.url)), target.sourceFile)
-    assert.equal(target.integration, 'pending')
+    assert.equal(target.integration, 'registered')
   }
 })
 

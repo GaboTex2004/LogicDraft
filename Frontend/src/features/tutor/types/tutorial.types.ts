@@ -14,13 +14,13 @@ export type TutorialParameterValues = Partial<{
   targetCardinality: DiagramCardinality
 }>
 
-/** Logical IDs, not CSS selectors. React refs will be registered in E3. */
+/** Logical IDs, not CSS selectors. Registered refs do not imply an executable lesson. */
 export interface TutorialTarget {
   readonly screen: TutorialScreen
   readonly sourceFile: string
   readonly control: string
   readonly instance?: TutorialBindingKind
-  readonly integration: 'pending'
+  readonly integration: 'pending' | 'registered'
 }
 
 export type TutorialCondition =

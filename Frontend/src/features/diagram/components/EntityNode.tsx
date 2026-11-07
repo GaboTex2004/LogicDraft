@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { useTutorTargets } from '../../tutor/hooks/useTutorTargets';
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useElementLock } from "../../collaboration/hooks/useElementLock";
 import type { EntityFlowNode } from "../types/diagram.types";
@@ -11,6 +12,7 @@ const SYMBOL = {
 } as const;
 
 export function EntityNode({ id, data, selected }: NodeProps<EntityFlowNode>) {
+  const target = useTutorTargets();
   const lock = useElementLock(id);
   const remoteLocked = Boolean(lock && !lock.ownedBySelf);
   const selfLocked = Boolean(lock && lock.ownedBySelf);
@@ -62,6 +64,7 @@ export function EntityNode({ id, data, selected }: NodeProps<EntityFlowNode>) {
 
   return (
     <article
+      ref={target('editor.node', id, data.name, false, !remoteLocked)}
       className={`entity-node uml-${kind.toLowerCase()} ${selected ? "is-selected" : ""}${lockClass}`}
       style={{
         width,
@@ -88,6 +91,7 @@ export function EntityNode({ id, data, selected }: NodeProps<EntityFlowNode>) {
       <Handle
         className="entity-handle"
         type="source"
+        ref={target('relation.connect', id, `Conector de ${data.name}`, true, !remoteLocked)}
         position={Position.Right}
       />
 

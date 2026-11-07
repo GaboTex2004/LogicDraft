@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AppIcon } from '../../../shared/components/AppIcon'
 import { tutorialCatalog } from '../content/catalog.ts'
+import { TutorControlLocator } from './TutorControlLocator'
+import type { TargetAddress } from '../services/tutorialTargetRegistry.ts'
 
-interface Props { style: CSSProperties; onClose: () => void; onReset: () => void; onMove: () => void }
+interface Props { style: CSSProperties; onClose: () => void; onReset: () => void; onMove: () => void; onLocate: (address: TargetAddress) => void }
 
-export function TutorPanel({ style, onClose, onReset, onMove }: Props) {
+export function TutorPanel({ style, onClose, onReset, onMove, onLocate }: Props) {
   const headingRef = useRef<HTMLHeadingElement>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const tutorial = tutorialCatalog.tutorials.find(item => item.id === selected)
@@ -29,6 +31,7 @@ export function TutorPanel({ style, onClose, onReset, onMove }: Props) {
           <div><dt>Dónde se realiza</dt><dd>{tutorial.entryScreens.map(screen => ({ dashboard: 'Dashboard', projects: 'Proyectos', editor: 'Editor' })[screen]).join(', ')}</dd></div>
           <div><dt>Acceso necesario</dt><dd>{tutorial.roles.includes('VIEWER') ? 'Acceso al proyecto o workspace' : 'Permiso de edición'}</dd></div></dl>
         <p className="tutor-preview-note">Podrás seguir esta guía en la plataforma cuando se habilite el recorrido.</p>
+        <TutorControlLocator targets={tutorial.steps.flatMap(step => [step.target, ...(step.completion.kind === 'control-ready' ? [step.completion.target] : [])])} onLocate={onLocate} />
       </div> : <nav aria-label="Catálogo de guías del instructor" className="tutor-guide-list">
         {tutorialCatalog.tutorials.map((item, index) => <button key={item.id} type="button" onClick={() => setSelected(item.id)}>
           <span className="tutor-guide-number">{String(index + 1).padStart(2, '0')}</span>

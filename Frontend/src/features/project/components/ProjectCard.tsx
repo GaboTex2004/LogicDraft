@@ -1,4 +1,5 @@
 import type { Proyecto } from '../types/project.types'
+import { useTutorTargets } from '../../tutor/hooks/useTutorTargets'
 
 interface ProjectCardProps {
   project: Proyecto
@@ -15,6 +16,7 @@ function formatDate(value: string): string {
 }
 
 export function ProjectCard({ project, deleting, onOpen, onDelete }: ProjectCardProps) {
+  const target = useTutorTargets({ screen: 'projects', workspaceId: project.workspaceId, projectId: null })
   return (
     <article className="project-card">
       <div className="project-card-heading">
@@ -31,7 +33,7 @@ export function ProjectCard({ project, deleting, onOpen, onDelete }: ProjectCard
           <button className="project-button secondary danger" type="button" disabled={deleting} onClick={() => onDelete(project)}>
             {deleting ? 'Eliminando...' : 'Eliminar'}
           </button>
-          <button className="project-button primary" type="button" onClick={() => onOpen(project.id)}>Abrir</button>
+          <button ref={target('project.open', project.id, project.nombre, false)} className="project-button primary" type="button" onClick={() => onOpen(project.id)}>Abrir</button>
         </div>
       </footer>
     </article>

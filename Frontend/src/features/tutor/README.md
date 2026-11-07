@@ -1,8 +1,39 @@
-# Instructor de LogicDraft — E1 y E2
+# Instructor de LogicDraft — E1, E2 y E3.1/E3.2
 
-Módulo independiente de `features/agent` y de la barra de IA. E1 aporta contenido y contratos; E2 monta una burbuja y un panel para explorar el catálogo en las rutas autenticadas. Todavía no hay resaltado, narración ni motor de pasos. No se hacen llamadas HTTP, a modelos ni escrituras de negocio.
+Módulo independiente de `features/agent` y de la barra de IA. E1 aporta contenido y contratos; E2 monta una burbuja y un panel en las rutas autenticadas. E3.1/E3.2 añaden registro y resaltado de controles. Todavía no hay narración ni motor de pasos. Sólo se consulta la API existente de workspaces para conocer el acceso observado; no se llama a modelos ni se hacen escrituras de negocio.
 
 ## Reglas de implementación acordadas
+
+### Contrato E3.1: registro de controles
+
+`services/tutorialTargetRegistry.ts` ofrece `createTutorialTargetRegistry<T>()`. Es un servicio en memoria independiente de React/DOM, sin singleton ni escrituras de negocio. Sus siete pruebas se incluyen en `npm.cmd run test:tutor` (21 en total).
+
+- `register(address, control, inspect)` devuelve una limpieza idempotente. Cada registro tiene identidad propia: una limpieza antigua nunca borra su reemplazo. La dirección se copia al registrar.
+- `address` contiene `sessionId` efímero (nunca token), pantalla, workspace, proyecto, ID del catálogo e instancia del elemento. Todos deben coincidir exactamente; no hay búsqueda alternativa por texto, nombre o selector CSS. Los controles repetidos exigen instancia; los controles globales del contexto usan `null`.
+- `resolve(address)` devuelve `ready` con el control, o `missing`, `ambiguous`, `unavailable`. Los duplicados no se resuelven adivinando. Cada consulta ejecuta `inspect` para comprobar `mounted`, `visible`, `enabled` y `permitted`; si falla, no entrega el control.
+- `clear()` retira todos los registros. La futura integración debe crear un registro por host y limpiarlo al cambiar de sesión; cambiar de proyecto exige nuevas direcciones y limpieza de las refs desmontadas.
+
+**Límite del registro:** sus pruebas usan controles simulados y verifican integración con los 21 destinos del catálogo; no demuestran permisos del servidor. `ready` sólo permite señalar un control, nunca acredita una acción realizada ni autoriza una escritura. E3.2 implementa el adaptador DOM descrito a continuación.
+
+### Contrato E3.2: referencias y resaltado
+
+- `TutorTargetProvider` vive en `AuthenticatedLayout`. Usa un identificador efímero y la ruta actual; una navegación invalida las direcciones anteriores. Al salir del layout se liberan las refs y su registro queda sin consumidores. No se guardan IDs ni progreso en localStorage.
+- `useTutorTargets` conecta refs nativas y compuestas (React Router/React Flow). Tolera tanto limpieza retornada de React 19 como callbacks con `null`. Sin proveedor, los componentes siguen funcionando como antes.
+- `TutorScope` aporta el proyecto y workspace cargados por el editor. Las tarjetas usan sus IDs reales. No se deducen IDs por texto o posición visual. Los controles de atributos se registran sólo para el nodo seleccionado y las relaciones estructurales no se ofrecen como editables.
+- `GET /workspaces` aporta roles al entrar/cambiar de ruta. Hasta obtener un rol conocido, o si falla esa consulta, el localizador no ofrece controles. OWNER/EDITOR permiten controles de edición; VIEWER sólo navegación/lectura. Es una instantánea de UX: Spring conserva toda autoridad; no se reemplazan validaciones ni se promete detección instantánea de revocaciones remotas. El estado `forbidden` del editor y los bloqueos observados también impiden el resaltado.
+- `inspectTutorialControl` consulta montaje, atributos hidden/inert/aria, disabled/readonly, estilos de ancestros, recorte por overflow, viewport y obstrucción por otros elementos. Los controles fuera de pantalla o tapados no se ofrecen: el usuario puede desplazar la página o mover el robot. No se hace scroll ni foco automático sobre controles del editor (enfocarlos podría solicitar locks).
+- `TutorControlLocator` lista controles disponibles de la ficha actual, con nombres para distinguir proyectos/nodos/atributos. Comprueba disponibilidad cada 300 ms sólo mientras la ficha está montada. No completa pasos mediante temporizadores.
+- `TutorHighlight` dibuja un borde sin interceptar eventos ni modificar estilos del control. Sigue su geometría mientras está activo, incluidos SVG de relaciones comunes; se cancela con Escape, clic, navegación, pérdida de disponibilidad o modal. No convierte asociaciones proyectadas/estructurales en relaciones editables. El conector registrado es el de origen derecho, conservando todos los handles existentes.
+
+**Prueba de navegador reproducible, sin dependencias nuevas:** en una terminal, desde `Frontend`, ejecutar `npm.cmd run dev -- --host 127.0.0.1 --port 5175 --strictPort`; en otra, `npm.cmd run test:tutor:browser`. Requiere Edge en Windows; `TUTOR_BROWSER` permite indicar otro ejecutable Chromium y `TUTOR_TEST_URL` otra URL local de Vite. El script crea un perfil temporal aislado y simula APIs. Comprueba la interfaz real, no un backend real ni colaboración entre usuarios. No usa credenciales reales ni escribe datos de negocio. El perfil temporal se elimina al finalizar.
+
+**Revisión manual E3.2:** abrir una ficha y usar «Señalar»; probar dashboard, proyectos y editor. Abrir/cerrar Herramientas y Propiedades, seleccionar nodos con varios atributos, cambiar de proyecto, hacer scroll/zoom, probar móvil y un usuario VIEWER. Un control tapado por el panel puede aparecer al mover el robot. Escape retira el resaltado; pulsar un control conserva su acción normal.
+
+**Siguiente entrega E3.3:** motor, bindings y evidencia semántica. `runtimeAvailable: false` se conserva; los 21 destinos declaran refs registradas, no lecciones ejecutables. No añadir voz ni clasificador hasta sus etapas.
+
+**Validación E3.2 ejecutada:** 21 pruebas de tutor, 159 de regresión, build y lint. Suite de Edge aprobada: dashboard, navegación, formulario condicional, controles repetidos, Escape, opacity/inert/aria-disabled/overflow, obstrucciones, SVG horizontal, paneles adaptables, modal, VIEWER, movimiento del robot, tamaño móvil y salida del layout. Las APIs son simuladas, incluida la liberación de locks que el editor ya realiza al desmontarse. No se valida con esto el backend ni la colaboración entre usuarios. La primera ejecución restringida no respondió a CDP; la validación final se ejecutó con permiso fuera del sandbox.
+
+### Reglas generales
 
 - Mantener un módulo propio en frontend y, sólo cuando sean necesarios, módulos `tutor` propios en Spring y FastAPI. E1 no necesita servicios nuevos ni carpetas vacías en esos proyectos.
 - Conservar las funcionalidades existentes, contratos de diagrama, permisos y comportamiento colaborativo.

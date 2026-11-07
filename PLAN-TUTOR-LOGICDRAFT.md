@@ -2,7 +2,7 @@
 
 Fecha de creación: 6 de noviembre de 2026. Actualización: 7 de noviembre de 2026.
 
-Estado: E1 aceptada y guardada por el usuario en su rama Jose. E2 implementada con validaciones automatizadas; pendiente de pruebas de interacción del usuario. No avanzar a otra etapa ni crear commits sin indicación del usuario.
+Estado: E1 y E2 aceptadas y subidas a Git por el usuario. E3.1 implementa el registro de controles y E3.2 conecta referencias, contexto y resaltado. E3 continúa pendiente de motor y recorrido completo. No avanzar a otra subetapa ni crear commits sin indicación del usuario.
 
 ## Seguimiento rápido
 
@@ -10,14 +10,14 @@ Estado: E1 aceptada y guardada por el usuario en su rama Jose. E2 implementada c
 
 **Dónde vamos:** catálogo de once tutoriales, contratos, inventario de controles, recorrido de bienvenida y validadores en `Frontend/src/features/tutor/`. E2 añade la burbuja arrastrable y el panel de consulta del catálogo. Todavía no hay motor ejecutable ni voz.
 
-**Próximo paso:** revisión visual y pruebas de interacción de E2 por el usuario. Tras su indicación, E3 conectará controles y motor de pasos; luego se validará el recorrido en texto antes de añadir voz.
+**Próximo paso:** revisar E3.2 en la web. Después, E3.3 incorporará motor y evidencia semántica, y E3.4 validará el recorrido completo en texto antes de añadir voz.
 
 | Etapa | Estado | Evidencia de cierre |
 | --- | --- | --- |
 | Planificación y propósito | Documentados | Este documento y los acuerdos de alcance |
 | E1. Catálogo y contratos | Aceptada; commit realizado por el usuario | 9 pruebas del catálogo, 159 de regresión, build y lint aprobados |
-| E2. Burbuja y panel | Implementada; interacción manual pendiente | 14 pruebas de tutor, 159 de regresión, build y lint aprobados |
-| E3. Motor de tutoriales | Pendiente | — |
+| E2. Burbuja y panel | Aceptada y subida a Git por el usuario | Pruebas automatizadas y revisión manual del usuario |
+| E3. Motor de tutoriales | E3.1 y E3.2 implementadas; E3.3–E3.4 pendientes | Registro, adaptadores React y localizador visual; motor aún no conectado |
 | E4. Bienvenida y voz | Pendiente | — |
 | E5. Ayuda contextual escrita | Pendiente | — |
 | E6. Peticiones compuestas y clasificador opcional | Pendiente | — |
@@ -430,6 +430,15 @@ La secuencia E1–E7 reemplaza la división anterior T1–T5 de este documento. 
 
 ### E3. Motor de tutoriales
 
+Se divide en entregas cerradas para evitar dejar una integración parcialmente activa:
+
+1. **E3.1 — Registro de controles (implementado):** servicio independiente, IDs del catálogo, coincidencia exacta por sesión/pantalla/workspace/proyecto/instancia, disponibilidad consultada en cada resolución y limpieza segura. Sin conexión al DOM ni cambios visibles.
+2. **E3.2 — Adaptadores y resaltado (implementado; revisión del usuario pendiente):** registro por layout autenticado, refs de React, contexto de ruta/workspace/proyecto, disponibilidad DOM y permiso observado. Las fichas ofrecen «Ubicar controles»; elegir uno cierra el panel y dibuja un borde que no intercepta clics. Escape, clic, navegación, ocultación o modal retiran el resaltado. No equivale a iniciar ni completar una lección.
+3. **E3.3 — Motor y condiciones (pendiente):** avance/pausa/cancelación, parámetros y bindings; evidencia semántica local, outputs y guardado confirmado. No dar por completado un paso porque su control esté disponible.
+4. **E3.4 — Integración del recorrido (pendiente):** conectar el panel al motor, completar proyecto → diagrama → guardado y comprobar colaboración, permisos y errores. Sólo entonces habilitar los tutoriales integrados y cerrar E3.
+
+Cada entrega requiere revisión antes de continuar. E3.2 conserva `runtimeAvailable: false`; los destinos pasan a `integration: 'registered'`, lo que indica refs disponibles y no ejecución de lecciones.
+
 **Trabajo:** ejecutar el catálogo en texto, resaltar objetivos, esperar acciones, avanzar, pausar, repetir y gestionar rutas, prerrequisitos y contexto invalidado.
 
 **Herramientas:** estado/contexto de React, funciones TypeScript comprobables, React Router y adaptadores a eventos semánticos actuales. Sin LLM.
@@ -529,6 +538,14 @@ Validación: 9 pruebas del catálogo y 159 pruebas existentes aprobadas; `npm.cm
 **7 de noviembre de 2026 — E2 implementada, revisión manual pendiente:** burbuja de robot arrastrable, movimiento por teclado, posición visual persistida y panel con las once fichas. Integración única mediante `AuthenticatedLayout`; componentes, hook, servicios de posición y estilos dentro del módulo tutor. Se amplió el componente compartido `AppIcon` con el robot, respetando la paleta existente. Sin dependencias nuevas ni llamadas a modelos. No hay ejecución de lecciones ni narración todavía.
 
 Validación: `npm.cmd run test:tutor` (14 aprobadas), `npm.cmd run test:diagram-ai` (159 aprobadas), `npm.cmd run build`, `npm.cmd run lint` y `git diff --check` correctos. Persiste la advertencia de bundle mayor a 500 kB. No se ejecutaron pruebas de interacción en navegador ni suites Java/Python; no se modificaron esos servicios, datos o contratos persistidos. La lista manual de ratón, teclado, móvil, navegación, sesión y modales está en `Frontend/src/features/tutor/README.md`. E2 queda pendiente de esa revisión antes de E3. No se crearon commits.
+
+**7 de noviembre de 2026 — E3.1 entregada:** tras la aceptación y commit de E2 por el usuario, se implementó `tutorialTargetRegistry.ts` y su contrato en el README. Seis pruebas nuevas comprueban aislamiento de contexto, los 21 destinos del catálogo, disponibilidad dinámica, duplicados, limpieza y errores de adaptador. `test:tutor`: 20 aprobadas; `test:diagram-ai`: 159 aprobadas; build, lint y revisión del diff correctos. Build mantiene la advertencia de tamaño existente. No cambian UI, dependencias, backend, ai-service, base de datos ni documentos persistidos. No se ejecutaron pruebas de navegador: aún no existe adaptador DOM. E3.1 es una base independiente terminada; E3 completa permanece pendiente. Próximo trabajo concreto: E3.2. Sin commits del asistente.
+
+**7 de noviembre de 2026 — E3.2 entregada:** proveedor de registro por layout autenticado, contexto real, refs en tarjetas y controles del editor, comprobación de disponibilidad DOM y localizador visual en las fichas. Instrumentación limitada a frontend; se conserva la lógica de negocio. Se admiten refs compuestas que limpian con `null` y refs React 19 que devuelven limpieza; Escape retira el resaltado aunque el robot conserve el foco. Los 21 destinos declaran `registered`; `runtimeAvailable` permanece falso.
+
+Validación final: `npm.cmd run test:tutor` (21 aprobadas), `npm.cmd run test:diagram-ai` (159 aprobadas), build y lint correctos. `npm.cmd run test:tutor:browser` aprobado en Edge con Vite local y APIs simuladas: navegación, controles repetidos, disponibilidad DOM, SVG, paneles adaptables, modales, VIEWER, posición del robot, móvil y desmontaje. El primer intento dentro del sandbox falló con `CDP timeout: Runtime.enable`; se repitió con permiso fuera del sandbox. El escenario respeta que el dashboard muestra una sola tarjeta de workspace y que los paneles del editor siempre están visibles en escritorio ancho. La liberación de locks existente al desmontar el editor se simula; no se ejecutan escrituras contra una base real. No se validó colaboración real ni suites Java/Python, pues no cambiaron esos servicios. Persiste la advertencia de bundle mayor a 500 kB.
+
+Revisión manual pendiente del usuario: abrir robot → ficha → «Señalar», probar selección de nodos/atributos, scroll y zoom reales. E3.3 (motor y evidencia) es el siguiente trabajo. Sin commits ni push del asistente; se conservaron los cambios de E3.1 que seguían sin commit al empezar esta sesión.
 
 Cada subetapa debe terminar con contrato actualizado, pruebas unitarias relevantes, integración necesaria, revisión de compatibilidad y diff. No avanzar con fallos funcionales. Si hay bloqueo ambiental, registrar comando y error sin declarar aprobada la validación.
 

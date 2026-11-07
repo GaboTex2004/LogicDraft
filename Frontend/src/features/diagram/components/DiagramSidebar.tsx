@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useTutorTargets } from '../../tutor/hooks/useTutorTargets';
 import { UML_RELATION_KINDS, type UmlNodeKind, type UmlRelationKind } from "../types/diagram.types";
 
 interface DiagramSidebarProps {
@@ -14,16 +15,17 @@ const ELEMENTS: ReadonlyArray<readonly [UmlNodeKind, string]> = [
 ];
 
 export function DiagramSidebar({ projectsPath, onAddNode, selectedRelationKind, onSelectRelationKind, onClose }: DiagramSidebarProps) {
+  const target = useTutorTargets();
   return <aside className="diagram-sidebar">
     <div className="diagram-brand"><span>LogicDraft</span><small>UML v2</small>
       <button className="diagram-panel-close" type="button" aria-label="Cerrar herramientas" onClick={onClose}>×</button>
     </div>
     <div className="diagram-sidebar-content"><p className="diagram-section-label">Elementos</p>
-      {ELEMENTS.map(([kind, label]) => <button key={kind} className="add-entity-button" type="button" onClick={() => { onAddNode(kind); onClose(); }}>
+      {ELEMENTS.map(([kind, label]) => <button ref={kind === 'CLASS' ? target('editor.class') : kind === 'ENTITY' ? target('editor.entity') : undefined} key={kind} className="add-entity-button" type="button" onClick={() => { onAddNode(kind); onClose(); }}>
         <span aria-hidden="true">＋</span> {label}
       </button>)}
       <p className="diagram-section-label">Relaciones UML</p>
-      {UML_RELATION_KINDS.map(kind => <button key={kind} className={`add-entity-button${selectedRelationKind === kind ? ' is-active' : ''}`} type="button" onClick={() => onSelectRelationKind(kind)}>{kind}</button>)}
+      {UML_RELATION_KINDS.map(kind => <button ref={kind === 'ASSOCIATION' ? target('relation.mode') : undefined} key={kind} className={`add-entity-button${selectedRelationKind === kind ? ' is-active' : ''}`} type="button" onClick={() => onSelectRelationKind(kind)}>{kind}</button>)}
       <p className="diagram-help">Las entidades siguen siendo persistentes; los demás elementos son UML.</p>
     </div>
     <nav className="diagram-sidebar-nav"><Link to="/dashboard">Dashboard</Link><Link to={projectsPath}>Proyectos</Link></nav>

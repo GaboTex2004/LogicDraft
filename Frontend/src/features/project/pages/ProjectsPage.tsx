@@ -10,6 +10,7 @@ import { ProjectList } from "../components/ProjectList";
 import type { Proyecto } from "../types/project.types";
 import "../project.css";
 import axios from "axios";
+import { useTutorTargets } from '../../tutor/hooks/useTutorTargets';
 import {
   confirmarImportacionEnterpriseArchitect,
   obtenerVistaPreviaEnterpriseArchitect,
@@ -25,6 +26,7 @@ function parseId(value: string | undefined): number | null {
 export function ProjectsPage() {
   const { workspaceId: workspaceIdParam } = useParams();
   const workspaceId = parseId(workspaceIdParam);
+  const target = useTutorTargets({ screen: 'projects', workspaceId, projectId: null });
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Proyecto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -241,6 +243,7 @@ export function ProjectsPage() {
         </div>
         <button
           className="project-button primary new-project-button"
+          ref={target('project.new')}
           type="button"
           disabled={workspaceId === null}
           onClick={() => setShowForm((current) => !current)}
@@ -365,6 +368,7 @@ export function ProjectsPage() {
             <label htmlFor="project-name">Nombre</label>
             <input
               id="project-name"
+              ref={target('project.name')}
               maxLength={100}
               required
               value={nombre}
@@ -381,6 +385,7 @@ export function ProjectsPage() {
             <button
               className="project-button primary"
               type="submit"
+              ref={target('project.create')}
               disabled={saving}
             >
               {saving ? "Creando..." : "Crear proyecto"}

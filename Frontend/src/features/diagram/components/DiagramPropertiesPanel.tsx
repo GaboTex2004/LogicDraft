@@ -1,4 +1,5 @@
 import type { CSSProperties, FocusEvent, KeyboardEvent } from "react";
+import { useTutorTargets } from '../../tutor/hooks/useTutorTargets';
 import {
   ATTRIBUTE_TYPES,
   DIAGRAM_CARDINALITIES,
@@ -15,6 +16,7 @@ import type { DerivedJoinTable } from '../services/derivedJoinTable';
 import { formatLockedByMessage } from '../../collaboration/services/elementLocks';
 
 interface DiagramPropertiesPanelProps {
+  tutorNodeId?: string | null;
   edge?: DiagramEdge | null;
   joinTable?: DerivedJoinTable | null;
   structuralRelationship?: boolean;
@@ -41,6 +43,7 @@ interface DiagramPropertiesPanelProps {
 }
 
 export function DiagramPropertiesPanel({
+  tutorNodeId = null,
   edge,
   joinTable,
   structuralRelationship = false,
@@ -62,6 +65,7 @@ export function DiagramPropertiesPanel({
   onDeleteMethod,
   onClose,
 }: DiagramPropertiesPanelProps) {
+  const target = useTutorTargets();
   const isLockedByOther = Boolean(lockedBy);
 
   function notifyLockedAttempt() {
@@ -156,7 +160,7 @@ export function DiagramPropertiesPanel({
         </label>
         {(['sourceCardinality', 'targetCardinality'] as const).map(end => <label key={end}>
           Cardinalidad {end === 'sourceCardinality' ? 'origen' : 'destino'}
-          <select value={cards[end]} disabled={structuralRelationship}
+          <select ref={target(end === 'sourceCardinality' ? 'relation.source' : 'relation.target', edge.id, `Cardinalidad ${end === 'sourceCardinality' ? 'origen' : 'destino'}`, true, !isLockedByOther && !structuralRelationship)} value={cards[end]} disabled={structuralRelationship}
             aria-disabled={isLockedByOther || structuralRelationship || undefined}
             onMouseDown={event => {
               if (isLockedByOther) {
@@ -224,6 +228,7 @@ export function DiagramPropertiesPanel({
           <label htmlFor="entity-name">Nombre</label>
           <input
             id="entity-name"
+            ref={tutorNodeId ? target('node.name', tutorNodeId, `Nombre de ${entity.name}`, true, !isLockedByOther) : undefined}
             maxLength={100}
             value={entity.name}
             readOnly={isLockedByOther}
@@ -266,6 +271,7 @@ export function DiagramPropertiesPanel({
           <div className="attributes-heading">
             <span>Atributos</span>
             <button
+              ref={tutorNodeId ? target('attribute.add', tutorNodeId, `Agregar atributo a ${entity.name}`, true, !isLockedByOther) : undefined}
               type="button"
               aria-disabled={isLockedByOther || undefined}
               onClick={() => {
@@ -293,6 +299,7 @@ export function DiagramPropertiesPanel({
                 <div className="attribute-name-row">
                   <input
                     aria-label="Nombre del atributo"
+                    ref={target('attribute.name', attribute.id, `Nombre: ${entity.name}.${attribute.name}`, true, !isLockedByOther)}
                     maxLength={100}
                     value={attribute.name}
                     readOnly={isLockedByOther}
@@ -328,6 +335,7 @@ export function DiagramPropertiesPanel({
                 </div>
                 <select
                   aria-label={`Tipo de ${attribute.name}`}
+                  ref={target('attribute.type', attribute.id, `Tipo: ${entity.name}.${attribute.name}`, true, !isLockedByOther)}
                   value={attribute.type}
                   disabled={Boolean(entity.association && attribute.primaryKey)}
                   aria-disabled={isLockedByOther || Boolean(entity.association && attribute.primaryKey) || undefined}
@@ -357,6 +365,7 @@ export function DiagramPropertiesPanel({
                   <input
                     type="checkbox"
                     checked={attribute.primaryKey}
+                    ref={target('attribute.pk', attribute.id, `Clave primaria: ${entity.name}.${attribute.name}`, true, !isLockedByOther)}
                     disabled={Boolean(entity.association && attribute.primaryKey)}
                     aria-disabled={isLockedByOther || Boolean(entity.association && attribute.primaryKey) || undefined}
                     onClick={(event) => {
