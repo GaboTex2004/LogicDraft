@@ -1,0 +1,80 @@
+/* Same charcoal/periwinkle palette as dashboard, projects and diagram editor.
+   Scoped names: never overrides the existing application's controls. */
+.tutor-host {
+  --tutor-bg: #18181b;
+  --tutor-surface: #201f22;
+  --tutor-border: #454650;
+  --tutor-text: #e5e1e4;
+  --tutor-muted: #aaa9b5;
+  --tutor-accent: #b8c4ff;
+  color: var(--tutor-text);
+  font: 13px/1.5 "JetBrains Mono", Consolas, monospace;
+}
+.tutor-host[hidden] { display: none; }
+.tutor-host *, .tutor-host *::before, .tutor-host *::after { box-sizing: border-box; }
+.tutor-host button { font: inherit; cursor: pointer; }
+.tutor-host button:focus-visible { outline: 2px solid var(--tutor-accent); outline-offset: 3px; }
+.tutor-bubble {
+  position: fixed;
+  z-index: 39;
+  width: 56px;
+  height: 56px;
+  padding: 12px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--tutor-accent);
+  border-radius: 50%;
+  background: var(--tutor-surface);
+  color: var(--tutor-accent);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 35%);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tutor-bubble svg { width: 30px; height: 30px; pointer-events: none; }
+.tutor-bubble:hover { background: #2a2a2c; }
+.tutor-bubble.is-dragging { cursor: grabbing; }
+.tutor-bubble.is-positioning { outline: 3px dashed var(--tutor-accent); outline-offset: 4px; cursor: move; }
+.tutor-panel {
+  position: fixed;
+  z-index: 39;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--tutor-border);
+  border-radius: 16px;
+  background: var(--tutor-bg);
+  color: var(--tutor-text);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 40%);
+  isolation: isolate;
+}
+.tutor-panel-header { display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid var(--tutor-border); flex-shrink: 0; }
+.tutor-panel-avatar { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--tutor-surface); color: var(--tutor-accent); }
+.tutor-panel-avatar svg { width: 26px; height: 26px; }
+.tutor-eyebrow { color: var(--tutor-muted); font-size: 9px; letter-spacing: .12em; }
+.tutor-panel h2 { color: var(--tutor-text); font: 600 18px/1.3 Sora, system-ui, sans-serif; margin: 0; }
+.tutor-close { margin-left: auto; border: 0; background: transparent; color: var(--tutor-muted); padding: 6px 10px; font-size: 24px !important; }
+.tutor-panel-content { padding: 16px; overflow-y: auto; min-height: 0; flex: 1; overscroll-behavior: contain; }
+.tutor-introduction { font-size: 13px; color: var(--tutor-text); }
+.tutor-availability { margin-top: 8px; color: var(--tutor-muted); font-size: 11px; }
+.tutor-guide-list { display: grid; gap: 6px; margin-top: 16px; }
+.tutor-guide-list button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 10px; text-align: left; background: var(--tutor-surface); color: var(--tutor-text); border: 1px solid transparent; border-radius: 8px; font-size: 12px; }
+.tutor-guide-list button:hover { border-color: var(--tutor-border); }
+.tutor-guide-list svg { width: 16px; height: 16px; flex: 0 0 16px; margin-left: auto; color: var(--tutor-accent); }
+.tutor-guide-number { color: var(--tutor-accent); font-size: 10px; }
+.tutor-panel-footer { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-top: 1px solid var(--tutor-border); flex-shrink: 0; }
+.tutor-panel-footer button, .tutor-back { color: var(--tutor-accent); background: transparent; border: 1px solid var(--tutor-border); border-radius: 6px; padding: 7px 8px; font-size: 10px !important; }
+.tutor-back { margin: 16px 0; }
+.tutor-preview h3 { font: 600 17px/1.4 Sora, system-ui, sans-serif; margin: 0 0 10px; }
+.tutor-preview p, .tutor-preview dl { font-size: 12px; color: var(--tutor-muted); }
+.tutor-preview dl div { margin: 14px 0; }
+.tutor-preview dd { margin: 3px 0 0; color: var(--tutor-text); }
+.tutor-preview-note { border-left: 2px solid var(--tutor-accent); padding-left: 10px; }
+.tutor-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+@media (max-width: 600px) {
+  .tutor-panel { border-radius: 12px; }
+  .tutor-panel-footer button { min-height: 36px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tutor-host * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

@@ -2,21 +2,21 @@
 
 Fecha de creación: 6 de noviembre de 2026. Actualización: 7 de noviembre de 2026.
 
-Estado: E1 implementada y validada técnicamente; pendiente de revisión del usuario. El resto del documento describe funciones futuras. No avanzar a otra etapa ni crear commits sin indicación del usuario.
+Estado: E1 aceptada y guardada por el usuario en su rama Jose. E2 implementada con validaciones automatizadas; pendiente de pruebas de interacción del usuario. No avanzar a otra etapa ni crear commits sin indicación del usuario.
 
 ## Seguimiento rápido
 
 **Propósito:** que una persona que nunca utilizó LogicDraft pueda crear y guardar un diagrama sencillo siguiendo al instructor, sin ayuda externa. El instructor enseña a usar la plataforma mediante tutoriales predefinidos; no modifica el diagrama por el usuario ni funciona como chat general.
 
-**Dónde vamos:** catálogo de once tutoriales, contratos, inventario de controles, recorrido de bienvenida y validadores implementados en `Frontend/src/features/tutor/`. Todavía no hay interfaz ni motor ejecutable del tutor; la aplicación conserva su apariencia y comportamiento.
+**Dónde vamos:** catálogo de once tutoriales, contratos, inventario de controles, recorrido de bienvenida y validadores en `Frontend/src/features/tutor/`. E2 añade la burbuja arrastrable y el panel de consulta del catálogo. Todavía no hay motor ejecutable ni voz.
 
-**Próximo paso:** revisión y pruebas del usuario sobre E1. Después de su indicación, E2 (burbuja y panel). Luego se validará el recorrido en texto antes de añadir voz.
+**Próximo paso:** revisión visual y pruebas de interacción de E2 por el usuario. Tras su indicación, E3 conectará controles y motor de pasos; luego se validará el recorrido en texto antes de añadir voz.
 
 | Etapa | Estado | Evidencia de cierre |
 | --- | --- | --- |
 | Planificación y propósito | Documentados | Este documento y los acuerdos de alcance |
-| E1. Catálogo y contratos | Completada técnicamente; revisión del usuario pendiente | 9 pruebas del catálogo, 159 de regresión, build y lint aprobados |
-| E2. Burbuja y panel | Pendiente | — |
+| E1. Catálogo y contratos | Aceptada; commit realizado por el usuario | 9 pruebas del catálogo, 159 de regresión, build y lint aprobados |
+| E2. Burbuja y panel | Implementada; interacción manual pendiente | 14 pruebas de tutor, 159 de regresión, build y lint aprobados |
 | E3. Motor de tutoriales | Pendiente | — |
 | E4. Bienvenida y voz | Pendiente | — |
 | E5. Ayuda contextual escrita | Pendiente | — |
@@ -525,6 +525,10 @@ Al cerrar cada etapa añadir una entrada con: fecha, etapa, resultado entregado,
 **7 de noviembre de 2026 — E1 entregada:** módulo `Frontend/src/features/tutor/` con contratos de catálogo/contexto/evidencia/progreso, 21 destinos lógicos documentados, once tutoriales, trece instancias en el recorrido de bienvenida, mensajes cerrados y validación de autoría. Script `npm.cmd run test:tutor` y pruebas en `Frontend/tests/tutorCatalog.test.mjs`. Documentación del contrato y condiciones de integración en el README del módulo.
 
 Validación: 9 pruebas del catálogo y 159 pruebas existentes aprobadas; `npm.cmd run build` y `npm.cmd run lint` correctos. Build conserva la advertencia de bundle mayor a 500 kB. Sin cambios en endpoints, permisos, datos, estilos ni formato persistido; backend/ai-service no requieren implementación en E1. No se ejecutaron pruebas Java/Python porque no se cambiaron esos servicios. Los destinos todavía no están registrados en React y las condiciones son declaraciones, no un motor en funcionamiento. Pendiente de pruebas/revisión del usuario; sin commits. Los cambios previos de `Frontend/package-lock.json` y `backend/src/main/resources/application.properties` se conservaron.
+
+**7 de noviembre de 2026 — E2 implementada, revisión manual pendiente:** burbuja de robot arrastrable, movimiento por teclado, posición visual persistida y panel con las once fichas. Integración única mediante `AuthenticatedLayout`; componentes, hook, servicios de posición y estilos dentro del módulo tutor. Se amplió el componente compartido `AppIcon` con el robot, respetando la paleta existente. Sin dependencias nuevas ni llamadas a modelos. No hay ejecución de lecciones ni narración todavía.
+
+Validación: `npm.cmd run test:tutor` (14 aprobadas), `npm.cmd run test:diagram-ai` (159 aprobadas), `npm.cmd run build`, `npm.cmd run lint` y `git diff --check` correctos. Persiste la advertencia de bundle mayor a 500 kB. No se ejecutaron pruebas de interacción en navegador ni suites Java/Python; no se modificaron esos servicios, datos o contratos persistidos. La lista manual de ratón, teclado, móvil, navegación, sesión y modales está en `Frontend/src/features/tutor/README.md`. E2 queda pendiente de esa revisión antes de E3. No se crearon commits.
 
 Cada subetapa debe terminar con contrato actualizado, pruebas unitarias relevantes, integración necesaria, revisión de compatibilidad y diff. No avanzar con fallos funcionales. Si hay bloqueo ambiental, registrar comando y error sin declarar aprobada la validación.
 

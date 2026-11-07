@@ -1,8 +1,9 @@
 import type { ReactNode, SVGProps } from 'react'
 
-export type AppIconName = 'ai' | 'arrow' | 'dashboard' | 'diagram' | 'folder' | 'help' | 'logout' | 'menu' | 'people' | 'search' | 'settings' | 'workspace'
+export type AppIconName = 'ai' | 'arrow' | 'dashboard' | 'diagram' | 'folder' | 'help' | 'logout' | 'menu' | 'people' | 'search' | 'settings' | 'workspace' | 'robot'
 interface AppIconProps extends SVGProps<SVGSVGElement> { name: AppIconName }
 const paths: Record<AppIconName, ReactNode> = {
+  robot: <><path d="M12 3v3M9 3h6M3 11H1m22 0h-2M7 20v-2m10 2v-2" /><rect x="3" y="6" width="18" height="12" rx="4" /><path d="M8 11h.01M16 11h.01M9 15h6" /></>,
   ai: <path d="m12 3 1.3 4.2 4.2 1.3-4.2 1.3L12 14l-1.3-4.2-4.2-1.3 4.2-1.3L12 3Zm6 10 .8 2.2L21 16l-2.2.8L18 19l-.8-2.2L15 16l2.2-.8L18 13ZM6 14l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z" />,
   arrow: <path d="M5 12h14m-5-5 5 5-5 5" />, dashboard: <path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h6v6h-6v-6Z" />,
   diagram: <path d="M9 4h6v5H9V4ZM4 15h6v5H4v-5Zm10 0h6v5h-6v-5Zm-2-6v3m-5 0h10M7 12v3m10-3v3" />, folder: <path d="M3 6h7l2 2h9v11H3V6Z" />,

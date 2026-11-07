@@ -1,6 +1,6 @@
-# Instructor de LogicDraft — E1
+# Instructor de LogicDraft — E1 y E2
 
-Catálogo de contenido y contratos, independiente de `features/agent` y de la barra de IA. No está montado en React: aún no hay burbuja, resaltado, narración, selector ni motor de pasos. No se hacen llamadas HTTP, a modelos ni escrituras de negocio al importar este módulo.
+Módulo independiente de `features/agent` y de la barra de IA. E1 aporta contenido y contratos; E2 monta una burbuja y un panel para explorar el catálogo en las rutas autenticadas. Todavía no hay resaltado, narración ni motor de pasos. No se hacen llamadas HTTP, a modelos ni escrituras de negocio.
 
 ## Reglas de implementación acordadas
 
@@ -49,7 +49,7 @@ Los `prerequisites` son guías de navegación condicionales, no una orden de rep
 
 ## Reglas obligatorias para el motor futuro
 
-1. `runtimeAvailable: false` evita anunciar el catálogo como guía integrada. No añadirlo a una UI hasta implementar adaptadores, permisos observados y registro real de controles.
+1. `runtimeAvailable: false` evita anunciar el catálogo como guía ejecutable. E2 permite consultar sus fichas con un aviso explícito; no habilitar el inicio de recorridos hasta implementar adaptadores, permisos observados y registro real de controles.
 2. La bienvenida empieza con un workspace elegido (`chosenWorkspace`), no con un ID inventado. `client`, `order`, etc. son slots del ejercicio: los eventos locales producen los IDs reales. Dos creaciones del mismo tutorial conservan identidad propia.
 3. Los parámetros son explícitos. No utilizar nombres del ejercicio como valores por defecto para solicitudes libres. Interpolar como texto, nunca HTML; convertir cardinalidades a las etiquetas del servicio existente `CARDINALITY_LABELS` antes de narrarlas. Tipos visibles del editor: `INTEGER`, `VARCHAR`, etc., no aliases del modelo.
 4. `created` requiere un evento local posterior al inicio del paso, dentro del proyecto correcto, y el elemento presente en el estado actual. Para proyecto requiere respuesta API exitosa; para nodo/atributo/arista verifica IDs y pertenencia. No completar por mera coincidencia de nombre ni por eventos remotos.
@@ -66,4 +66,17 @@ La validación estática comprueba consistencia del contenido, no demuestra que 
 
 ## Revisión visual pendiente del usuario
 
-E1 puede revisarse leyendo las instrucciones en `content/catalog.ts` y ejecutando las pruebas. La web debe verse igual. La burbuja será E2, después de esta revisión. Documento de seguimiento principal: `PLAN-TUTOR-LOGICDRAFT.md` en la raíz.
+E2 incorpora `components/`, `hooks/useDraggableBubble.ts`, servicios de posición y `tutor.css`. `AuthenticatedLayout` mantiene una sola instancia entre rutas y la desmonta al salir de las rutas autenticadas. Se reutiliza `AppIcon` con un icono de robot. No requiere dependencias nuevas, modelos ni cambios en backend/ai-service.
+
+La posición se guarda como preferencia visual versionada en `localStorage`, sin identidad ni progreso. Se limita al viewport al cargar y redimensionar. El panel es no modal y cede prioridad a los diálogos modales existentes. Arrastrar no debe abrir el panel; F2 activa movimiento con flechas, Intro confirma y Escape restaura la posición. El botón «Mover con teclado» ofrece la misma acción.
+
+Pruebas manuales pendientes antes de E3:
+
+1. Iniciar sesión: comprobar una única burbuja en dashboard, proyectos, colaboración y editor; ninguna en login/registro.
+2. Abrir el catálogo, consultar una ficha, regresar y cerrar con Escape; comprobar que el foco vuelve al robot.
+3. Arrastrar con ratón y pantalla táctil hasta los cuatro bordes; soltar no debe abrir/cerrar el panel.
+4. Mover con F2 y flechas, confirmar con Intro y cancelar con Escape. Probar el botón de movimiento y restablecer posición.
+5. Recargar y navegar entre rutas: conservar posición. Reducir la ventana y probar móvil/teclado virtual: mantener controles alcanzables.
+6. Abrir un modal existente y comprobar prioridad de foco; comprobar que teclado y arrastre del tutor no activan herramientas del editor.
+
+Validación automatizada: `npm.cmd run test:tutor` incluye catálogo, geometría y preferencias; no sustituye estas pruebas de interacción real. Documento de seguimiento: `PLAN-TUTOR-LOGICDRAFT.md` en la raíz.

@@ -6,6 +6,7 @@ import { DashboardPage } from '../features/dashboard/pages/DashboardPage'
 import { DiagramEditorPage } from '../features/diagram/pages/DiagramEditorPage'
 import { ProjectsPage } from '../features/project/pages/ProjectsPage'
 import { ProtectedRoute } from '../shared/components/ProtectedRoute'
+import { AuthenticatedLayout } from './AuthenticatedLayout'
 
 export const router = createBrowserRouter([
   {
@@ -22,7 +23,7 @@ export const router = createBrowserRouter([
   },
   {
     element: <ProtectedRoute />,
-    children: [
+    children: [{ element: <AuthenticatedLayout />, children: [
       {
         path: '/dashboard',
         element: <DashboardPage />,
@@ -39,6 +40,6 @@ export const router = createBrowserRouter([
         path: '/proyectos/:projectId/editor',
         element: <DiagramEditorPage />,
       },
-    ],
+    ] }],
   },
 ])
