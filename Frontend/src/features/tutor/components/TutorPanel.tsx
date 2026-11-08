@@ -3,6 +3,7 @@ import { AppIcon } from '../../../shared/components/AppIcon'
 import { tutorialCatalog } from '../content/catalog.ts'
 import { TutorControlLocator } from './TutorControlLocator'
 import type { TargetAddress } from '../services/tutorialTargetRegistry.ts'
+import { TutorLessonControls } from './TutorLessonControls'
 
 interface Props { style: CSSProperties; onClose: () => void; onReset: () => void; onMove: () => void; onLocate: (address: TargetAddress) => void }
 
@@ -22,7 +23,9 @@ export function TutorPanel({ style, onClose, onReset, onMove, onLocate }: Props)
     </header>
     <div className="tutor-panel-content">
       <p className="tutor-introduction">Tu guía para crear diagramas, paso a paso.</p>
-      <p className="tutor-availability" role="note">Explora el catálogo. Los recorridos guiados y la voz estarán disponibles próximamente.</p>
+      {tutorial && <button type="button" className="tutor-back" onClick={() => setSelected(null)}>Mi primer diagrama · recorrido completo</button>}
+      <p className="tutor-availability" role="note">Sigue las instrucciones y realiza las acciones en la plataforma. La voz se añadirá en la siguiente etapa.</p>
+      <TutorLessonControls key={selected ?? 'journey'} tutorial={tutorial} />
       {tutorial ? <div className="tutor-preview">
         <button className="tutor-back" type="button" onClick={() => setSelected(null)}>← Todas las guías</button>
         <h3>{tutorial.title}</h3>

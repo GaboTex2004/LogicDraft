@@ -83,6 +83,8 @@ import { triggerBlobDownload } from "../services/generatorDownload";
 import { obtenerProyecto } from "../../project/api/projectApi";
 import type { Proyecto } from "../../project/types/project.types";
 import { TutorScope } from '../../tutor/components/TutorTargetProvider';
+import { useTutorRuntime } from '../../tutor/hooks/useTutorRuntime';
+import { localNodeEvidence, tutorialDiagramItems } from '../../tutor/services/tutorialDiagramAdapter';
 import {
   guardarDiagrama,
   obtenerDiagrama,
@@ -288,6 +290,7 @@ function DiagramEditorCanvas({
   const [syncError, setSyncError] = useState("");
   const synchronizerRef = useRef<DiagramSynchronizer | null>(null);
   const [documentRevision, setDocumentRevision] = useState(0);
+  const tutor = useTutorRuntime();
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiMessage, setAiMessage] = useState("");
@@ -1510,6 +1513,7 @@ function DiagramEditorCanvas({
 
   const onConnect = useCallback(
     (connection: Connection) => {
+      const tutorTicket = tutor?.capture() ?? null;
       if (
         !connection.source ||
         !connection.target ||
@@ -1570,6 +1574,7 @@ function DiagramEditorCanvas({
           publish: (kind, updated) => {
             publishLiveEvent(kind, { edge: serializeEdge(updated) });
             agentSession.record(kind, { edgeId: updated.id });
+            tutor?.emit(tutorTicket, { action: 'created', entity: 'relationship', entityId: updated.id, sourceId: updated.source, targetId: updated.target, relationKind: selectedRelationKind });
           },
         });
       })();
@@ -1582,6 +1587,7 @@ function DiagramEditorCanvas({
       publishLiveEvent,
       saveStatus,
       selectedRelationKind,
+      tutor,
       setEdges,
       showLockNotice,
     ],
@@ -1615,6 +1621,7 @@ function DiagramEditorCanvas({
   }
 
   function addUmlNode(kind: UmlNodeKind = "ENTITY") {
+    const tutorTicket = tutor?.capture() ?? null;
     const number = nextEntityNumber.current++;
     const id = `entity-${crypto.randomUUID()}`;
     const baseName =
@@ -1656,7 +1663,7 @@ function DiagramEditorCanvas({
     setSelectedNodeId(id);
     setSelectedEdgeIds([]);
     if (saveStatus !== "forbidden") {
-      void ensureLocks([id]);
+      void ensureLocks([id]).then(granted => { if (granted && (kind === 'CLASS' || kind === 'ENTITY')) tutor?.emit(tutorTicket, { action: 'created', entity: 'node', entityId: id, nodeKind: kind }); });
       publishLiveEvent("NODE_CREATED", { node: serializeNode(node) });
     }
     agentSession.record("NODE_CREATED", { nodeId: id });
@@ -1687,6 +1694,7 @@ function DiagramEditorCanvas({
   function updateSelectedEntity(
     update: (node: EntityFlowNode) => EntityFlowNode,
   ) {
+    const tutorTicket = tutor?.capture() ?? null;
     if (!selectedNode || saveStatus === "forbidden") {
       if (selectedLockedBy) {
         showLockNotice(formatLockedByMessage(selectedLockedBy.label));
@@ -1724,9 +1732,12 @@ function DiagramEditorCanvas({
     scheduleNodeUpdatedPreview(updated.id);
     agentSession.record("NODE_UPDATED", { nodeId: updated.id });
     markDirty();
+    const reportTutorEdit = () => { for (const action of localNodeEvidence(previousSnapshot, updated)) tutor?.emit(tutorTicket, action); };
+    if (alreadyOwned) reportTutorEdit();
     if (!alreadyOwned) {
       void ensureLocks(lockIds).then((granted) => {
-        if (!granted) {
+        if (granted) reportTutorEdit();
+        else {
           const restored = nodesRef.current.map((node) =>
             node.id === previousSnapshot.id ? previousSnapshot : node,
           );
@@ -1965,6 +1976,7 @@ function DiagramEditorCanvas({
       }
 
       const savedRevision = revisionRef.current;
+      const tutorTicket = tutor?.capture() ?? null;
       const document = serializeDocument(nodesRef.current, edgesRef.current);
       const documentFingerprint = JSON.stringify(document);
       try {
@@ -2039,6 +2051,9 @@ function DiagramEditorCanvas({
             );
           }
 
+          if (saved.proyectoId === project.id && revisionRef.current === savedRevision && persistedRevisionRef.current === savedRevision) {
+            tutor?.emit(tutorTicket, { action: 'saved', acknowledgedLocalRevision: savedRevision, acknowledgedServerRevision: saved.revision });
+          }
           releaseUnusedOwnedLocks(activePropertiesFocusIds());
           return true;
         })
@@ -2099,6 +2114,7 @@ function DiagramEditorCanvas({
       showLockNotice,
       syncLocks,
       updateConfirmedDocument,
+      tutor,
     ],
   );
 
@@ -2453,11 +2469,27 @@ function DiagramEditorCanvas({
     [handleSave],
   );
 
+  useEffect(() => {
+    tutor?.publish({ path: `/proyectos/${project.id}/editor`, screen: 'editor', workspaceId: project.workspaceId, projectId: project.id,
+      items: [{ kind: 'project', id: project.id, projectId: project.id, workspaceId: project.workspaceId, fields: { name: project.nombre } },
+        ...tutorialDiagramItems(project.workspaceId, project.id, nodes, edges, id => Boolean(lockStore.findForeignLock([id])))],
+      selected: { ...(selectedNodeId ? { node: selectedNodeId } : {}), ...(selectedEdgeIds.length === 1 ? { relationship: selectedEdgeIds[0] } : {}) },
+      inputs: {}, documentVersion: serializeDocument(nodes, edges).version, localRevision: revisionRef.current, persistedLocalRevision: persistedRevisionRef.current,
+      serverRevision: serverRevisionRef.current, saveState: saveStatus, relationKind: selectedRelationKind });
+  }, [tutor, project, nodes, edges, selectedNodeId, selectedEdgeIds, selectedRelationKind, documentRevision, saveStatus, activeLocksMap, lockStore]);
+  useEffect(() => () => tutor?.clearScene(`/proyectos/${project.id}/editor`), [tutor, project.id]);
+
   return (
     <TutorScope screen="editor" workspaceId={project.workspaceId} projectId={project.id} blocked={saveStatus === 'forbidden'}>
     <ElementLocksProvider store={lockStore}>
     <div
       className={`diagram-editor${sidebarOpen ? " is-sidebar-open" : ""}${propertiesOpen ? " is-properties-open" : ""}`}
+      onKeyUpCapture={event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const element = (event.target as Element).closest('.react-flow__node, .react-flow__edge');
+        const id = element?.getAttribute('data-id');
+        if (id) tutor?.emit(tutor.capture(), { action: 'selected', entity: element!.classList.contains('react-flow__node') ? 'node' : 'relationship', entityId: id });
+      }}
     >
       {(sidebarOpen || propertiesOpen) && (
         <button
@@ -2474,7 +2506,7 @@ function DiagramEditorCanvas({
         projectsPath={`/workspaces/${project.workspaceId}/proyectos`}
         onAddNode={addUmlNode}
         selectedRelationKind={selectedRelationKind}
-        onSelectRelationKind={setSelectedRelationKind}
+        onSelectRelationKind={kind => { const ticket = tutor?.capture() ?? null; setSelectedRelationKind(kind); tutor?.emit(ticket, { action: 'changed', field: 'relationKind', value: kind }); }}
         onClose={() => setSidebarOpen(false)}
       />
       <input
@@ -2637,6 +2669,8 @@ function DiagramEditorCanvas({
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
           onSelectionChange={handleSelectionChange}
+          onNodeClick={(_, node) => tutor?.emit(tutor.capture(), { action: 'selected', entity: 'node', entityId: node.id })}
+          onEdgeClick={(_, edge) => tutor?.emit(tutor.capture(), { action: 'selected', entity: 'relationship', entityId: edge.id })}
           onNodeDoubleClick={(_, node) => {
             const foreign = lockStore.findForeignLock(
               requiredLockIdsForNodeEdit(node.id, nodesRef.current),
@@ -2817,6 +2851,7 @@ function DiagramEditorCanvas({
           });
         }}
         onChangeCardinality={(end, value) => {
+          const tutorTicket = tutor?.capture() ?? null;
           if (!selectedEdge) {
             if (selectedLockedBy) {
               showLockNotice(formatLockedByMessage(selectedLockedBy.label));
@@ -2839,9 +2874,7 @@ function DiagramEditorCanvas({
             return;
           }
           lastLockActivityAtRef.current = Date.now();
-          if (!lockStore.areAllOwnedBySelf(edgeLockIds)) {
-            void ensureLocks(edgeLockIds);
-          }
+          const tutorLockResult = lockStore.areAllOwnedBySelf(edgeLockIds) ? Promise.resolve(true) : ensureLocks(edgeLockIds);
           const data = { ...selectedEdge.data, [end]: value };
           if (
             !(
@@ -2870,6 +2903,7 @@ function DiagramEditorCanvas({
               },
             },
           );
+          if (changed) void tutorLockResult.then(granted => { if (granted) tutor?.emit(tutorTicket, { action: 'changed', entity: 'relationship', entityId: selectedEdge.id, field: end, value }); });
           if (!changed)
             setAiMessage(
               "Sin cambios: la relación es equivalente a otra existente.",

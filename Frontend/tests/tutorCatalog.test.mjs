@@ -11,7 +11,7 @@ const copy = () => structuredClone(tutorialCatalog)
 test('catalog and first diagram have valid dependencies, bindings and parameters', () => {
   assert.deepEqual(validateTutorialCatalog(tutorialCatalog), [])
   assert.deepEqual(validateTutorialJourney(tutorialCatalog, firstDiagram, initial), [])
-  assert.equal(tutorialCatalog.runtimeAvailable, false)
+  assert.equal(tutorialCatalog.runtimeAvailable, true)
   for (const target of Object.values(tutorialCatalog.targets)) {
     assert.ok(existsSync(new URL(`../${target.sourceFile}`, import.meta.url)), target.sourceFile)
     assert.equal(target.integration, 'registered')

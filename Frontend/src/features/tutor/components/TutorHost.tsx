@@ -6,6 +6,8 @@ import { TutorPanel } from './TutorPanel'
 import '../tutor.css'
 import { TutorHighlight } from './TutorHighlight'
 import type { TargetAddress } from '../services/tutorialTargetRegistry.ts'
+import { TutorLessonControls } from './TutorLessonControls'
+import { TutorGuideHighlight } from './TutorGuideHighlight'
 
 export function TutorHost() {
   const [open, setOpen] = useState(false)
@@ -33,6 +35,8 @@ export function TutorHost() {
     event.stopPropagation()
     if (event.key === 'Escape' && open && !drag.keyboardMove) { event.preventDefault(); close() }
   }}>
+    <TutorGuideHighlight />
+    {!open && <div className="tutor-active-card"><TutorLessonControls compact /></div>}
     {highlight && <TutorHighlight address={highlight} onDismiss={dismissHighlight} />}
     <span id="logicdraft-tutor-position-help" className="tutor-sr-only">
       Pulsa F2 para mover el robot con las flechas. Mayúsculas mueve más rápido. Intro confirma y Escape cancela.

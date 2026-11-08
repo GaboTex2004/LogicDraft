@@ -27,6 +27,7 @@ export type TutorialCondition =
   | { readonly kind: 'screen'; readonly screen: TutorialScreen; readonly scope: 'workspace' | 'project' }
   | { readonly kind: 'control-ready'; readonly target: string }
   | { readonly kind: 'input-matches'; readonly parameter: TutorialParameter }
+  | { readonly kind: 'input-valid'; readonly parameter: 'projectName' }
   | { readonly kind: 'created'; readonly entity: TutorialBindingKind; readonly capture: TutorialBinding; readonly nodeKind?: 'CLASS' | 'ENTITY' }
   | { readonly kind: 'selected'; readonly binding: TutorialBinding }
   | { readonly kind: 'field-matches'; readonly binding: TutorialBinding; readonly field: 'name' | 'type' | 'sourceCardinality' | 'targetCardinality'; readonly parameter: TutorialParameter }
@@ -64,7 +65,7 @@ export interface TutorialDefinition {
 export interface TutorialCatalog {
   readonly version: 1
   readonly locale: 'es'
-  readonly runtimeAvailable: false
+  readonly runtimeAvailable: boolean
   readonly targets: Readonly<Record<string, TutorialTarget>>
   readonly tutorials: readonly TutorialDefinition[]
 }

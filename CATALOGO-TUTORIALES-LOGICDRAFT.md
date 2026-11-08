@@ -1,5 +1,7 @@
 # Tutoriales de LogicDraft: cuándo actuar y cómo comprobar los pasos
 
+**E3.4 en revisión:** ya se pueden iniciar las fichas con IDs y parámetros explícitos; el dashboard ofrece el recorrido completo. Se conectaron acciones locales y guardado confirmado al motor. `runtimeAvailable: true`. Se validaron en Edge con APIs simuladas las guías de creación de clase y guardado; aún falta validar el recorrido completo de trece lecciones antes de cerrar E3. Las notas históricas siguientes describen los estados previos.
+
 Fecha: 7 de noviembre de 2026. Catálogo v1, idioma español.
 
 ## Propósito y estado
@@ -9,6 +11,8 @@ El instructor enseñará a utilizar LogicDraft: mostrará instrucciones, señala
 **Implementado en E1:** once tutoriales, textos, parámetros, destinos lógicos, condiciones declarativas y un recorrido de bienvenida. **E2:** burbuja y fichas, probadas por el usuario. **E3.1/E3.2:** registro de controles y refs de React; las fichas permiten ubicar y resaltar controles visibles del contexto actual. **Pendiente:** motor que compruebe condiciones, narración y resolución de peticiones. Los recorridos siguientes siguen siendo el contrato de ejecución futura. El catálogo mantiene `runtimeAvailable: false`; `integration: 'registered'` sólo acredita que se instrumentaron controles, no que señalar uno complete un paso.
 
 Fuentes del contenido actual:
+
+**Avance E3.3:** el motor independiente ya evalúa las condiciones de los once tutoriales, con evidencia local y validación de referencias/revisiones. Está probado con observaciones simuladas. Sigue pendiente en E3.4 conectarlo a acciones reales y al panel; por tanto los recorridos todavía no se activan en la web. El contrato concreto está en `Frontend/src/features/tutor/README.md`, sección E3.3.
 
 - [Catálogo de tutoriales](Frontend/src/features/tutor/content/catalog.ts).
 - [Controles y archivos donde se encuentran](Frontend/src/features/tutor/content/targets.ts).

@@ -1,12 +1,22 @@
-# Instructor de LogicDraft — E1, E2 y E3.1/E3.2
+# Instructor de LogicDraft — E1, E2 y E3.1–E3.3
 
-Módulo independiente de `features/agent` y de la barra de IA. E1 aporta contenido y contratos; E2 monta una burbuja y un panel en las rutas autenticadas. E3.1/E3.2 añaden registro y resaltado de controles. Todavía no hay narración ni motor de pasos. Sólo se consulta la API existente de workspaces para conocer el acceso observado; no se llama a modelos ni se hacen escrituras de negocio.
+## Integración E3.4 en revisión
+
+Actualización del paso de proyecto: `input-valid` acepta un nombre libre no vacío de hasta 100 caracteres. El `projectName` del ejercicio es sólo un ejemplo; no se solicita como parámetro previo en la ficha. Hace falta edición local o estado ya satisfecho al entrar al paso. Tras crear, se verifica respuesta exitosa y nombre/ID del objeto real; el recorrido conserva ese ID y resalta su botón Abrir. Se mantienen las condiciones exactas de nombres de nodos/atributos del ejercicio.
+
+`tutorialRuntimeStore.ts` coordina las instancias y los slots del recorrido, conserva evidencias hasta que React publica el resultado y elimina callbacks de visitas anteriores. `TutorRuntimeProvider` mantiene identidad estable entre rutas y usa los roles observados. Las páginas publican escenas tras sus commits; el editor emite evidencia desde los handlers locales aceptados, esperando locks cuando corresponde. Los guardados sólo emiten ACK desde la respuesta de la petición local, con la revisión enviada todavía vigente.
+
+En una ficha, elegir bindings/parámetros y pulsar «Iniciar guía». En dashboard, «Mi primer diagrama» permite elegir workspace e iniciar el recorrido de trece lecciones. El usuario realiza la navegación y todas las ediciones. Se ofrecen pausa/reanudación, anterior, omitir y cancelar; al cerrar el robot queda una tarjeta con el paso actual. El borde del paso se retira cuando su control deja de estar disponible. La voz sigue pendiente de E4.
+
+Validación actual: 50 pruebas del tutor, 159 de regresión, build y lint. Edge con APIs simuladas comprueba además una guía de creación de clase real desde UI y otra de guardado con ACK simulado. No acredita todavía el recorrido completo de trece lecciones ni colaboración entre usuarios. E3 permanece pendiente de esas comprobaciones; el contenido histórico de E3.3 de abajo describe su entrega independiente.
+
+Módulo independiente de `features/agent` y de la barra de IA. E1 aporta contenido y contratos; E2 monta una burbuja y un panel en las rutas autenticadas. E3.1/E3.2 añaden registro y resaltado de controles. E3.3 incorpora un motor determinista probado con el catálogo; su conexión a los eventos reales y al panel queda para E3.4. Todavía no hay narración ni recorridos activos. Sólo se consulta la API existente de workspaces para conocer el acceso observado; no se llama a modelos ni se hacen escrituras de negocio.
 
 ## Reglas de implementación acordadas
 
 ### Contrato E3.1: registro de controles
 
-`services/tutorialTargetRegistry.ts` ofrece `createTutorialTargetRegistry<T>()`. Es un servicio en memoria independiente de React/DOM, sin singleton ni escrituras de negocio. Sus siete pruebas se incluyen en `npm.cmd run test:tutor` (21 en total).
+`services/tutorialTargetRegistry.ts` ofrece `createTutorialTargetRegistry<T>()`. Es un servicio en memoria independiente de React/DOM, sin singleton ni escrituras de negocio. Sus siete pruebas se incluyen en `npm.cmd run test:tutor` (47 en total al cerrar E3.3).
 
 - `register(address, control, inspect)` devuelve una limpieza idempotente. Cada registro tiene identidad propia: una limpieza antigua nunca borra su reemplazo. La dirección se copia al registrar.
 - `address` contiene `sessionId` efímero (nunca token), pantalla, workspace, proyecto, ID del catálogo e instancia del elemento. Todos deben coincidir exactamente; no hay búsqueda alternativa por texto, nombre o selector CSS. Los controles repetidos exigen instancia; los controles globales del contexto usan `null`.
@@ -29,9 +39,38 @@ Módulo independiente de `features/agent` y de la barra de IA. E1 aporta conteni
 
 **Revisión manual E3.2:** abrir una ficha y usar «Señalar»; probar dashboard, proyectos y editor. Abrir/cerrar Herramientas y Propiedades, seleccionar nodos con varios atributos, cambiar de proyecto, hacer scroll/zoom, probar móvil y un usuario VIEWER. Un control tapado por el panel puede aparecer al mover el robot. Escape retira el resaltado; pulsar un control conserva su acción normal.
 
-**Siguiente entrega E3.3:** motor, bindings y evidencia semántica. `runtimeAvailable: false` se conserva; los 21 destinos declaran refs registradas, no lecciones ejecutables. No añadir voz ni clasificador hasta sus etapas.
+**Estado después de E3.3:** motor probado de forma independiente; la conexión de sus observaciones y evidencias al editor se realizará en E3.4. `runtimeAvailable: false` se conserva; los 21 destinos declaran refs registradas, no lecciones ejecutables. No añadir voz ni clasificador hasta sus etapas.
 
 **Validación E3.2 ejecutada:** 21 pruebas de tutor, 159 de regresión, build y lint. Suite de Edge aprobada: dashboard, navegación, formulario condicional, controles repetidos, Escape, opacity/inert/aria-disabled/overflow, obstrucciones, SVG horizontal, paneles adaptables, modal, VIEWER, movimiento del robot, tamaño móvil y salida del layout. Las APIs son simuladas, incluida la liberación de locks que el editor ya realiza al desmontarse. No se valida con esto el backend ni la colaboración entre usuarios. La primera ejecución restringida no respondió a CDP; la validación final se ejecutó con permiso fuera del sandbox.
+
+### Contrato E3.3: motor y evidencia
+
+`services/tutorialEngine.ts` exporta `createTutorialEngine(definition, start, initialObservation)`. Recibe una definición del catálogo previamente validado, parámetros explícitos e IDs elegidos; no elige tutoriales, no inventa parámetros y no hace llamadas a modelos. `types/tutorialRuntime.types.ts` concreta el contrato de ejecución; no cambia documentos ni persiste progreso.
+
+API:
+
+- `read()` entrega una copia del progreso y un ticket `{ instanceId, stepId, visit }`. Leer/repetir instrucciones no avanza.
+- `observe(snapshot, evidence)` verifica contexto y como máximo completa un paso. Los estados inicialmente satisfechos se registran por separado de las acciones realizadas. Un control disponible sólo completa una condición `control-ready`, nunca la creación o el guardado siguientes.
+- `pause()` detiene el avance. `resume(snapshot)` comprueba que se resolvió el bloqueo y cambia el ticket; no acepta callbacks de la visita anterior ni avanza automáticamente.
+- `back(snapshot)` vuelve al paso anterior, pausa para revisión y descarta resultados/outputs de ese punto en adelante. No deshace datos. Repetir una creación exige una nueva creación local, no reutiliza silenciosamente un objeto existente. Para repetir una lección completa se crea una instancia nueva.
+- `skip(snapshot)` registra omisión, sin capturar IDs. Si el siguiente paso necesita esa salida, se pausa con `missing-*`; para recuperar una omisión de creación se vuelve atrás y se realiza el paso. Una lección con omisiones termina `incomplete`, nunca `completed`.
+- `cancel()` limpia bindings y outputs. Cambiar de usuario o sesión cancela incluso una instancia completada; cambiar workspace/proyecto, perder permiso o detectar errores de guardado pausa.
+
+La observación es una proyección mínima del estado aceptado: workspace/proyecto, nodos relevantes normalizados (`CLASS`/`ENTITY`), atributos con padre, relaciones con extremos, selección, entradas, controles listos y revisiones. Los IDs se comparan estrictamente; se rechazan duplicados, referencias ausentes, padres ajenos, bloqueos y elementos estructurales. La UI no es una barrera de autorización: Spring sigue validando cada operación.
+
+Cada sesión mantiene un contador `sequence` creciente con cada cambio de estado/evidencia; repetir una observación sin cambios conserva el contador. No reutilizar un número con un estado distinto. El motor ignora observaciones anteriores y exige evidencia posterior al inicio de la visita del paso. `sessionId` debe ser estable entre rutas: no reutilizar directamente el identificador de E3.2 que contiene `pathname`.
+
+**Contrato obligatorio para el adaptador E3.4:**
+
+1. Capturar el ticket al iniciar la acción; callbacks asíncronos conservan ese ticket. No etiquetar una respuesta tardía con el paso que esté activo al recibirla.
+2. Emitir `origin: local` sólo desde acciones aceptadas del alumno. Los eventos incluyen identidad, ámbito, secuencia, tipo y valor de la acción. No convertir un diff del diagrama, un clic, un temporizador o un evento colaborativo en evidencia local.
+3. En creación, el objeto debe ser nuevo respecto al inicio del paso y seguir presente en el estado actual. Evento y objeto deben coincidir en tipo de nodo, padre de atributo, nombre del proyecto o extremos/tipo de relación. Proyecto requiere respuesta API exitosa (`accepted`). La relación admitida es ASSOCIATION con origen/destino exactos.
+4. Para selección/cambios posteriores al inicio, emitir ID, campo y valor correctos. Un cambio remoto coincidente no acredita la acción. Si ya se satisfacía la condición al entrar al paso, se registra `already-satisfied` y no se atribuye una edición al alumno.
+5. Para guardar, emitir un ACK de la petición local con la revisión local que envió esa petición y la revisión del servidor devuelta. Ambas deben coincidir con el estado confirmado actual y cubrir todos los cambios locales. `saved`/`clean` solos no bastan; respuestas antiguas, errores 409/422 o guardados remotos no completan.
+6. No conectar directamente el evento genérico actual `agentSession.record('DIAGRAM_SAVED')`: `DiagramEditorPage` también lo emite al aplicar datos remotos. Su `revisionRef` también cambia al sincronizar datos remotos. El adaptador debe distinguir las revisiones enviadas por la petición local y su confirmación, sin reinterpretar el contador como prueba de autoría.
+7. Resolver con E3.2 cada control exacto antes de incluirlo en `readyControls`. Publicar el estado nuevo antes de observar la evidencia que lo acredita. Tras una transición, observar nuevamente para pasos ya satisfechos, sin inventar nuevas evidencias ni usar el final del audio como señal.
+
+**Validación E3.3:** 26 pruebas nuevas del motor (47 del tutor en total), incluidas ejecuciones de los once tutoriales reales con observaciones simuladas y casos negativos de autoría, identidad, referencias, revisión, omisión y pausa. Pasan además 159 pruebas existentes, build y lint. No se repitió Edge: el motor aún no se importa en la UI y el bundle conserva su contenido previo. No hay integración real de acciones ni colaboración validada por estas pruebas; corresponde a E3.4.
 
 ### Reglas generales
 

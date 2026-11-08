@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useTutorScene } from '../../tutor/hooks/useTutorRuntime';
 import { Link, useNavigate } from "react-router-dom";
 
 import { obtenerUsuarioActual } from "../../auth/api/authApi";
@@ -57,6 +58,9 @@ export function DashboardPage() {
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
+  useTutorScene(useMemo(() => loading ? null : ({ path: '/dashboard', screen: 'dashboard' as const, workspaceId: null, projectId: null,
+    items: workspaces.map(workspace => ({ kind: 'workspace' as const, id: workspace.id, workspaceId: workspace.id, projectId: null, fields: { name: workspace.nombre } })),
+    selected: {}, inputs: {}, documentVersion: null, localRevision: null, persistedLocalRevision: null, serverRevision: null, saveState: 'clean' as const, relationKind: null }), [loading, workspaces]));
 
   useEffect(() => {
     let active = true;

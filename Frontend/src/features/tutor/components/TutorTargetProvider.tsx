@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { obtenerMisWorkspaces } from '../../workspace/api/workspaceApi'
 import { TutorScopeContext, TutorTargetContext, type TutorControl, type TutorScopeValue } from '../context/tutorTargetContext'
 import { createTutorialTargetRegistry } from '../services/tutorialTargetRegistry.ts'
+import { TutorRuntimeProvider } from './TutorRuntimeProvider'
 
 export function TutorTargetProvider({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
@@ -18,7 +19,7 @@ export function TutorTargetProvider({ children }: { children: ReactNode }) {
     return () => { active = false }
   }, [pathname])
   const value = useMemo(() => ({ registry, sessionId: `${session}:${pathname}`, roles: access?.path === pathname ? access.roles : new Map<number, string>() }), [registry, session, pathname, access])
-  return <TutorTargetContext.Provider value={value}>{children}</TutorTargetContext.Provider>
+  return <TutorTargetContext.Provider value={value}><TutorRuntimeProvider sessionId={session} path={pathname} ready={access?.path === pathname}>{children}</TutorRuntimeProvider></TutorTargetContext.Provider>
 }
 
 export function TutorScope({ children, screen, workspaceId, projectId, blocked = false }: TutorScopeValue & { children: ReactNode }) {

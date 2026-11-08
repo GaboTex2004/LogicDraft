@@ -27,7 +27,7 @@ export const tutorials: readonly TutorialDefinition[] = [
     documentVersions: [], prerequisites: ['choose_workspace'], inputs: ['workspace'], parameters: ['projectName'], outputs: ['project'],
     steps: [
       step('new', 'project.new', 'Pulsa Nuevo proyecto.', { kind: 'control-ready', target: 'project.name' }, 'Se abrirá el formulario de creación.'),
-      step('name', 'project.name', 'Escribe {{projectName}} como nombre del proyecto.', { kind: 'input-matches', parameter: 'projectName' }, 'La descripción es opcional.'),
+      step('name', 'project.name', 'Escribe el nombre que quieras para tu proyecto.', { kind: 'input-valid', parameter: 'projectName' }, 'Debe tener entre 1 y 100 caracteres. La descripción es opcional.'),
       step('create', 'project.create', 'Pulsa Crear proyecto y espera la confirmación.', { kind: 'created', entity: 'project', capture: 'project' }, 'Un error de la API no completa el paso. El proyecto creado aparecerá en la lista.'),
     ],
   },
@@ -99,5 +99,5 @@ export const tutorials: readonly TutorialDefinition[] = [
 ]
 
 export const tutorialCatalog: TutorialCatalog = {
-  version: 1, locale: 'es', runtimeAvailable: false, targets: tutorialTargets, tutorials,
+  version: 1, locale: 'es', runtimeAvailable: true, targets: tutorialTargets, tutorials,
 }

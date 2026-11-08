@@ -1,23 +1,37 @@
 # Plan del tutor de LogicDraft
 
+**Atributos y pausa de revisión:** `review` se produce al volver con Anterior, no es un fallo de permisos. Se reemplazó el mensaje técnico por una explicación de la pausa y se añadió Reanudar guía también a la tarjeta compacta. Las acciones hechas durante la pausa no se acreditan retroactivamente; volver al paso de creación exige un atributo nuevo, sin borrar el anterior. Edge con APIs simuladas validó Agregar → nombre → tipo y la secuencia Anterior → revisión → Reanudar → Agregar de nuevo → nombre → tipo. Build y lint correctos. Esta prueba no demuestra colaboración real ni cierra la validación restante del recorrido de trece lecciones.
+
+**Acuerdo actualizado — nombre libre y avance por acción:** Crear proyecto usa `input-valid`, aceptando el nombre elegido por el alumno (1–100 caracteres, no sólo espacios), en vez de exigir el ejemplo del recorrido. El panel ya no pide configurar ese nombre antes de iniciar la guía. La creación exige respuesta API exitosa e identidad/nombre coherentes entre evidencia y objeto. En el recorrido, la siguiente lección señala Abrir en el proyecto capturado; se conserva la navegación manual existente. No hay avance por temporizadores. Este acuerdo reemplaza las referencias históricas al nombre exacto «Mi primer diagrama».
+
+Validación de este acuerdo: 52 pruebas del tutor, build y lint aprobados. Edge con APIs simuladas verifica `xcdf` en guía individual y recorrido, avance al botón Crear proyecto, creación aceptada, resaltado de Abrir en la tarjeta nueva y navegación a ese mismo proyecto con continuación de la guía Crear una clase UML. No se modificaron datos reales ni se crearon commits.
+
+**Revisión del paso de nombre del proyecto:** se comprobó en Edge la entrada real letra por letra y el avance automático al botón Crear proyecto. El motor compara espacios exteriores como `nombre.trim()` de la API y la tarjeta explica cuándo el texto aún no coincide con el solicitado. No se añade un botón Siguiente que omita la condición. 51 pruebas del tutor, build y lint; suite de navegador con APIs simuladas. No se reprodujo bloqueo con el nombre exacto; queda por contrastar el valor introducido por el usuario.
+
+**Corrección de acceso al recorrido:** se añadió «Mi primer diagrama · recorrido completo» dentro de las fichas y se conserva el título aunque el contexto de pantalla siga cargando. Si existe otra guía activa, se explica que hay que terminarla o cancelarla. Edge comprueba título, selector de workspace, botón de inicio y regreso desde una ficha; build y lint correctos. Esto comprueba la accesibilidad del inicio, no sustituye la validación pendiente de las trece lecciones.
+
+**Actualización E3.4 (integración en revisión):** las guías ya se pueden iniciar desde las fichas; el dashboard ofrece el recorrido «Mi primer diagrama». Se añadieron coordinación entre rutas, captura de tickets antes de acciones asíncronas, publicación del estado aceptado, resaltado del paso actual y tarjeta compacta al cerrar el panel. `runtimeAvailable` pasa a verdadero. E3.4 aún requiere validar el recorrido completo de trece lecciones y colaboración real antes de cerrar E3; las notas históricas siguientes conservan el alcance de cada entrega.
+
+Validación de esta integración: 50 pruebas del tutor, 159 de regresión, compilación y lint; Edge con APIs simuladas pasó navegación, permisos VIEWER, modales, paneles adaptables, creación local de clase en una guía y confirmación de guardado. No se ejecutaron escrituras contra la base real, ni pruebas Java/Python. No hay commits del asistente. Sigue la advertencia de tamaño del bundle. Los cambios de E3.3 presentes al iniciar se conservaron.
+
 Fecha de creación: 6 de noviembre de 2026. Actualización: 7 de noviembre de 2026.
 
-Estado: E1 y E2 aceptadas y subidas a Git por el usuario. E3.1 implementa el registro de controles y E3.2 conecta referencias, contexto y resaltado. E3 continúa pendiente de motor y recorrido completo. No avanzar a otra subetapa ni crear commits sin indicación del usuario.
+Estado: E1, E2 y E3.2 aceptadas y subidas a Git por el usuario. E3.3 incorpora motor y contrato de evidencia comprobados con observaciones simuladas. E3.4 conectará los eventos reales y el recorrido completo. No avanzar a otra subetapa ni crear commits sin indicación del usuario.
 
 ## Seguimiento rápido
 
 **Propósito:** que una persona que nunca utilizó LogicDraft pueda crear y guardar un diagrama sencillo siguiendo al instructor, sin ayuda externa. El instructor enseña a usar la plataforma mediante tutoriales predefinidos; no modifica el diagrama por el usuario ni funciona como chat general.
 
-**Dónde vamos:** catálogo de once tutoriales, contratos, inventario de controles, recorrido de bienvenida y validadores en `Frontend/src/features/tutor/`. E2 añade la burbuja arrastrable y el panel de consulta del catálogo. Todavía no hay motor ejecutable ni voz.
+**Dónde vamos:** catálogo, registro, burbuja, localizador visual y motor determinista en `Frontend/src/features/tutor/`. El motor está probado de forma independiente; todavía no ejecuta recorridos en la web ni tiene voz.
 
-**Próximo paso:** revisar E3.2 en la web. Después, E3.3 incorporará motor y evidencia semántica, y E3.4 validará el recorrido completo en texto antes de añadir voz.
+**Próximo paso:** revisar E3.3 mediante sus pruebas y contrato; luego E3.4 conectará observaciones y evidencias reales al panel y validará el recorrido completo en texto antes de añadir voz.
 
 | Etapa | Estado | Evidencia de cierre |
 | --- | --- | --- |
 | Planificación y propósito | Documentados | Este documento y los acuerdos de alcance |
 | E1. Catálogo y contratos | Aceptada; commit realizado por el usuario | 9 pruebas del catálogo, 159 de regresión, build y lint aprobados |
 | E2. Burbuja y panel | Aceptada y subida a Git por el usuario | Pruebas automatizadas y revisión manual del usuario |
-| E3. Motor de tutoriales | E3.1 y E3.2 implementadas; E3.3–E3.4 pendientes | Registro, adaptadores React y localizador visual; motor aún no conectado |
+| E3. Motor de tutoriales | E3.1–E3.3 implementadas; E3.4 pendiente | Motor con los once tutoriales; 47 pruebas del tutor, integración con UI pendiente |
 | E4. Bienvenida y voz | Pendiente | — |
 | E5. Ayuda contextual escrita | Pendiente | — |
 | E6. Peticiones compuestas y clasificador opcional | Pendiente | — |
@@ -434,7 +448,7 @@ Se divide en entregas cerradas para evitar dejar una integración parcialmente a
 
 1. **E3.1 — Registro de controles (implementado):** servicio independiente, IDs del catálogo, coincidencia exacta por sesión/pantalla/workspace/proyecto/instancia, disponibilidad consultada en cada resolución y limpieza segura. Sin conexión al DOM ni cambios visibles.
 2. **E3.2 — Adaptadores y resaltado (implementado; revisión del usuario pendiente):** registro por layout autenticado, refs de React, contexto de ruta/workspace/proyecto, disponibilidad DOM y permiso observado. Las fichas ofrecen «Ubicar controles»; elegir uno cierra el panel y dibuja un borde que no intercepta clics. Escape, clic, navegación, ocultación o modal retiran el resaltado. No equivale a iniciar ni completar una lección.
-3. **E3.3 — Motor y condiciones (pendiente):** avance/pausa/cancelación, parámetros y bindings; evidencia semántica local, outputs y guardado confirmado. No dar por completado un paso porque su control esté disponible.
+3. **E3.3 — Motor y condiciones (implementado):** avance/pausa/cancelación, retroceso/omisión, parámetros y bindings; contrato de evidencia local, outputs y guardado confirmado. Verificado con observaciones simuladas y los once tutoriales del catálogo. No dar por completado un paso porque su control esté disponible. Emisión de evidencias reales y conexión al panel quedan en E3.4.
 4. **E3.4 — Integración del recorrido (pendiente):** conectar el panel al motor, completar proyecto → diagrama → guardado y comprobar colaboración, permisos y errores. Sólo entonces habilitar los tutoriales integrados y cerrar E3.
 
 Cada entrega requiere revisión antes de continuar. E3.2 conserva `runtimeAvailable: false`; los destinos pasan a `integration: 'registered'`, lo que indica refs disponibles y no ejecución de lecciones.
@@ -546,6 +560,10 @@ Validación: `npm.cmd run test:tutor` (14 aprobadas), `npm.cmd run test:diagram-
 Validación final: `npm.cmd run test:tutor` (21 aprobadas), `npm.cmd run test:diagram-ai` (159 aprobadas), build y lint correctos. `npm.cmd run test:tutor:browser` aprobado en Edge con Vite local y APIs simuladas: navegación, controles repetidos, disponibilidad DOM, SVG, paneles adaptables, modales, VIEWER, posición del robot, móvil y desmontaje. El primer intento dentro del sandbox falló con `CDP timeout: Runtime.enable`; se repitió con permiso fuera del sandbox. El escenario respeta que el dashboard muestra una sola tarjeta de workspace y que los paneles del editor siempre están visibles en escritorio ancho. La liberación de locks existente al desmontar el editor se simula; no se ejecutan escrituras contra una base real. No se validó colaboración real ni suites Java/Python, pues no cambiaron esos servicios. Persiste la advertencia de bundle mayor a 500 kB.
 
 Revisión manual pendiente del usuario: abrir robot → ficha → «Señalar», probar selección de nodos/atributos, scroll y zoom reales. E3.3 (motor y evidencia) es el siguiente trabajo. Sin commits ni push del asistente; se conservaron los cambios de E3.1 que seguían sin commit al empezar esta sesión.
+
+**7 de noviembre de 2026 — E3.3 entregada:** motor determinista independiente (`tutorialEngine.ts`), contrato de observaciones/evidencia (`tutorialRuntime.types.ts`) y 26 pruebas nuevas (`tutorialEngine.test.mjs`). Los once tutoriales completan sus condiciones con evidencia coherente; se comprueban eventos remotos/repetidos/antiguos, contexto ajeno, tipos y referencias incorrectas, pérdida de permisos, conflictos, guardados obsoletos, pausa, omisión y retroceso sin modificar datos.
+
+Validación: 47 pruebas del tutor, 159 de regresión, build y lint correctos. Persiste la advertencia de tamaño del bundle. No cambia UI ni se importa todavía el motor en ella; no se repitió Edge ni se ejecutaron suites Java/Python. Los escenarios del motor usan observaciones simuladas; no equivalen a un recorrido real en navegador. El README documenta cómo emitir evidencia desde acciones aceptadas y por qué `DIAGRAM_SAVED`/`revisionRef` existentes no prueban autoría local. Sin cambios en datos, contratos persistidos, dependencias o servicios; sin commits/push. E3.4 es la siguiente entrega tras revisión del usuario.
 
 Cada subetapa debe terminar con contrato actualizado, pruebas unitarias relevantes, integración necesaria, revisión de compatibilidad y diff. No avanzar con fallos funcionales. Si hay bloqueo ambiental, registrar comando y error sin declarar aprobada la validación.
 

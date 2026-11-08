@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useTutorRuntime, useTutorScene } from '../../tutor/hooks/useTutorRuntime';
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { isUnauthorizedError } from "../../../shared/api/apiError";
 import {
@@ -45,6 +46,10 @@ export function ProjectsPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
+  const tutor = useTutorRuntime();
+  useTutorScene(useMemo(() => loading || workspaceId === null ? null : ({ path: `/workspaces/${workspaceId}/proyectos`, screen: 'projects' as const, workspaceId, projectId: null,
+    items: projects.map(project => ({ kind: 'project' as const, id: project.id, workspaceId: project.workspaceId, projectId: project.id, fields: { name: project.nombre } })),
+    selected: {}, inputs: { projectName: nombre }, documentVersion: null, localRevision: null, persistedLocalRevision: null, serverRevision: null, saveState: 'clean' as const, relationKind: null }), [loading, workspaceId, projects, nombre]));
   useEffect(() => {
     let active = true;
 
@@ -85,6 +90,7 @@ export function ProjectsPage() {
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (workspaceId === null || !nombre.trim()) return;
+    const tutorTicket = tutor?.capture() ?? null;
     setSaving(true);
     setError("");
     try {
@@ -94,6 +100,7 @@ export function ProjectsPage() {
         workspaceId,
       });
       setProjects((current) => [created, ...current]);
+      tutor?.emit(tutorTicket, { action: 'created', entity: 'project', entityId: created.id, accepted: true, value: created.nombre });
       setNombre("");
       setDescripcion("");
       setShowForm(false);
@@ -372,7 +379,7 @@ export function ProjectsPage() {
               maxLength={100}
               required
               value={nombre}
-              onChange={(event) => setNombre(event.target.value)}
+              onChange={(event) => { const ticket = tutor?.capture() ?? null; setNombre(event.target.value); tutor?.emit(ticket, { action: 'changed', field: 'projectName', value: event.target.value }); }}
             />
             <label htmlFor="project-description">Descripción</label>
             <textarea

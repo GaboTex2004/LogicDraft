@@ -37,6 +37,7 @@ try {
     socket.send(JSON.stringify({ id, method, params }))
   })
   let role = 'OWNER'
+  let exercise = false
   const errors = [], mutations = []
   const project = { id: 10, workspaceId: 1, workspaceNombre: 'Prueba', nombre: 'Proyecto de prueba', descripcion: '', fechaCreacion: '2026-11-07' }
   socket.onmessage = event => {
@@ -53,13 +54,20 @@ try {
       const path = new URL(request.url).pathname
       let body = [], status = 200
       // Existing editor cleanup releases its locks on unmount, independently of the tutor.
-      if (request.method === 'POST' && path.endsWith('/proyectos/10/locks/release')) body = {}
+      if (exercise && request.method === 'POST' && path.endsWith('/proyectos')) body = { ...project, id: 12, nombre: JSON.parse(request.postData).nombre }
+      else if (exercise && request.method === 'POST' && path.includes('/locks/')) body = { locks: [] }
+      else if (exercise && request.method === 'PUT' && path.endsWith('/diagrama')) {
+        const document = JSON.parse(request.postData)
+        body = { id: 20, proyectoId: 10, revision: 2, version: document.version, contenido: { version: document.version, nodes: document.nodes, edges: document.edges }, fechaActualizacion: '2026-11-07' }
+      }
+      else if (request.method === 'POST' && path.endsWith('/proyectos/10/locks/release')) body = {}
       else if (request.method !== 'GET' && request.method !== 'OPTIONS') { mutations.push(path); status = 403 }
       else if (path.endsWith('/auth/me')) body = { id: 1, nombre: 'Prueba', email: 'test@example.invalid', rolSistema: 'USER' }
       else if (path.endsWith('/workspaces')) body = [{ id: 1, nombre: 'Workspace A', tenantId: 1, rol: role }, { id: 2, nombre: 'Workspace B', tenantId: 1, rol: 'VIEWER' }]
       else if (path.endsWith('/proyectos')) body = [project, { ...project, id: 11, nombre: 'Otro proyecto' }]
       else if (path.endsWith('/proyectos/10')) body = project
-      else if (path.endsWith('/diagrama')) body = { id: 20, proyectoId: 10, revision: 1, version: 1, contenido: { version: 1, nodes: [], edges: [] }, fechaActualizacion: '2026-11-07' }
+      else if (path.endsWith('/proyectos/12')) body = { ...project, id: 12, nombre: 'xcdf' }
+      else if (path.endsWith('/diagrama')) body = { id: 20, proyectoId: path.includes('/12/') ? 12 : 10, revision: 1, version: 1, contenido: { version: 1, nodes: [], edges: [] }, fechaActualizacion: '2026-11-07' }
       else if (path.includes('/ws')) { status = 503; body = {} }
       void commands('Fetch.fulfillRequest', { requestId, responseCode: status, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Access-Control-Allow-Headers', value: '*' }, { name: 'Access-Control-Allow-Methods', value: '*' }], body: Buffer.from(JSON.stringify(body)).toString('base64') }).catch(error => errors.push(String(error)))
     }
@@ -89,7 +97,15 @@ try {
   }
   await commands('Page.navigate', { url: `${base}/dashboard` })
   await until('document.querySelectorAll(".workspace-card").length === 1')
+  await click('.tutor-bubble')
+  await until('document.querySelector(".tutor-lesson h3")?.textContent === "Mi primer diagrama"')
+  assert.equal(await evaluate('document.querySelector(".tutor-lesson select").options.length'), 3)
+  assert.equal(await evaluate('document.querySelector(".tutor-lesson button[type=submit]").textContent'), 'Iniciar recorrido completo')
+  await click('.tutor-close')
   await selectGuide(1)
+  await evaluate('[...document.querySelectorAll(".tutor-back")].find(button => button.textContent.includes("Mi primer diagrama")).click()')
+  await until('document.querySelector(".tutor-lesson h3")?.textContent === "Mi primer diagrama"')
+  await click('.tutor-guide-list button:first-child')
   await until('document.querySelectorAll(".tutor-control-locator button").length === 1')
   await click('.tutor-control-locator button')
   await until('!!document.querySelector(".tutor-target-highlight")')
@@ -110,6 +126,41 @@ try {
   await evaluate('document.querySelector("#project-name").disabled = true')
   await until('document.querySelectorAll(".tutor-control-locator button").length === 2')
   console.log('PASS projects: navigation, conditional form, disabled control')
+  await evaluate('document.querySelector("#project-name").disabled = false')
+  await click('.tutor-lesson button[type=submit]')
+  await until('document.querySelector(".tutor-lesson").textContent.includes("Escribe el nombre que quieras")')
+  await click('.tutor-close')
+  await evaluate('document.querySelector("#project-name").focus()')
+  for (const character of 'xcdf') await commands('Input.insertText', { text: character })
+  await until('document.querySelector(".tutor-active-card").textContent.includes("Pulsa Crear proyecto")')
+  await until('[...document.querySelectorAll(".tutor-target-highlight")].some(marker => { const button=document.querySelector("#project-name").form.querySelector("button[type=submit]"); return Math.abs(marker.getBoundingClientRect().top-button.getBoundingClientRect().top)<1 && Math.abs(marker.getBoundingClientRect().left-button.getBoundingClientRect().left)<1 })')
+  await evaluate('document.querySelector(".tutor-active-card button").click()')
+  console.log('PASS project name: real typing advances to Create project')
+
+  await commands('Page.navigate', { url: `${base}/dashboard` })
+  await until('!!document.querySelector(".workspace-card")')
+  await click('.tutor-bubble')
+  await until('!!document.querySelector(".tutor-lesson select")')
+  await evaluate('const select=document.querySelector(".tutor-lesson select"); select.value="1"; select.dispatchEvent(new Event("change",{bubbles:true}))')
+  await click('.tutor-lesson button[type=submit]')
+  await click('.tutor-close')
+  await click('.workspace-card a')
+  await until('document.querySelector(".tutor-active-card")?.textContent.includes("Pulsa Nuevo proyecto")')
+  await click('.new-project-button')
+  await until('document.querySelector(".tutor-active-card")?.textContent.includes("Escribe el nombre que quieras")')
+  await evaluate('document.querySelector("#project-name").focus()')
+  await commands('Input.insertText', { text: 'xcdf' })
+  await until('document.querySelector(".tutor-active-card")?.textContent.includes("Pulsa Crear proyecto")')
+  exercise = true
+  await evaluate('document.querySelector("#project-name").form.requestSubmit()')
+  await until('document.querySelector(".tutor-active-card")?.textContent.includes("Pulsa Abrir")')
+  await until('[...document.querySelectorAll(".tutor-target-highlight")].some(marker=>{const b=document.querySelector(".project-card .project-button.primary");return Math.abs(marker.getBoundingClientRect().top-b.getBoundingClientRect().top)<1 && Math.abs(marker.getBoundingClientRect().left-b.getBoundingClientRect().left)<1})')
+  assert.equal(await evaluate('document.querySelector(".project-card h2").textContent'), 'xcdf')
+  await click('.project-card .project-button.primary')
+  await until('!!document.querySelector(".diagram-toolbar") && document.querySelector(".tutor-active-card")?.textContent.includes("Crear una clase UML")')
+  assert.equal(await evaluate('location.pathname'), '/proyectos/12/editor')
+  await evaluate('document.querySelector(".tutor-active-card button").click()')
+  console.log('PASS journey: arbitrary name, accepted creation, highlight Open on the new project')
 
   // Real DOM adapter checks in the browser, independent of platform data.
   const adapterChecks = await evaluate(`(async () => {
@@ -151,6 +202,50 @@ try {
   await until('!document.querySelector(".tutor-target-highlight") && document.querySelector(".tutor-host").hidden')
   await evaluate('document.querySelector("#fixture-modal").remove()')
   console.log('PASS editor: hidden panels, class control, modal priority')
+
+  exercise = true
+  await selectGuide(4)
+  await evaluate('document.querySelector(".tutor-lesson button[type=submit]").click()')
+  await until('document.querySelector(".tutor-lesson").textContent.includes("Pulsa Clase UML")')
+  await click('.tutor-close')
+  await evaluate('[...document.querySelectorAll(".add-entity-button")].find(b=>b.textContent.includes("Clase UML")).click()')
+  await until('document.querySelector(".tutor-active-card").textContent.includes("Recorrido completado")')
+  assert.equal(await evaluate('document.querySelectorAll(".entity-node").length'), 1)
+  await evaluate('document.querySelector(".tutor-active-card button").click()')
+  await commands('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1000, deviceScaleFactor: 1, mobile: false })
+  await selectGuide(7)
+  await evaluate('const selects=document.querySelectorAll(".tutor-lesson select");selects[0].value=selects[0].options[1].value;selects[0].dispatchEvent(new Event("change",{bubbles:true}))')
+  await evaluate('document.querySelector(".tutor-lesson input").focus()')
+  await commands('Input.insertText', { text: 'id' })
+  await evaluate('const select=[...document.querySelectorAll(".tutor-lesson select")].at(-1);select.value="INTEGER";select.dispatchEvent(new Event("change",{bubbles:true}))')
+  await click('.tutor-lesson button[type=submit]')
+  await click('.tutor-close')
+  await until('document.querySelector(".tutor-active-card").textContent.includes("En Atributos, pulsa Agregar")')
+  await click('.diagram-properties .attributes-heading button')
+  await until('document.querySelector(".tutor-active-card").textContent.includes("Escribe id")')
+  await click('.tutor-bubble')
+  await evaluate('[...document.querySelectorAll(".tutor-lesson button")].find(b=>b.textContent==="Anterior").click()')
+  await until('document.querySelector(".tutor-lesson").textContent.includes("Volviste al paso anterior")')
+  await evaluate('[...document.querySelectorAll(".tutor-lesson button")].find(b=>b.textContent==="Reanudar guía").click()')
+  await click('.tutor-close')
+  await click('.diagram-properties .attributes-heading button')
+  await until('document.querySelector(".tutor-active-card").textContent.includes("Escribe id")')
+  await evaluate('const input=[...document.querySelectorAll(".attribute-editor input[aria-label]")].at(-1);input.focus();input.select()')
+  await commands('Input.insertText', { text: 'id' })
+  await until('document.querySelector(".tutor-active-card").textContent.includes("Selecciona INTEGER")')
+  await evaluate('{ const attributeTypeSelect=[...document.querySelectorAll(".attribute-editor select")].at(-1);attributeTypeSelect.value="INTEGER";attributeTypeSelect.dispatchEvent(new Event("change",{bubbles:true})); }')
+  await until('document.querySelector(".tutor-active-card").textContent.includes("Recorrido completado")')
+  await evaluate('document.querySelector(".tutor-active-card button").click()')
+  await commands('Emulation.setDeviceMetricsOverride', { width: 1000, height: 1000, deviceScaleFactor: 1, mobile: false })
+  console.log('PASS attributes: add, back, review, resume, add again, name and type')
+  await selectGuide(11)
+  await evaluate('document.querySelector(".tutor-lesson button[type=submit]").click()')
+  await click('.tutor-close')
+  await until('!document.querySelector(".save-diagram-button").disabled')
+  await click('.save-diagram-button')
+  await until('document.querySelector(".tutor-active-card").textContent.includes("Recorrido completado")')
+  await evaluate('document.querySelector(".tutor-active-card button").click()')
+  console.log('PASS live guide: local class creation and confirmed save using simulated APIs')
 
   role = 'VIEWER'
   await commands('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1000, deviceScaleFactor: 1, mobile: false })
