@@ -95,11 +95,11 @@ import {
   descargarProyectoGenerado,
   type GeneratorExport,
 } from "../api/generatorApi";
-import { interpretDiagramWithAi } from "../api/diagramAiApi";
+import { assistEditorDiagram } from "../api/editorBarAiApi";
+import { prepareEditorBarResponse } from '../services/editorBarAiResponse';
 import {
   applyDiagramOperations,
   DiagramOperationError,
-  prepareDiagramAiProposal,
 } from "../services/applyDiagramOperations";
 import { AiPromptBar } from "../components/AiPromptBar";
 import { DiagramAiProposalDialog } from "../components/DiagramAiProposalDialog";
@@ -1273,30 +1273,17 @@ function DiagramEditorCanvas({
     setAiMessage("");
     agentSession.record("AI_REQUESTED");
     try {
-      const selectedSource = selectedEdge
-        ? nodesRef.current.find((node) => node.id === selectedEdge.source)
-        : null;
-      const selectedTarget = selectedEdge
-        ? nodesRef.current.find((node) => node.id === selectedEdge.target)
-        : null;
-      const selection = selectedNode
-        ? { kind: "ENTITY" as const, entityName: selectedNode.data.name }
-        : selectedEdge && selectedSource && selectedTarget
-          ? {
-              kind: "RELATIONSHIP" as const,
-              sourceEntity: selectedSource.data.name,
-              targetEntity: selectedTarget.data.name,
-              ...(typeof selectedEdge.data?.name === "string"
-                ? { relationshipName: selectedEdge.data.name }
-                : {}),
-            }
-          : undefined;
       const response = image
         ? await interpretDiagramImage(project.id, image, prompt, request.signal)
-        : await interpretDiagramWithAi(
+        : await assistEditorDiagram(
             project.id,
-            prompt,
-            selection,
+            {
+              message: prompt,
+              selectedNodeId: selectedNode?.id ?? null,
+              selectedEdgeId: selectedEdge?.id ?? null,
+              recentEvents: agentSession.snapshot(),
+              conversation: [],
+            },
             request.signal,
           );
       if (request.signal.aborted) return;
@@ -1315,11 +1302,14 @@ function DiagramEditorCanvas({
         setAiMessage("Reconocimiento listo: revisa las altas y los conflictos antes de confirmar.");
         return;
       }
-      const { operations, preview: result } = prepareDiagramAiProposal(
-        response,
-        nodesRef.current,
-        edgesRef.current,
+      const prepared = prepareEditorBarResponse(
+        prompt, response, nodesRef.current, edgesRef.current,
       );
+      if (!prepared.proposal) {
+        setAiMessage(prepared.response.answer);
+        return;
+      }
+      const { operations, preview: result } = prepared.proposal;
       if (import.meta.env.DEV)
         console.debug("[Diagram AI]", {
           stage: "react_received",

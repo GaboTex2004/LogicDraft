@@ -1,5 +1,35 @@
 # Integracion de IA
 
+## Barra inferior del editor
+
+`POST /api/proyectos/{projectId}/ai/diagram/assist` requiere JWT y acceso de
+OWNER/EDITOR al proyecto. El módulo `ai/editor` delega en `ContextualAgentService`
+(FastAPI `/api/agent/ask`), sin crear conversaciones ni guardar diagramas.
+No modifica los endpoints ni servicios de conversaciones compartidas.
+
+Usa `AgentAskRequest`: `message` no vacío de hasta 4000 caracteres,
+`selectedNodeId`/`selectedEdgeId` opcionales de hasta 100, `recentEvents` obligatorio
+(máximo 25) y `conversation` opcional (máximo 10; la barra envía una lista vacía).
+Respuesta `AgentAskResponse`: `answer`, `operations`, `intent`, `outcome`,
+`repairAttempts`. Las aclaraciones y solicitudes ya satisfechas son respuestas
+válidas sin operaciones. Las entradas inválidas producen 400; no autoriza mutaciones
+una consulta o una sugerencia ambigua.
+
+El adaptador verifica permisos antes y después de inferir; vuelve a validar el lote
+contra el diagrama persistido más reciente con los validadores semántico y contextual
+existentes. Respeta los contratos actuales y su compatibilidad v1/v2. La propuesta
+sigue sin persistirse hasta la aceptación del usuario y el guardado normal con
+`baseRevision` (409 ante una revisión obsoleta). La ruta `/interpret` continúa disponible
+por compatibilidad y las imágenes conservan su flujo independiente.
+
+Validación de esta reparación: pruebas `EditorBarAiControllerTest`,
+`EditorBarAiSecurityTest`, `EditorBarAiServiceTest` y suite de regresión del backend.
+En este entorno `./mvnw.cmd test` falla al iniciar el Wrapper (`Cannot start maven
+from wrapper`, error de PowerShell `icm` al indexar una matriz nula); se usa
+`mvn.cmd test` con Maven instalado. Las integraciones opcionales con PostgreSQL
+y Flutter requieren su configuración explícita. La inferencia con Ollama real
+se comprueba manualmente con los pasos de `Frontend/DIAGRAM-AI.md`.
+
 ## Interpretacion de diagramas
 
 `POST /api/ai/diagram/interpret` usa el mismo JWT y request `{"prompt":"..."}`.

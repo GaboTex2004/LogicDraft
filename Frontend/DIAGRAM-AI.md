@@ -1,17 +1,49 @@
 # IA en el editor
 
 La barra inferior envia el prompt usando Axios compartido y su interceptor JWT:
-`POST /proyectos/{projectId}/ai/diagram/interpret` relativo a VITE_API_URL.
+`POST /proyectos/{projectId}/ai/diagram/assist` relativo a VITE_API_URL.
 No envia el documento local ni realiza PUT. Hay que esperar a que el editor
 este guardado para que el contexto persistido que consulta Spring sea correcto.
 
+La barra reutiliza el agente de conversaciones mediante un adaptador propio;
+no crea mensajes ni conversaciones compartidas. Envía `message` (máximo 4000
+caracteres), `selectedNodeId`, `selectedEdgeId`, `recentEvents` y `conversation: []`.
+Spring construye el contexto autorizado y FastAPI procesa `/api/agent/ask`.
+La respuesta contiene `answer`, `operations`, `intent`, `outcome` y `repairAttempts`.
+Una consulta o aclaración muestra la explicación sin abrir una propuesta vacía.
+Las modificaciones siguen requiriendo revisión y aceptación explícita, autorización
+y control de revisión antes del guardado. La ruta anterior `/interpret` se conserva
+para clientes existentes; el reconocimiento de imágenes conserva su ruta propia.
+
 ## Archivos
 
-- API: src/features/diagram/api/diagramAiApi.ts.
+- API de la barra: src/features/diagram/api/editorBarAiApi.ts.
+- Preparación de respuestas: src/features/diagram/services/editorBarAiResponse.ts,
+  que reutiliza src/features/agent/services/agentProposal.ts.
 - Contrato de operaciones: src/features/diagram/types/diagramAi.types.ts.
 - Validacion, mapeo y aplicador: src/features/diagram/services/applyDiagramOperations.ts.
 - Integracion de estado/autosave/eventos: DiagramEditorPage.tsx.
 - UI: components/AiPromptBar.tsx.
+
+## Verificación de la reparación de la barra
+
+Pruebas automatizadas: `npm.cmd run test:diagram-ai`, `npm.cmd run build` y
+`npm.cmd run lint` desde Frontend; `mvn.cmd test` desde backend cuando el Wrapper
+no funcione. Se cubren propuestas sin mutación previa, consultas, aclaraciones,
+respuestas inválidas, permisos antes/después de inferir, JWT y contrato HTTP.
+Estas pruebas no certifican la disponibilidad ni la respuesta del modelo local.
+
+Para comprobar con Ollama real, reiniciar Spring y mantener FastAPI/Ollama activos:
+
+1. En un proyecto guardado, enviar por la barra `Crea una clase PersonaQA con los
+   atributos id Integer clave primaria y nombre String`. Debe aparecer una propuesta;
+   el lienzo cambia únicamente al aceptarla.
+2. Repetir con otro nombre usando el micrófono. Revisar también que detenerlo
+   manualmente conserve la transcripción editable sin autoenviar.
+3. Preguntar `¿Qué es una clase?`: debe mostrar una respuesta sin proponer cambios.
+4. Cancelar una propuesta y comprobar que el diagrama conserve su contenido.
+5. Probar el modal Conversaciones e IA: sus mensajes, historial y propuestas siguen
+   su flujo propio; la solicitud de la barra no debe aparecer en ese historial.
 
 ## Voz en la barra inferior
 

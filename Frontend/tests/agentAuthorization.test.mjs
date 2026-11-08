@@ -100,8 +100,8 @@ test('el flujo React revalida permisos y deja el guardado y difusión al backend
   assert.match(editor, /DIAGRAM_COMMITTED/)
   assert.match(editor, /Ollama no está disponible/)
   assert.match(editor, /Ollama tardó demasiado/)
-  assert.match(editor, /handleAiPrompt[\s\S]*prepareDiagramAiProposal/,
-    'la barra inferior conserva su flujo independiente')
+  assert.match(editor, /handleAiPrompt[\s\S]*assistEditorDiagram[\s\S]*prepareEditorBarResponse/,
+    'la barra usa su adaptador sin alterar el flujo del modal')
 })
 
 test('clasifica ediciones consultas sugerencias y negaciones de forma segura', () => {

@@ -41,6 +41,10 @@ export function AiPromptBar({ projectId, onImageSelected, onSubmit, loading, mes
   async function submitText(text: string) {
     const value = text.trim()
     if (!value || processingRef.current || loading || disabledReason) return
+    if (value.length > 4000) {
+      setAudioError('La instrucción admite hasta 4000 caracteres. Divide la solicitud en partes.')
+      return
+    }
     setAudioError('')
     processingRef.current = true
     try {
@@ -111,7 +115,7 @@ export function AiPromptBar({ projectId, onImageSelected, onSubmit, loading, mes
   return <div className="ai-prompt-wrapper">
     <form className="ai-prompt-bar" onSubmit={handleSubmit}>
       <strong>LogicDraft</strong>
-      <input maxLength={10000} disabled={loading} value={prompt}
+      <input maxLength={4000} disabled={loading} value={prompt}
         onChange={event => setPrompt(event.target.value)}
         placeholder="Describe el cambio que quieres hacer en el diagrama..." aria-label="Instrucción para IA" />
       <input ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }}
