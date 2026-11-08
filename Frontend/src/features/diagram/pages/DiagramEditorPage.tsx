@@ -1984,6 +1984,8 @@ function DiagramEditorCanvas({
         validateDiagramDocument(document);
       } catch (error) {
         rejectedDocumentRef.current = documentFingerprint;
+        // Keep incomplete automatic drafts dirty; manual save still reports errors.
+        if (automatic) return;
         setSaveStatus("error");
         setAiError(
           error instanceof Error
@@ -2475,8 +2477,8 @@ function DiagramEditorCanvas({
         ...tutorialDiagramItems(project.workspaceId, project.id, nodes, edges, id => Boolean(lockStore.findForeignLock([id])))],
       selected: { ...(selectedNodeId ? { node: selectedNodeId } : {}), ...(selectedEdgeIds.length === 1 ? { relationship: selectedEdgeIds[0] } : {}) },
       inputs: {}, documentVersion: serializeDocument(nodes, edges).version, localRevision: revisionRef.current, persistedLocalRevision: persistedRevisionRef.current,
-      serverRevision: serverRevisionRef.current, saveState: saveStatus, relationKind: selectedRelationKind });
-  }, [tutor, project, nodes, edges, selectedNodeId, selectedEdgeIds, selectedRelationKind, documentRevision, saveStatus, activeLocksMap, lockStore]);
+      serverRevision: serverRevisionRef.current, saveState: saveStatus, saveError: saveStatus === 'error' ? aiError || null : null, relationKind: selectedRelationKind });
+  }, [tutor, project, nodes, edges, selectedNodeId, selectedEdgeIds, selectedRelationKind, documentRevision, saveStatus, aiError, activeLocksMap, lockStore]);
   useEffect(() => () => tutor?.clearScene(`/proyectos/${project.id}/editor`), [tutor, project.id]);
 
   return (

@@ -24,7 +24,7 @@ export function TutorPanel({ style, onClose, onReset, onMove, onLocate }: Props)
     <div className="tutor-panel-content">
       <p className="tutor-introduction">Tu guía para crear diagramas, paso a paso.</p>
       {tutorial && <button type="button" className="tutor-back" onClick={() => setSelected(null)}>Mi primer diagrama · recorrido completo</button>}
-      <p className="tutor-availability" role="note">Sigue las instrucciones y realiza las acciones en la plataforma. La voz se añadirá en la siguiente etapa.</p>
+      <p className="tutor-availability" role="note">Sigue las instrucciones y realiza las acciones en la plataforma. Puedes activar la voz Puck durante la guía.</p>
       <TutorLessonControls key={selected ?? 'journey'} tutorial={tutorial} />
       {tutorial ? <div className="tutor-preview">
         <button className="tutor-back" type="button" onClick={() => setSelected(null)}>← Todas las guías</button>

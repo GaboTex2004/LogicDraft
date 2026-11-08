@@ -5,6 +5,7 @@ import type { TutorialContext, TutorialParameterValues, TutorialRole } from '../
 import type { ObservedTutorialItem, RuntimeBindings, TutorialActionEvidence, TutorialObservation, TutorialRunSnapshot, TutorialTicket } from '../types/tutorialRuntime.types.ts'
 
 export interface TutorScene {
+  saveError?: string | null
   path: string
   screen: TutorialContext['screen']
   workspaceId: number | null

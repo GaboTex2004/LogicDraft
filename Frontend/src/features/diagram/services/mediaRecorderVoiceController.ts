@@ -102,6 +102,7 @@ export class MediaRecorderVoiceController {
 
   async start(): Promise<void> {
     if (this.stream || this.recorder) return
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('logicdraft:microphone-start'))
     this.transcript.reset()
     this.activity.reset()
     this.nextChunkIndex = 0
@@ -259,5 +260,6 @@ export class MediaRecorderVoiceController {
   private stopTracks(): void {
     this.stream?.getTracks().forEach(track => track.stop())
     this.stream = null
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('logicdraft:microphone-end'))
   }
 }

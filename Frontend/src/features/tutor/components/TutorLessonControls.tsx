@@ -5,6 +5,7 @@ import { ATTRIBUTE_TYPES, DIAGRAM_CARDINALITIES } from '../../diagram/types/diag
 import { CARDINALITY_LABELS } from '../../diagram/services/relationshipCardinality.ts'
 import type { TutorialDefinition, TutorialBinding, TutorialParameterValues } from '../types/tutorial.types.ts'
 import type { RuntimeBindings } from '../types/tutorialRuntime.types.ts'
+import { TutorVoiceControls } from './TutorAudioProvider'
 
 export function TutorLessonControls({ tutorial, compact = false }: { tutorial?: TutorialDefinition; compact?: boolean }) {
   const runtime = useTutorRuntime()!
@@ -33,6 +34,7 @@ export function TutorLessonControls({ tutorial, compact = false }: { tutorial?: 
         {run?.status === 'paused' && <p role="alert">{run.reason === 'review'
           ? 'Volviste al paso anterior. Pulsa Reanudar guía antes de realizar la acción. Anterior no elimina los elementos que ya creaste; si vuelves al paso Agregar, tendrás que agregar un atributo nuevo.'
           : run.reason === 'manual' ? 'Pausaste la guía. Pulsa Reanudar guía para continuar.'
+          : run.reason === 'save-error' ? `El editor no pudo guardar el diagrama. ${view.scene?.saveError || 'Revisa el mensaje de error del editor, corrige el problema y guarda de nuevo.'} Después pulsa Reanudar guía.`
           : `La guía está pausada (${run.reason}). Comprueba el elemento elegido, los permisos y el guardado antes de reanudar.`}</p>}
         {run?.status === 'incomplete' && <p>La guía tiene pasos omitidos. Puedes volver atrás o cancelarla.</p>}
         {!compact && <div><button type="button" onClick={() => runtime.back()}>Anterior</button>
@@ -40,6 +42,7 @@ export function TutorLessonControls({ tutorial, compact = false }: { tutorial?: 
           <button type="button" onClick={() => runtime.skip()}>Omitir</button></div>}</>}
       {compact && run?.status === 'paused' && <button type="button" onClick={() => runtime.resume()}>Reanudar guía</button>}
       <button type="button" onClick={() => runtime.cancel()}>{view.finished ? 'Volver al catálogo' : 'Cancelar guía'}</button>
+      <TutorVoiceControls />
     </section>
   }
   if (compact) return null

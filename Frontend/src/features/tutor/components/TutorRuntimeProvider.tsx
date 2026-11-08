@@ -3,6 +3,7 @@ import { obtenerUsuarioActual } from '../../auth/api/authApi'
 import { TutorTargetContext } from '../context/tutorTargetContext'
 import { TutorRuntimeContext } from '../context/tutorRuntimeContext'
 import { createTutorRuntimeStore } from '../services/tutorialRuntimeStore.ts'
+import { TutorAudioProvider } from './TutorAudioProvider'
 
 export function TutorRuntimeProvider({ sessionId, path, ready, children }: { sessionId: string; path: string; ready: boolean; children: ReactNode }) {
   const target = useContext(TutorTargetContext)!
@@ -26,5 +27,5 @@ export function TutorRuntimeProvider({ sessionId, path, ready, children }: { ses
     const timer = window.setInterval(refresh, 200)
     return () => window.clearInterval(timer)
   }, [store, target])
-  return <TutorRuntimeContext.Provider value={store}>{children}</TutorRuntimeContext.Provider>
+  return <TutorRuntimeContext.Provider value={store}><TutorAudioProvider>{children}</TutorAudioProvider></TutorRuntimeContext.Provider>
 }

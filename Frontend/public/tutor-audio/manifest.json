@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "voice": "Puck",
+  "model": "gemini-2.5-flash-preview-tts",
+  "entries": {
+    "choose_workspace/open": {
+      "source": "Pulsa Abrir workspace en el espacio que elegiste.",
+      "spoken": "Pulsa Abrir workspace en el espacio que elegiste.",
+      "file": "3ecf739c81d59e90d934.wav"
+    },
+    "create_project/new": {
+      "source": "Pulsa Nuevo proyecto.",
+      "spoken": "Pulsa Nuevo proyecto.",
+      "file": "448b8872ccc7a5793e34.wav"
+    },
+    "create_project/name": {
+      "source": "Escribe el nombre que quieras para tu proyecto.",
+      "spoken": "Escribe el nombre que quieras para tu proyecto.",
+      "file": "fecb0a24cc3c0782823f.wav"
+    },
+    "create_project/create": {
+      "source": "Pulsa Crear proyecto y espera la confirmación.",
+      "spoken": "Pulsa Crear proyecto y espera la confirmación.",
+      "file": "d6d63f0bda4642a816bd.wav"
+    },
+    "open_editor/open": {
+      "source": "Pulsa Abrir en el proyecto elegido.",
+      "spoken": "Pulsa Abrir en el proyecto elegido.",
+      "file": "5a275c8825e3cb3552ec.wav"
+    },
+    "create_class/tools": {
+      "source": "Abre Herramientas si el panel está cerrado.",
+      "spoken": "Abre Herramientas si el panel está cerrado.",
+      "file": "b22d519920bd0a2a3d20.wav"
+    },
+    "create_class/create": {
+      "source": "Pulsa Clase UML para crear una clase.",
+      "spoken": "Pulsa Clase u eme ele para crear una clase.",
+      "file": "fb8ab3e974cec6c4bbb7.wav"
+    },
+    "create_entity/tools": {
+      "source": "Abre Herramientas si el panel está cerrado.",
+      "spoken": "Abre Herramientas si el panel está cerrado.",
+      "file": "b22d519920bd0a2a3d20.wav"
+    },
+    "create_entity/create": {
+      "source": "Pulsa Entidad para crear una entidad de datos.",
+      "spoken": "Pulsa Entidad para crear una entidad de datos.",
+      "file": "fcd67710cd03327af7bd.wav"
+    },
+    "rename_node/select-node": {
+      "source": "Selecciona en el lienzo la clase o entidad elegida para este tutorial.",
+      "spoken": "Selecciona en el lienzo la clase o entidad elegida para este tutorial.",
+      "file": "a5ce9f744886c23c99f6.wav"
+    },
+    "rename_node/open-properties": {
+      "source": "Abre Propiedades si el panel está cerrado.",
+      "spoken": "Abre Propiedades si el panel está cerrado.",
+      "file": "8a4269c6e8ee1158978d.wav"
+    },
+    "rename_node/name": {
+      "source": "Cambia el nombre a {{nodeName}}.",
+      "spoken": "Cambia el nombre a el nombre indicado en pantalla.",
+      "file": "1df5b03734e8772d471a.wav"
+    },
+    "add_attribute/select-node": {
+      "source": "Selecciona en el lienzo la clase o entidad elegida para este tutorial.",
+      "spoken": "Selecciona en el lienzo la clase o entidad elegida para este tutorial.",
+      "file": "a5ce9f744886c23c99f6.wav"
+    },
+    "add_attribute/open-properties": {
+      "source": "Abre Propiedades si el panel está cerrado.",
+      "spoken": "Abre Propiedades si el panel está cerrado.",
+      "file": "8a4269c6e8ee1158978d.wav"
+    },
+    "add_attribute/add": {
+      "source": "En Atributos, pulsa Agregar.",
+      "spoken": "En Atributos, pulsa Agregar.",
+      "file": "a8cfe7ba9f0e078be807.wav"
+    },
+    "add_attribute/name": {
+      "source": "Escribe {{attributeName}} como nombre del atributo.",
+      "spoken": "Escribe el nombre indicado en pantalla como nombre del atributo.",
+      "file": "88bdd061d30d4f323850.wav"
+    },
+    "add_attribute/type": {
+      "source": "Selecciona {{attributeType}} como tipo.",
+      "spoken": "Selecciona el tipo indicado en pantalla como tipo.",
+      "file": "a359b73296b1e8ea18cf.wav"
+    },
+    "set_primary_key/select-node": {
+      "source": "Selecciona en el lienzo la clase o entidad elegida para este tutorial.",
+      "spoken": "Selecciona en el lienzo la clase o entidad elegida para este tutorial.",
+      "file": "a5ce9f744886c23c99f6.wav"
+    },
+    "set_primary_key/open-properties": {
+      "source": "Abre Propiedades si el panel está cerrado.",
+      "spoken": "Abre Propiedades si el panel está cerrado.",
+      "file": "8a4269c6e8ee1158978d.wav"
+    },
+    "set_primary_key/pk": {
+      "source": "Marca Primary Key en el atributo elegido.",
+      "spoken": "Marca Primary Key en el atributo elegido.",
+      "file": "ae5672dd2d155dc849c1.wav"
+    },
+    "create_relationship/tools": {
+      "source": "Abre Herramientas si el panel está cerrado.",
+      "spoken": "Abre Herramientas si el panel está cerrado.",
+      "file": "b22d519920bd0a2a3d20.wav"
+    },
+    "create_relationship/mode": {
+      "source": "Selecciona ASSOCIATION en Relaciones UML.",
+      "spoken": "Selecciona asociación en Relaciones u eme ele.",
+      "file": "b6c4d0e1e4129f0d7111.wav"
+    },
+    "create_relationship/connect": {
+      "source": "Arrastra un conector del nodo de origen hasta el nodo de destino elegido.",
+      "spoken": "Arrastra un conector del nodo de origen hasta el nodo de destino elegido.",
+      "file": "c195bf82322557dd02b9.wav"
+    },
+    "configure_cardinality/select": {
+      "source": "Selecciona la relación que quieres configurar.",
+      "spoken": "Selecciona la relación que quieres configurar.",
+      "file": "a6f3e11907a752904c6e.wav"
+    },
+    "configure_cardinality/properties": {
+      "source": "Abre Propiedades si el panel está cerrado.",
+      "spoken": "Abre Propiedades si el panel está cerrado.",
+      "file": "8a4269c6e8ee1158978d.wav"
+    },
+    "configure_cardinality/source": {
+      "source": "En Cardinalidad origen, elige {{sourceCardinality}}.",
+      "spoken": "En Cardinalidad origen, elige la cardinalidad indicada en pantalla.",
+      "file": "96699e80e7646484bcd9.wav"
+    },
+    "configure_cardinality/target": {
+      "source": "En Cardinalidad destino, elige {{targetCardinality}}.",
+      "spoken": "En Cardinalidad destino, elige la cardinalidad indicada en pantalla.",
+      "file": "57a4600d2c2f07221585.wav"
+    },
+    "verify_save/save": {
+      "source": "LogicDraft guarda automáticamente. Puedes pulsar Guardar y esperar la confirmación.",
+      "spoken": "LogicDraft guarda automáticamente. Puedes pulsar Guardar y esperar la confirmación.",
+      "file": "2170e6a56909b9be137a.wav"
+    }
+  },
+  "files": [
+    "3ecf739c81d59e90d934.wav",
+    "448b8872ccc7a5793e34.wav",
+    "fecb0a24cc3c0782823f.wav",
+    "d6d63f0bda4642a816bd.wav",
+    "5a275c8825e3cb3552ec.wav",
+    "b22d519920bd0a2a3d20.wav",
+    "fb8ab3e974cec6c4bbb7.wav",
+    "fcd67710cd03327af7bd.wav",
+    "a5ce9f744886c23c99f6.wav",
+    "8a4269c6e8ee1158978d.wav",
+    "1df5b03734e8772d471a.wav",
+    "a8cfe7ba9f0e078be807.wav",
+    "88bdd061d30d4f323850.wav",
+    "a359b73296b1e8ea18cf.wav",
+    "ae5672dd2d155dc849c1.wav",
+    "b6c4d0e1e4129f0d7111.wav",
+    "c195bf82322557dd02b9.wav",
+    "a6f3e11907a752904c6e.wav",
+    "96699e80e7646484bcd9.wav",
+    "57a4600d2c2f07221585.wav",
+    "2170e6a56909b9be137a.wav"
+  ]
+}

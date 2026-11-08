@@ -27,6 +27,7 @@ export function TutorHost() {
   }, [])
 
   function close() {
+    window.dispatchEvent(new Event('logicdraft:tutor-audio-stop'))
     setOpen(false)
     buttonRef.current?.focus()
   }
@@ -47,6 +48,6 @@ export function TutorHost() {
       onLocate={address => { setHighlight(address); close() }}
       onMove={() => { drag.toggleKeyboardMove(); buttonRef.current?.focus() }} />}
     <TutorBubble buttonRef={buttonRef} position={drag.position} expanded={open} moving={drag.moving} keyboardMove={drag.keyboardMove}
-      {...drag.handlers} onClick={event => { event.stopPropagation(); if (drag.shouldToggle(event.detail)) setOpen(current => !current) }} />
+      {...drag.handlers} onClick={event => { event.stopPropagation(); if (drag.shouldToggle(event.detail)) { if (open) window.dispatchEvent(new Event('logicdraft:tutor-audio-stop')); setOpen(current => !current) } }} />
   </div>
 }

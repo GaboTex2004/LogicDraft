@@ -93,3 +93,4 @@ target/
 
 # Temporary design files
 code.html
+/ai-service/voice-samples.local/

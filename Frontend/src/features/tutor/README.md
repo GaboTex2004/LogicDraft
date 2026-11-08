@@ -1,5 +1,17 @@
 # Instructor de LogicDraft — E1, E2 y E3.1–E3.3
 
+## E4: reproductor Puck
+
+La disponibilidad del control se verifica antes de empezar la narración. Después de iniciada, una deshabilitación temporal o un cambio de foco/scroll no descarta la frase ni la deja marcada como reproducida sin poder oírla. Los cambios reales del paso y las interrupciones explícitas siguen cancelando. La prueba de Edge comprueba los WAV de Agregar, nombre del atributo, tipo y guardado, y simula una indisponibilidad temporal del botón Agregar.
+
+El tutor permite Activar voz Puck, Silenciar y Repetir instrucción durante una guía. La voz empieza desactivada y sólo se habilita por interacción del usuario. Se reproduce el WAV pregenerado del paso cuando su control exacto está disponible. `source` en el manifest debe coincidir con el texto del catálogo; no se reproduce audio obsoleto. El guion hablado remite a la pantalla para nombres y tipos variables.
+
+El reproductor no mantiene cola ni llama a Gemini. Cambiar paso/visita, pausar, finalizar, cancelar, desmontar, ocultar la pestaña o abrir un modal detiene el audio. Cerrar el robot interrumpe la frase actual, pero conserva la preferencia de voz para los pasos siguientes en la tarjeta compacta; Silenciar sí desactiva la narración. Al iniciar una grabación se detiene la voz y se impide reactivarla hasta terminar/liberar el micrófono. Tras grabar hay que activarla explícitamente.
+
+Terminar de hablar sólo modifica estado de reproducción; jamás completa un paso. Rechazos tardíos de `play()` se ignoran tras cambiar/cancelar la reproducción. Archivos ausentes o errores de reproducción mantienen la instrucción escrita y muestran un aviso. El manifest declara qué archivos están generados: 21/21, cubriendo los 28 pasos. El manifest se solicita sin caché para reflejar nuevas generaciones; al empezar un audio disponible se retira cualquier aviso previo de audio pendiente.
+
+Pruebas: 58 pruebas de tutor, con cobertura de guion, reproductor y presencia/integridad de los WAV declarados. `test:tutor:browser` carga un WAV real y comprueba que su final no avanza el paso, así como la interrupción/bloqueo por micrófono. La escucha humana sigue pendiente. No se declara completada E4: falta la bienvenida de cuentas nuevas. Con Vite activo, `/tutor-audio/review.html` permite escuchar las 21 grabaciones y contrastarlas con su texto.
+
 ## Integración E3.4 en revisión
 
 Actualización del paso de proyecto: `input-valid` acepta un nombre libre no vacío de hasta 100 caracteres. El `projectName` del ejercicio es sólo un ejemplo; no se solicita como parámetro previo en la ficha. Hace falta edición local o estado ya satisfecho al entrar al paso. Tras crear, se verifica respuesta exitosa y nombre/ID del objeto real; el recorrido conserva ese ID y resalta su botón Abrir. Se mantienen las condiciones exactas de nombres de nodos/atributos del ejercicio.

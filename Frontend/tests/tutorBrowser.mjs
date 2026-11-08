@@ -30,6 +30,11 @@ try {
   await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject })
   let sequence = 0
   const waiting = new Map()
+  let closing = false
+  socket.addEventListener('close', () => {
+    // Chromium may close the transport before acknowledging Browser.close.
+    if (closing) { for (const pending of waiting.values()) pending.resolve({}); waiting.clear() }
+  })
   const commands = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++sequence
     const timer = setTimeout(() => { waiting.delete(id); reject(new Error(`CDP timeout: ${method}`)) }, 10000)
@@ -52,6 +57,7 @@ try {
     if (message.method === 'Fetch.requestPaused') {
       const { requestId, request } = message.params
       const path = new URL(request.url).pathname
+      if (path.startsWith('/tutor-audio/')) { void commands('Fetch.continueRequest', { requestId }).catch(error => errors.push(String(error))); return }
       let body = [], status = 200
       // Existing editor cleanup releases its locks on unmount, independently of the tutor.
       if (exercise && request.method === 'POST' && path.endsWith('/proyectos')) body = { ...project, id: 12, nombre: JSON.parse(request.postData).nombre }
@@ -85,9 +91,10 @@ try {
     return result.result.value
   }
   const until = async expression => {
-    for (let i = 0; i < 80; i++) { if (await evaluate(expression)) return; await delay(100) }
+    for (let i = 0; i < 150; i++) { if (await evaluate(expression)) return; await delay(100) }
     const diagnostic = await evaluate(`(async () => { const e=document.querySelector('.workspace-card a'); if(!e) return null; const {inspectTutorialControl}=await import('/src/features/tutor/services/inspectTutorialControl.ts'); return { inspected:inspectTutorialControl(e,true), bounds:e.getBoundingClientRect().toJSON(), parents:[e,...(function*(n){while(n.parentElement){n=n.parentElement;yield n}})(e)].map(n=>({tag:n.tagName,cl:n.className,box:n.getBoundingClientRect().toJSON(),overflow:getComputedStyle(n).overflow,opacity:getComputedStyle(n).opacity,visibility:getComputedStyle(n).visibility})),hit:document.elementFromPoint(e.getBoundingClientRect().x+e.clientWidth/2,e.getBoundingClientRect().y+e.clientHeight/2)?.outerHTML.slice(0,200)} })()`)
-    throw new Error(`Condition failed: ${expression}\n${await evaluate('document.body.innerText.slice(0,2000)')}\n${JSON.stringify(errors)}\n${JSON.stringify(diagnostic)}`)
+    const loading = await evaluate('({path:location.pathname,state:document.readyState,html:document.documentElement.outerHTML.slice(0,1000)})')
+    throw new Error(`Condition failed: ${expression}\n${await evaluate('document.body.innerText.slice(0,2000)')}\n${JSON.stringify(errors)}\n${JSON.stringify(diagnostic)}\n${JSON.stringify(loading)}`)
   }
   const click = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
   const selectGuide = async index => {
@@ -143,6 +150,17 @@ try {
   await until('!!document.querySelector(".tutor-lesson select")')
   await evaluate('const select=document.querySelector(".tutor-lesson select"); select.value="1"; select.dispatchEvent(new Event("change",{bubbles:true}))')
   await click('.tutor-lesson button[type=submit]')
+  await evaluate('window.__originalAudio=window.Audio;window.Audio=class extends window.__originalAudio { constructor(){super();window.__tutorAudio=this;} }')
+  await commands('Runtime.evaluate', { expression: '[...document.querySelectorAll(".tutor-voice-controls button")].find(b=>b.textContent.includes("Activar voz"))?.click()', userGesture: true })
+  await until('!!window.__tutorAudio && window.__tutorAudio.src.includes("tutor-audio/")')
+  await until('window.__tutorAudio.readyState >= 2')
+  await evaluate('window.__tutorAudio.dispatchEvent(new Event("ended"))')
+  assert.equal(await evaluate('document.querySelector(".tutor-lesson").textContent.includes("Pulsa Abrir workspace")'), true)
+  await evaluate('window.dispatchEvent(new Event("logicdraft:microphone-start"))')
+  await until('window.__tutorAudio.paused && [...document.querySelectorAll(".tutor-voice-controls button")].some(b=>b.textContent.includes("mientras grabas") && b.disabled)')
+  await evaluate('window.dispatchEvent(new Event("logicdraft:microphone-end"))')
+  await until('[...document.querySelectorAll(".tutor-voice-controls button")].some(b=>b.textContent.includes("Activar voz") && !b.disabled)')
+  console.log('PASS Puck: WAV loads, end does not advance, microphone stops narration')
   await click('.tutor-close')
   await click('.workspace-card a')
   await until('document.querySelector(".tutor-active-card")?.textContent.includes("Pulsa Nuevo proyecto")')
@@ -221,18 +239,40 @@ try {
   await click('.tutor-lesson button[type=submit]')
   await click('.tutor-close')
   await until('document.querySelector(".tutor-active-card").textContent.includes("En Atributos, pulsa Agregar")')
+  await evaluate('window.__attributeAudioBase=window.Audio;window.Audio=class extends window.__attributeAudioBase { constructor(){super();window.__attributeAudio=this;} }')
+  await commands('Runtime.evaluate', { expression: '[...document.querySelectorAll(".tutor-active-card .tutor-voice-controls button")].find(b=>b.textContent.includes("Activar voz"))?.click()', userGesture: true })
+  await until('!!window.__attributeAudio && window.__attributeAudio.readyState >= 2 && window.__attributeAudio.src.includes("tutor-audio/")')
+  const attributeAddAudio = await evaluate('window.__attributeAudio.src')
+  const expectAttributeVoice = async key => {
+    const file = await evaluate(`fetch('/tutor-audio/manifest.json').then(r=>r.json()).then(m=>m.entries[${JSON.stringify(key)}].file)`)
+    await until(`window.__attributeAudio.src.endsWith(${JSON.stringify(file)}) && window.__attributeAudio.readyState >= 2`)
+  }
+  await expectAttributeVoice('add_attribute/add')
+  await evaluate('document.querySelector(".diagram-properties .attributes-heading button").disabled=true')
+  await delay(350)
+  assert.equal(await evaluate('window.__attributeAudio.src'), attributeAddAudio, 'temporary disabled state must not discard an instruction already started')
+  await evaluate('document.querySelector(".diagram-properties .attributes-heading button").disabled=false')
   await click('.diagram-properties .attributes-heading button')
   await until('document.querySelector(".tutor-active-card").textContent.includes("Escribe id")')
+  await until(`window.__attributeAudio.src !== ${JSON.stringify(attributeAddAudio)} && window.__attributeAudio.src.includes("tutor-audio/") && window.__attributeAudio.readyState >= 2`)
+  await expectAttributeVoice('add_attribute/name')
   await click('.tutor-bubble')
   await evaluate('[...document.querySelectorAll(".tutor-lesson button")].find(b=>b.textContent==="Anterior").click()')
   await until('document.querySelector(".tutor-lesson").textContent.includes("Volviste al paso anterior")')
   await evaluate('[...document.querySelectorAll(".tutor-lesson button")].find(b=>b.textContent==="Reanudar guía").click()')
   await click('.tutor-close')
+  await commands('Runtime.evaluate', { expression: '[...document.querySelectorAll(".tutor-active-card .tutor-voice-controls button")].find(b=>b.textContent.includes("Activar voz"))?.click()', userGesture: true })
   await click('.diagram-properties .attributes-heading button')
   await until('document.querySelector(".tutor-active-card").textContent.includes("Escribe id")')
   await evaluate('const input=[...document.querySelectorAll(".attribute-editor input[aria-label]")].at(-1);input.focus();input.select()')
+  await commands('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 })
+  await commands('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 })
+  await delay(1800)
+  assert.equal(await evaluate('document.querySelector(".tutor-active-card").textContent.includes("El editor no pudo guardar")'), false, 'an incomplete draft must not pause the tutor during automatic validation')
+  assert.equal(await evaluate('[...document.querySelectorAll(".tutor-active-card .tutor-voice-controls button")].some(b=>b.textContent.includes("Silenciar voz"))'), true, 'voice preference survives closing the panel')
   await commands('Input.insertText', { text: 'id' })
   await until('document.querySelector(".tutor-active-card").textContent.includes("Selecciona INTEGER")')
+  await expectAttributeVoice('add_attribute/type')
   await evaluate('{ const attributeTypeSelect=[...document.querySelectorAll(".attribute-editor select")].at(-1);attributeTypeSelect.value="INTEGER";attributeTypeSelect.dispatchEvent(new Event("change",{bubbles:true})); }')
   await until('document.querySelector(".tutor-active-card").textContent.includes("Recorrido completado")')
   await evaluate('document.querySelector(".tutor-active-card button").click()')
@@ -242,6 +282,8 @@ try {
   await evaluate('document.querySelector(".tutor-lesson button[type=submit]").click()')
   await click('.tutor-close')
   await until('!document.querySelector(".save-diagram-button").disabled')
+  await commands('Runtime.evaluate', { expression: '[...document.querySelectorAll(".tutor-active-card .tutor-voice-controls button")].find(b=>b.textContent.includes("Activar voz"))?.click()', userGesture: true })
+  await expectAttributeVoice('verify_save/save')
   await click('.save-diagram-button')
   await until('document.querySelector(".tutor-active-card").textContent.includes("Recorrido completado")')
   await evaluate('document.querySelector(".tutor-active-card button").click()')
@@ -280,6 +322,7 @@ try {
   assert.deepEqual(mutations, [], 'Tutor must not perform business writes')
   assert.deepEqual(errors, [], 'No unhandled browser errors')
   console.log('PASS no API mutations or unhandled errors; mocked API, real browser/UI')
+  closing = true
   await commands('Browser.close')
 } finally {
   socket?.close()
